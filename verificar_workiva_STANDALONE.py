@@ -782,13 +782,14 @@ def escribir_resumen(ss_id, codigo, nombre_doc, resultado):
     """Escribe un bloque de resumen en la hoja de la sociedad (nombre = codigo).
     Nunca toca la fila 1 (encabezados del usuario). Siempre escribe desde fila 2
     o desde la primera fila libre si ya hay datos previos."""
-    sheet_id, _ = obtener_o_crear_hoja(ss_id, codigo)
-    primera = max(contar_filas(ss_id, sheet_id) + 1, 2)
+    sheet_id, es_nueva = obtener_o_crear_hoja(ss_id, codigo)
+    if not es_nueva:
+        _limpiar_desde_fila2(ss_id, sheet_id, 1)
 
-    n_ok    = len(resultado['ok'])
-    n_hall  = len(resultado['hallazgos'])
-    n_rev   = len(resultado['revisar'])
-    n_cuad  = len(resultado['indice'])
+    n_ok   = len(resultado['ok'])
+    n_hall = len(resultado['hallazgos'])
+    n_rev  = len(resultado['revisar'])
+    n_cuad = len(resultado['indice'])
 
     filas = [
         [f"Documento: {nombre_doc}"],
@@ -796,10 +797,8 @@ def escribir_resumen(ss_id, codigo, nombre_doc, resultado):
         [f"Hallazgos prioritarios (dif. pequena o localizada): {n_hall}"],
         [f"A revisar manualmente: {n_rev}"],
         [f"Cuadros con sumas detectados: {n_cuad}"],
-        [""],   # fila separadora
     ]
-    ultima = primera + len(filas) - 1
-    put_range(ss_id, sheet_id, f"A{primera}:A{ultima}", filas)
+    put_range(ss_id, sheet_id, f"A2:A{1 + len(filas)}", filas)
 
 # ---------------------------------------------------------------------------
 # Escribir las 4 sub-hojas en Workiva
@@ -821,16 +820,25 @@ NOMBRE_HOJAS = {
     "indice":    "Indice_cuadros",
 }
 
+def _limpiar_desde_fila2(ss_id, sheet_id, n_cols):
+    """Borra todo el contenido desde fila 2 hacia abajo (deja fila 1 intacta)."""
+    ultima = contar_filas(ss_id, sheet_id)
+    if ultima < 2:
+        return
+    fila_vacia = [""] * n_cols
+    filas_vacias = [fila_vacia for _ in range(ultima - 1)]
+    col_fin = chr(64 + n_cols)
+    put_range(ss_id, sheet_id, f"A2:{col_fin}{ultima}", filas_vacias)
+
 def _escribir_hoja(ss_id, nombre_hoja, encabezados, filas):
     sheet_id, es_nueva = obtener_o_crear_hoja(ss_id, nombre_hoja)
+    n = len(encabezados)
     if es_nueva:
-        n = len(encabezados)
         put_range(ss_id, sheet_id, f"A1:{chr(64 + n)}1", [encabezados])
+    else:
+        _limpiar_desde_fila2(ss_id, sheet_id, n)
     if filas:
-        n = len(encabezados)
-        primera = max(contar_filas(ss_id, sheet_id) + 1, 2)
-        ultima  = primera + len(filas) - 1
-        put_range(ss_id, sheet_id, f"A{primera}:{chr(64 + n)}{ultima}", filas)
+        put_range(ss_id, sheet_id, f"A2:{chr(64 + n)}{1 + len(filas)}", filas)
 
 def escribir_4_hojas(ss_id, codigo, resultado):
     def nombre(clave):
