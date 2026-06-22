@@ -518,8 +518,10 @@ ENCABEZADOS = ["Hoja", "Linea", "Actual", "Anterior", "Estado", "Detalle"]
 
 def escribir_resultados(ss_id, sheet_id, resultados):
     if not resultados: return
+    solo_revisar = [r for r in resultados if not r["ok"]]
+    if not solo_revisar: return
     rows = []
-    for r in resultados:
+    for r in solo_revisar:
         if r["ok"]:
             detalle = ""
         else:
