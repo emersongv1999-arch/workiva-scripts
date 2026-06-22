@@ -431,6 +431,11 @@ def detectar_estado(primera_fila):
     return None
 
 def verificar_tablas(ruta):
+    """
+    Retorna lista de dicts con keys: estado, descripcion, actual, anterior, ok
+    Una fila por total detectado, con valor del periodo actual (col 1) y anterior (col 2).
+    Verifica que cada total = suma de sus componentes (tolerancia < 2 M$).
+    """
     resultados = []
     tablas = extraer_tablas_docx(ruta)
     estado_actual = "Documento"
@@ -442,50 +447,52 @@ def verificar_tablas(ruta):
             estado_actual = estado
 
         num_cols = max(len(f) for f in filas)
-        periodos = [""] * num_cols
-        for fila in filas[:4]:
-            if any(re.search(r"\d{2}-\d{4}", c) for c in fila):
-                periodos = fila + [""] * (num_cols - len(fila))
-                break
 
-        acum = [0.0] * num_cols
+        # acumuladores por columna: col1=Actual, col2=Anterior
+        acum  = [0.0] * num_cols
         tiene = [False] * num_cols
 
         for fila in filas:
-            while len(fila) < num_cols: fila.append("")
+            while len(fila) < num_cols:
+                fila.append("")
             if es_fila_total(fila):
-                for col in range(1, num_cols):
-                    dec = limpiar_numero(fila[col])
-                    if dec is None or not tiene[col]: continue
-                    diff = round(dec - acum[col], 2)
+                dec1 = limpiar_numero(fila[1]) if num_cols > 1 else None
+                dec2 = limpiar_numero(fila[2]) if num_cols > 2 else None
+
+                ok1 = (dec1 is None or not tiene[1] or abs(dec1 - acum[1]) < 2)
+                ok2 = (dec2 is None or not tiene[2] or abs(dec2 - acum[2]) < 2)
+
+                if dec1 is not None or dec2 is not None:
                     resultados.append({
                         "estado":      estado_actual,
-                        "descripcion": fila[0][:70],
-                        "periodo":     periodos[col] if col < len(periodos) else "",
-                        "declarado":   dec,
-                        "calculado":   round(acum[col], 2),
-                        "diferencia":  diff,
-                        "ok":          abs(diff) < 2,
+                        "descripcion": fila[0][:80],
+                        "actual":      dec1,
+                        "anterior":    dec2,
+                        "ok":          ok1 and ok2,
                     })
-                acum = [0.0] * num_cols
+                acum  = [0.0] * num_cols
                 tiene = [False] * num_cols
             else:
                 for col in range(1, num_cols):
                     v = limpiar_numero(fila[col]) if col < len(fila) else None
                     if v is not None:
-                        acum[col] += v
-                        tiene[col] = True
+                        acum[col]  += v
+                        tiene[col]  = True
     return resultados
 
-def escribir_resultados(ss_id, sheet_id, nombre_doc, resultados):
+ENCABEZADOS = ["Seccion", "Linea", "Actual", "Anterior", "Estado"]
+
+def escribir_resultados(ss_id, sheet_id, resultados):
     if not resultados: return
     rows = [[
-        nombre_doc, r["estado"], r["descripcion"], r["periodo"],
-        r["declarado"], r["calculado"], r["diferencia"],
+        r["estado"],
+        r["descripcion"],
+        r["actual"]   if r["actual"]   is not None else "",
+        r["anterior"] if r["anterior"] is not None else "",
         "OK" if r["ok"] else "REVISAR",
     ] for r in resultados]
     primera = contar_filas(ss_id, sheet_id) + 1
-    put_range(ss_id, sheet_id, f"A{primera}:H{primera+len(rows)-1}", rows)
+    put_range(ss_id, sheet_id, f"A{primera}:E{primera+len(rows)-1}", rows)
 
 # ---------------------------------------------------------------------------
 # Main
@@ -567,11 +574,8 @@ def main():
         try:
             sheet_id = obtener_o_crear_hoja(ss_id, nombre_hoja)
             if not hoja_tiene_datos(ss_id, sheet_id):
-                put_range(ss_id, sheet_id, "A1:H1", [[
-                    "Documento","Estado Financiero","Descripcion Total",
-                    "Periodo","Declarado (M$)","Calculado (M$)","Diferencia (M$)","Estado"
-                ]])
-            escribir_resultados(ss_id, sheet_id, doc["nombre"], resultados)
+                put_range(ss_id, sheet_id, "A1:E1", [ENCABEZADOS])
+            escribir_resultados(ss_id, sheet_id, resultados)
             print("OK")
         except Exception as e:
             print(f"ERROR: {e}")
