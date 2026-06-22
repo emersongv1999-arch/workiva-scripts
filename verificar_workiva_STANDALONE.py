@@ -365,7 +365,22 @@ def extraer_cuerpo_docx(ruta):
         elif tag == "tbl":
             filas = []
             for tr in child.findall(_wtag("tr")):
-                celdas = [get_cell_text(tc) for tc in tr.findall(_wtag("tc"))]
+                celdas = []
+                for tc in tr.findall(_wtag("tc")):
+                    text = get_cell_text(tc)
+                    # Expandir celdas fusionadas horizontalmente (w:gridSpan)
+                    tcPr = tc.find(_wtag("tcPr"))
+                    span = 1
+                    if tcPr is not None:
+                        gs = tcPr.find(_wtag("gridSpan"))
+                        if gs is not None:
+                            try:
+                                span = int(gs.get(_wtag("val")) or gs.get("val") or 1)
+                            except (ValueError, TypeError):
+                                span = 1
+                    celdas.append(text)
+                    for _ in range(span - 1):
+                        celdas.append("")  # columnas absorbidas por la fusion
                 filas.append({"cells": celdas, "blue": _row_is_blue(tr)})
             if filas:
                 elementos.append({"tipo": "tabla", "filas": filas})
