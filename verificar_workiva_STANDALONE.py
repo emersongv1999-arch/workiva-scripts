@@ -461,16 +461,20 @@ def verificar_tablas(ruta):
                 dec1 = limpiar_numero(fila[1]) if num_cols > 1 else None
                 dec2 = limpiar_numero(fila[2]) if num_cols > 2 else None
 
-                ok1 = (dec1 is None or not tiene[1] or abs(dec1 - acum[1]) < 2)
-                ok2 = (dec2 is None or not tiene[2] or abs(dec2 - acum[2]) < 2)
+                diff1 = round(dec1 - acum[1], 0) if (dec1 is not None and tiene[1]) else None
+                diff2 = round(dec2 - acum[2], 0) if (dec2 is not None and tiene[2]) else None
+                ok1 = diff1 is None or abs(diff1) < 2
+                ok2 = diff2 is None or abs(diff2) < 2
 
                 if dec1 is not None or dec2 is not None:
                     resultados.append({
-                        "estado":      estado_actual,
-                        "descripcion": fila[0][:80],
-                        "actual":      dec1,
-                        "anterior":    dec2,
-                        "ok":          ok1 and ok2,
+                        "estado":        estado_actual,
+                        "descripcion":   fila[0][:80],
+                        "actual":        dec1,
+                        "anterior":      dec2,
+                        "diff_actual":   diff1,
+                        "diff_anterior": diff2,
+                        "ok":            ok1 and ok2,
                     })
                 acum  = [0.0] * num_cols
                 tiene = [False] * num_cols
@@ -482,19 +486,34 @@ def verificar_tablas(ruta):
                         tiene[col]  = True
     return resultados
 
-ENCABEZADOS = ["Seccion", "Linea", "Actual", "Anterior", "Estado"]
+ENCABEZADOS = ["Seccion", "Linea", "Actual", "Anterior", "Estado", "Detalle"]
 
 def escribir_resultados(ss_id, sheet_id, resultados):
     if not resultados: return
-    rows = [[
-        r["estado"],
-        r["descripcion"],
-        r["actual"]   if r["actual"]   is not None else "",
-        r["anterior"] if r["anterior"] is not None else "",
-        "OK" if r["ok"] else "REVISAR",
-    ] for r in resultados]
-    primera = contar_filas(ss_id, sheet_id) + 1
-    put_range(ss_id, sheet_id, f"A{primera}:E{primera+len(rows)-1}", rows)
+    rows = []
+    for r in resultados:
+        if r["ok"]:
+            detalle = ""
+        else:
+            partes = []
+            if r.get("diff_actual") is not None and abs(r["diff_actual"]) >= 2:
+                partes.append(f"Actual diff={r['diff_actual']:+.0f}")
+            if r.get("diff_anterior") is not None and abs(r["diff_anterior"]) >= 2:
+                partes.append(f"Anterior diff={r['diff_anterior']:+.0f}")
+            if not partes:
+                partes = ["diferencia detectada"]
+            detalle = " | ".join(partes)
+        rows.append([
+            r["estado"],
+            r["descripcion"],
+            r["actual"]   if r["actual"]   is not None else "",
+            r["anterior"] if r["anterior"] is not None else "",
+            "OK" if r["ok"] else "REVISAR",
+            detalle,
+        ])
+    # Siempre respetar fila 1 (encabezados del usuario): minimo fila 2
+    primera = max(contar_filas(ss_id, sheet_id) + 1, 2)
+    put_range(ss_id, sheet_id, f"A{primera}:F{primera+len(rows)-1}", rows)
 
 # ---------------------------------------------------------------------------
 # Main
