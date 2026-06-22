@@ -2,6 +2,7 @@
 # NO necesita instalar ninguna libreria. Solo Python puro (stdlib).
 # Verifica sumas en tablas de archivos Word (.docx) descargados desde Workiva
 # y escribe los hallazgos directamente en la spreadsheet "verificacion de sumas".
+# Logica de verificacion basada en verificar_sumas.py (motor PDF depurado).
 
 import json, re, ssl, time, urllib.request, urllib.error, zipfile
 import xml.etree.ElementTree as ET
@@ -18,7 +19,7 @@ WORKSPACE_ID  = "w_34913aadaa38420eabd7e4d341b78a1a"
 TOKEN_URL  = "https://api.app.wdesk.com/iam/v1/oauth2/token"
 WDESK_BASE = "https://api.app.wdesk.com"
 
-SS_VERIF_NAME = "verificación de sumas"
+SS_VERIF_NAME = "verificacion de sumas"
 DOCX_DIR      = Path("docx_tmp_verif")
 SS_CACHE      = Path(__file__).parent / ".ss_verif_id"
 
@@ -30,11 +31,8 @@ MESES = {
     "9":"09","09":"09","septiembre":"09","10":"10","octubre":"10",
     "11":"11","noviembre":"11","12":"12","diciembre":"12",
 }
-NOMBRE_MES = {
-    "01":"Enero","02":"Febrero","03":"Marzo","04":"Abril","05":"Mayo",
-    "06":"Junio","07":"Julio","08":"Agosto","09":"Septiembre",
-    "10":"Octubre","11":"Noviembre","12":"Diciembre",
-}
+
+UMBRAL = 1000  # diferencias <= UMBRAL M$ -> hallazgo prioritario
 
 # ---------------------------------------------------------------------------
 # SSL (red corporativa)
@@ -69,8 +67,7 @@ def http(method, url, headers=None, body=None, timeout=60):
     raise last_err
 
 def http_bytes(url, headers=None, timeout=120):
-    req = urllib.request.Request(url, headers=headers or {},
-        method="GET")
+    req = urllib.request.Request(url, headers=headers or {}, method="GET")
     last_err = None
     for attempt in range(4):
         try:
@@ -110,7 +107,7 @@ def api_get(path, params=""):
         "X-Version": "2022-01-01",
     })
     if status not in (200,):
-        raise RuntimeError(f"GET {path} → {status}: {data}")
+        raise RuntimeError(f"GET {path} -> {status}: {data}")
     return data
 
 def api_post(path, body):
@@ -185,7 +182,7 @@ def buscar_documentos(mes, anio, idioma):
     print("  Descargando catalogo...", end=" ", flush=True)
     patron = f"EE.FF {mes}-{anio}"
     docs = []
-    url = f"/platform/v1/documents?$top=100"
+    url = "/platform/v1/documents?$top=100"
     while url:
         data = api_get(url)
         for d in data.get("value", data.get("data", [])):
@@ -293,7 +290,7 @@ def exportar_docx(doc):
     return ruta
 
 # ---------------------------------------------------------------------------
-# Parsear .docx: extraer cuerpo (parrafos + tablas) con deteccion de fila azul
+# Parsear .docx: extraer cuerpo con deteccion de fila azul (fondo oscuro)
 # ---------------------------------------------------------------------------
 WNS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
@@ -304,7 +301,6 @@ def get_cell_text(tc):
     return "".join(t.text for t in tc.iter(_wtag("t")) if t.text).strip()
 
 def _fill_color(el):
-    """Devuelve color de fondo (hex) del elemento w:shd mas cercano, o None."""
     shd = el.find(_wtag("shd"))
     if shd is None:
         return None
@@ -315,27 +311,25 @@ def _is_dark(hex_color):
     if not hex_color or len(hex_color) < 6:
         return False
     try:
-        r, g, b = int(hex_color[0:2],16), int(hex_color[2:4],16), int(hex_color[4:6],16)
-        return (r*299 + g*587 + b*114) / 1000 < 128
+        r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+        return (r * 299 + g * 587 + b * 114) / 1000 < 128
     except Exception:
         return False
 
 def _row_is_blue(tr):
-    """True si la fila tiene fondo oscuro (azul navy = fila de total/encabezado)."""
-    # 1. Nivel de fila
+    """True si la fila tiene fondo oscuro (encabezado/total/subtotal)."""
     trPr = tr.find(_wtag("trPr"))
     if trPr is not None:
         c = _fill_color(trPr)
         if c and _is_dark(c):
             return True
-    # 2. Nivel de celda: mayoria con fondo oscuro
     tcs = tr.findall(_wtag("tc"))
     dark = sum(1 for tc in tcs
                for tcPr in [tc.find(_wtag("tcPr"))]
                if tcPr is not None and _is_dark(_fill_color(tcPr) or ""))
     if tcs and dark / len(tcs) >= 0.5:
         return True
-    # 3. Texto blanco en la fila (>= 60% de runs con color blanco)
+    # texto blanco >= 60% de runs
     runs = tr.findall(f".//{_wtag('rPr')}")
     white = sum(1 for rPr in runs
                 for color in [rPr.find(_wtag("color"))]
@@ -378,7 +372,7 @@ def extraer_cuerpo_docx(ruta):
     return elementos
 
 # ---------------------------------------------------------------------------
-# Logica de verificacion (adaptada de verificar_sumas.py)
+# Logica de verificacion — igual a verificar_sumas.py (motor PDF depurado)
 # ---------------------------------------------------------------------------
 KW = re.compile(
     r'(total|totales|subtotal|sub-total|saldo\s+final|saldos?\s+al|'
@@ -396,18 +390,22 @@ TOTMOV = re.compile(r'(total.*(increment|movimiento|disminuci|cambios|'
 REF_NOTA = re.compile(r'\(nota\s+\d+[\.\d]*\)', re.I)
 
 def parse_num(s):
-    """Formato chileno: 1.234.567; negativos en parentesis; '' = None."""
-    if s is None: return None
-    t = s.strip().replace('\n','').replace(' ','')
-    if t in ('','-','—','–'): return None
+    """Formato chileno: 1.234.567; negativos en parentesis."""
+    if s is None:
+        return None
+    t = s.strip().replace('\n', '').replace(' ', '')
+    if t in ('', '-', '—', '–'):
+        return None
     neg = False
     if t.startswith('(') and t.endswith(')'):
         neg = True; t = t[1:-1]
     if t.startswith('-'):
         neg = True; t = t[1:]
-    if ',' in t: return None
-    core = t.replace('.','')
-    if not re.fullmatch(r'\d+', core): return None
+    if ',' in t:
+        return None
+    core = t.replace('.', '')
+    if not re.fullmatch(r'\d+', core):
+        return None
     v = int(core)
     return -v if neg else v
 
@@ -415,190 +413,272 @@ def cell(r, j):
     return r['cells'][j] if j < len(r['cells']) else ''
 
 def amount_cols(rows):
-    """Columnas numericas: excluye col0 (etiqueta) y columnas de notas (1-2 digitos)."""
+    """Columnas de monto: excluye col0 (etiqueta), columnas de notas.
+    Devuelve (cols, htxt) donde htxt[j] es el texto del encabezado de col j."""
     ncol = max((len(r['cells']) for r in rows), default=0)
+    htxt = [''] * ncol
+    for r in rows:
+        if not r['blue']:
+            break
+        for j, c in enumerate(r['cells']):
+            if j < ncol:
+                htxt[j] += ' ' + c.lower()
+
     def colvals(j):
         return [r['cells'][j].strip() for r in rows
                 if j < len(r['cells']) and parse_num(r['cells'][j]) is not None]
+
     numeric = [j for j in range(1, ncol) if colvals(j)]
-    # Detectar columna de notas: solo digitos 1-2, valores pequeños a la izquierda
     note_col = None
-    if numeric:
+    blob = ' '.join(htxt).lower()
+    weak_header = not (('m$' in blob) or bool(re.search(r'\d{2}-\d{2}-\d{4}', blob)))
+    if numeric and weak_header:
         jL = numeric[0]
         vs = colvals(jL)
-        if (vs and all(re.fullmatch(r'\d{1,2}', v) for v in vs)
-                and any(parse_num(v) != 0 for v in vs)
-                and any(any(len(re.sub(r'\D','',x)) > 2 for x in colvals(jr)) for jr in numeric[1:])):
+        small_nonzero = (vs
+                         and all(re.fullmatch(r'\d{1,2}', v) for v in vs)
+                         and any(parse_num(v) != 0 for v in vs))
+        big_right = any(
+            any(len(re.sub(r'\D', '', x)) > 2 for x in colvals(jr))
+            for jr in numeric[1:]
+        )
+        if small_nonzero and big_right:
             note_col = jL
-    return [j for j in numeric if j != note_col]
+
+    cols = [j for j in numeric if j != note_col and 'nota' not in htxt[j]]
+    return cols, htxt
+
+def colhdr(htxt, j):
+    """Texto limpio del encabezado de la columna j."""
+    h = re.sub(r'\s+', ' ', htxt[j]).strip() if j < len(htxt) else ''
+    return h[:40] if h else f'col{j}'
 
 def is_movement_table(rows, cols):
     nbal = sum(1 for r in rows
                if BAL.search(r['cells'][0] if r['cells'] else '')
-               and any(parse_num(cell(r,j)) is not None for j in cols))
+               and any(parse_num(cell(r, j)) is not None for j in cols))
     ntot = sum(1 for r in rows
                if TOTMOV.search(r['cells'][0] if r['cells'] else ''))
     return nbal >= 1 and (nbal >= 2 or ntot >= 1)
 
 def verify(rows, cols):
-    """Verifica sumas verticales en cuadros generales."""
-    contrast = any((not r['blue']) and any(parse_num(cell(r,j)) is not None for j in cols)
-                   for r in rows)
+    """Verifica sumas verticales en cuadros generales.
+    Reglas: A_bloque, F_bloque_abajo, G_subitem, B_acumulativo, E_acum_total,
+    C_subtotales, S_jerarquia. Identica a verificar_sumas.py."""
+    contrast = any(
+        (not r['blue']) and any(parse_num(cell(r, j)) is not None for j in cols)
+        for r in rows
+    )
 
     def numeric(r):
-        return any(parse_num(cell(r,j)) is not None for j in cols)
+        return any(parse_num(cell(r, j)) is not None for j in cols)
 
     def is_ckpt(r):
-        if not numeric(r): return False
+        if not numeric(r):
+            return False
         lab = r['cells'][0] if r['cells'] else ''
-        if REF_NOTA.search(lab): return False
-        if KW.search(lab): return True
-        if r['blue'] and contrast: return True
+        if REF_NOTA.search(lab):
+            return False
+        if KW.search(lab):
+            return True
+        if r['blue'] and contrast:
+            return True
         return False
 
     klass = ['ckpt' if is_ckpt(r) else ('add' if numeric(r) else 'none') for r in rows]
     res = []
     for j in cols:
-        fwd = {}; fwd_sub = {}
+        fwd = {}
+        fwd_sub = {}
         for i in range(len(rows)):
-            if klass[i] != 'ckpt': continue
-            s_all = None; s_sub = None
-            for k in range(i+1, len(rows)):
-                if klass[k] == 'ckpt': break
+            if klass[i] != 'ckpt':
+                continue
+            s_all = None
+            s_sub = None
+            for k in range(i + 1, len(rows)):
+                if klass[k] == 'ckpt':
+                    break
                 if klass[k] == 'add':
                     v = parse_num(cell(rows[k], j))
-                    if v is not None: s_all = (s_all or 0) + v
+                    if v is not None:
+                        s_all = (s_all or 0) + v
                     lab_k = rows[k]['cells'][0] if rows[k]['cells'] else ''
-                    is_sub = bool(re.match(r'^[\-\•\–]\s', lab_k) or re.match(r'^\s{2,}', lab_k))
-                    if is_sub and v is not None: s_sub = (s_sub or 0) + v
-                    elif not is_sub and s_sub is not None: break
-            fwd[i] = s_all; fwd_sub[i] = s_sub
+                    is_sub = bool(re.match(r'^[\-•–]\s', lab_k)
+                                  or re.match(r'^\s{2,}', lab_k))
+                    if is_sub and v is not None:
+                        s_sub = (s_sub or 0) + v
+                    elif not is_sub and s_sub is not None:
+                        break
+            fwd[i] = s_all
+            fwd_sub[i] = s_sub
 
-        stack_ok = {}; units = []
+        stack_ok = {}
+        units = []
         for i in range(len(rows)):
             if klass[i] == 'add':
                 v = parse_num(cell(rows[i], j))
-                if v is not None: units.append(v)
+                if v is not None:
+                    units.append(v)
             elif klass[i] == 'ckpt':
                 P = parse_num(cell(rows[i], j))
-                if P is None: continue
-                acc = 0; found = None
-                for k in range(1, len(units)+1):
+                if P is None:
+                    continue
+                acc = 0
+                found = None
+                for k in range(1, len(units) + 1):
                     acc += units[-k]
-                    if acc == P: found = k; break
-                if found is not None: units[-found:] = [P]; stack_ok[i] = True
-                else: units.append(P); stack_ok[i] = False
+                    if acc == P:
+                        found = k
+                        break
+                if found is not None:
+                    units[-found:] = [P]
+                    stack_ok[i] = True
+                else:
+                    units.append(P)
+                    stack_ok[i] = False
 
-        prev = None; block = []; cum = 0; subs = []
+        prev = None
+        block = []
+        cum = 0
+        subs = []
         for i, r in enumerate(rows):
             v = parse_num(cell(r, j))
             if klass[i] == 'ckpt':
-                if v is None: block = []; continue
+                if v is None:
+                    block = []
+                    continue
                 P = v
                 cands = {}
-                if block: cands['A'] = sum(block)
-                if fwd.get(i) is not None: cands['F'] = fwd[i]
-                if fwd_sub.get(i) is not None: cands['G'] = fwd_sub[i]
-                if prev is not None: cands['B'] = prev + sum(block)
-                cands['E'] = cum
-                if subs: cands['C'] = sum(subs)
-                if stack_ok.get(i): cands['S'] = P
+                if block:
+                    cands['A_bloque'] = sum(block)
+                if fwd.get(i) is not None:
+                    cands['F_bloque_abajo'] = fwd[i]
+                if fwd_sub.get(i) is not None:
+                    cands['G_subitem'] = fwd_sub[i]
+                if prev is not None:
+                    cands['B_acumulativo'] = prev + sum(block)
+                cands['E_acum_total'] = cum
+                if subs:
+                    cands['C_subtotales'] = sum(subs)
+                if stack_ok.get(i):
+                    cands['S_jerarquia'] = P
+                avail = {n: c for n, c in cands.items() if c is not None}
                 lab = r['cells'][0] if r['cells'] else ''
-                difs = {n: (P-c) for n,c in cands.items() if c is not None}
+                difs = {n: (P - c) for n, c in avail.items()}
                 best = min(difs, key=lambda n: abs(difs[n])) if difs else None
                 if best is not None and difs[best] == 0:
-                    res.append({'col':j,'label':lab,'printed':P,'dif':0,'metodo':best,'clase':'check'})
-                    if best in ('E','C'): cum=0; subs=[]
+                    res.append({'col': j, 'label': lab, 'printed': P, 'dif': 0,
+                                'metodo': best, 'clase': 'check'})
+                    if best in ('E_acum_total', 'C_subtotales'):
+                        cum = 0
+                        subs = []
                 elif KW_FLAG.search(lab) and best is not None:
                     bd = difs[best]
-                    if P==0 and abs(bd)>1000:
-                        res.append({'col':j,'label':lab,'printed':P,'dif':None,'clase':'linea'})
-                    elif P!=0 and abs(bd)>abs(P):
-                        res.append({'col':j,'label':lab,'printed':P,'dif':None,'clase':'linea'})
+                    if P == 0 and abs(bd) > 1000:
+                        res.append({'col': j, 'label': lab, 'printed': P,
+                                    'dif': None, 'clase': 'linea'})
+                    elif P != 0 and abs(bd) > abs(P):
+                        res.append({'col': j, 'label': lab, 'printed': P,
+                                    'dif': None, 'clase': 'linea'})
                     else:
-                        res.append({'col':j,'label':lab,'printed':P,'dif':bd,'metodo':best,'clase':'check'})
+                        res.append({'col': j, 'label': lab, 'printed': P,
+                                    'dif': bd, 'metodo': best, 'clase': 'check'})
                 else:
-                    res.append({'col':j,'label':lab,'printed':P,'dif':None,'clase':'linea'})
-                prev=P; subs.append(P); block=[]
+                    res.append({'col': j, 'label': lab, 'printed': P,
+                                'dif': None, 'clase': 'linea'})
+                prev = P
+                subs.append(P)
+                block = []
             elif klass[i] == 'add':
-                if v is not None: block.append(v); cum+=v
+                if v is not None:
+                    block.append(v)
+                    cum += v
     return res
 
 def verify_movement(rows, cols):
-    """Verifica tablas de movimiento: saldo_final = saldo_inicial + movimientos."""
+    """Verifica tablas de movimiento: saldo_final = saldo_inicial + Σ movimientos.
+    Identica a verificar_sumas.py."""
     res = []
     for j in cols:
-        opening=None; summov=0; have_open=False
+        opening = None
+        summov = 0
+        have_open = False
         for r in rows:
             lab = r['cells'][0] if r['cells'] else ''
-            v = parse_num(cell(r,j))
+            v = parse_num(cell(r, j))
             is_bal = bool(BAL.search(lab)) or bool(
-                r['blue'] and re.match(r'^Sald', lab, re.I) and not have_open and v is not None)
+                r['blue'] and re.match(r'^Sald', lab, re.I)
+                and not have_open and v is not None
+            )
             if is_bal:
-                if v is None: continue
-                if not have_open: opening=v; have_open=True
+                if v is None:
+                    continue
+                if not have_open:
+                    opening = v
+                    have_open = True
                 else:
                     exp = (opening or 0) + summov
-                    res.append({'col':j,'label':lab,'printed':v,'dif':v-exp,
-                                'metodo':'saldo_inicial+movimientos','clase':'check'})
-                    opening=v; summov=0
-            elif REF_NOTA.search(lab): pass
+                    res.append({'col': j, 'label': lab, 'printed': v, 'dif': v - exp,
+                                'metodo': 'Movimiento: saldo inicial + movimientos',
+                                'clase': 'check'})
+                    opening = v
+                    summov = 0
+            elif REF_NOTA.search(lab):
+                pass
             elif 'total' in lab.lower() or TOTMOV.search(lab):
-                if v is None: continue
+                if v is None:
+                    continue
                 d_sub = v - summov
-                d_close = (v - ((opening or 0)+summov)) if have_open else None
+                d_close = (v - ((opening or 0) + summov)) if have_open else None
                 if d_close == 0:
-                    res.append({'col':j,'label':lab,'printed':v,'dif':0,
-                                'metodo':'saldo_final=inicial+movimientos','clase':'check'})
-                    opening=v; summov=0
+                    res.append({'col': j, 'label': lab, 'printed': v, 'dif': 0,
+                                'metodo': 'Movimiento: saldo final = inicial + movimientos',
+                                'clase': 'check'})
+                    opening = v
+                    summov = 0
                 elif d_sub == 0:
-                    res.append({'col':j,'label':lab,'printed':v,'dif':0,
-                                'metodo':'suma_movimientos','clase':'check'})
+                    res.append({'col': j, 'label': lab, 'printed': v, 'dif': 0,
+                                'metodo': 'Suma de movimientos', 'clase': 'check'})
                 elif d_close is not None and abs(d_close) < abs(d_sub):
-                    res.append({'col':j,'label':lab,'printed':v,'dif':d_close,
-                                'metodo':'saldo_final=inicial+movimientos','clase':'check'})
-                    opening=v; summov=0
+                    res.append({'col': j, 'label': lab, 'printed': v, 'dif': d_close,
+                                'metodo': 'Movimiento: saldo final = inicial + movimientos',
+                                'clase': 'check'})
+                    opening = v
+                    summov = 0
                 else:
-                    res.append({'col':j,'label':lab,'printed':v,'dif':d_sub,
-                                'metodo':'suma_movimientos','clase':'check'})
+                    res.append({'col': j, 'label': lab, 'printed': v, 'dif': d_sub,
+                                'metodo': 'Suma de movimientos', 'clase': 'check'})
             else:
-                if v is not None: summov += v
+                if v is not None:
+                    summov += v
     return res
 
-UMBRAL = 1000
-
-def causa(label, dif, localizado, calc, tipo_tabla):
+def causa_probable(label, dif, localizado, calc, tipo_tabla):
+    """Causa probable del hallazgo — identica a verificar_sumas.py."""
     lab = (label or '').lower()
     if localizado:
-        return 'Diferencia localizada: otras columnas cuadran'
+        return ('Diferencia LOCALIZADA: otras columnas del mismo cuadro cuadran '
+                '— probable error real, REVISAR')
     if tipo_tabla == 'movimiento':
-        return 'Movimiento: saldo final != saldo inicial + movimientos'
+        return ('Movimiento NO cuadra: saldo final != saldo inicial + '
+                'suma movimientos — REVISAR')
     if calc == 0:
-        return 'Sin detalle sumable visible (posible fila oculta)'
+        return ('Fila rotulada "total" sin detalle sumable arriba '
+                '(posible cifra derivada/conciliacion) — revisar')
     if 'atribuible a' in lab:
-        return 'Desagregacion (propietarios/no controladoras)'
+        return 'Desagregacion (propietarios / no controladoras): no es suma lineal'
+    if 'comienzo' in lab or 'al final' in lab or lab.startswith('saldo'):
+        return 'Esquema de movimiento (saldo inicial + movimientos = saldo final)'
     if abs(dif) <= UMBRAL:
-        return 'Diferencia pequena: posible redondeo o error real'
-    return 'Total que combina secciones o estructura no estandar'
-
-def get_col_headers(filas, cols):
-    headers = {j: f"Col{j}" for j in cols}
-    for fila in filas[:6]:
-        if fila['blue']:
-            for j in cols:
-                if j < len(fila['cells']):
-                    txt = fila['cells'][j].strip()
-                    if txt and not parse_num(txt):
-                        headers[j] = txt[:25]
-    return headers
+        return 'DIFERENCIA PEQUENA: posible redondeo o error real — REVISAR'
+    return 'Total que combina secciones, estado matricial o estructura no estandar — revisar'
 
 # ---------------------------------------------------------------------------
-# Verificar archivo .docx — devuelve 4 categorias
+# Verificar archivo .docx — devuelve {ok, hallazgos, revisar, indice}
 # ---------------------------------------------------------------------------
 def verificar_docx(ruta):
-    """Devuelve dict {ok, hallazgos, revisar, indice} con las 4 sub-hojas."""
     elementos = extraer_cuerpo_docx(ruta)
-    seccion   = ""
+    seccion = ""
     tablas_con_seccion = []
     for elem in elementos:
         if elem["tipo"] == "parrafo":
@@ -607,110 +687,158 @@ def verificar_docx(ruta):
         else:
             tablas_con_seccion.append((seccion, elem["filas"]))
 
-    ok = []; hallazgos = []; revisar = []; indice = []
+    rows_ok = []
+    rows_chk = []
+    tablas = []
 
     for i_tabla, (sec, filas) in enumerate(tablas_con_seccion, 1):
-        cols = amount_cols(filas)
+        cols, htxt = amount_cols(filas)
         if not cols:
             continue
 
         tipo = "movimiento" if is_movement_table(filas, cols) else "general"
         res  = verify_movement(filas, cols) if tipo == "movimiento" else verify(filas, cols)
-        col_headers = get_col_headers(filas, cols)
         checks = [r for r in res if r['clase'] == 'check']
         if not checks:
             continue
 
-        nok = 0; ndif = 0
-        por_col = defaultdict(list)
+        nok = 0
+        nz  = 0
+        per_col = {}
         for r in checks:
-            por_col[r['col']].append(r)
-        cols_ok_total = {c for c, rs in por_col.items() if all(r['dif'] == 0 for r in rs)}
+            d = per_col.setdefault(r['col'], [0, 0])
+            d[0] += 1
+            if r['dif'] == 0:
+                d[1] += 1
+        fully_ok_cols = {c for c, (n, z) in per_col.items() if n > 0 and z == n}
 
         for r in checks:
-            col_nombre = col_headers.get(r['col'], f"Col{r['col']}")
+            col_nombre = colhdr(htxt, r['col'])
             dif   = r['dif']
             calc  = r['printed'] - (dif or 0) if dif is not None else 0
             label = re.sub(r'\s+', ' ', r['label']).strip()[:80]
-            base  = {
-                "seccion": sec[:80],
-                "tabla":   f"Tabla {i_tabla}",
-                "linea":   label,
-                "columna": col_nombre,
-                "impreso": r['printed'],
-                "calc":    calc,
-                "dif":     dif,
-                "metodo":  r.get('metodo', ''),
+            rec = {
+                'n_tabla':  i_tabla,
+                'seccion':  sec[:80],
+                'tabla_idx': 0,
+                'fila':     label,
+                'columna':  col_nombre,
+                'impreso':  r['printed'],
+                'calc':     calc,
+                'dif':      dif,
+                'metodo':   r.get('metodo', ''),
             }
             if dif == 0:
                 nok += 1
-                ok.append(base)
+                rows_ok.append(rec)
             elif dif is not None:
-                ndif += 1
-                localizado = (r['col'] not in cols_ok_total
-                              and bool(cols_ok_total)
+                nz += 1
+                localizado = (r['col'] not in fully_ok_cols
+                              and bool(fully_ok_cols)
                               and r['printed'] != 0)
-                rec = {**base,
-                       "localizado": localizado,
-                       "causa": causa(label, dif, localizado, calc, tipo)}
-                revisar.append(rec)
-                if localizado or abs(dif) <= UMBRAL:
-                    hallazgos.append(rec)
+                rec['localizado'] = localizado
+                rec['causa'] = causa_probable(label, dif, localizado, calc, tipo)
+                rows_chk.append(rec)
 
-        indice.append({
-            "seccion": sec[:80], "tabla": f"Tabla {i_tabla}",
-            "tipo": tipo, "n_cols": len(cols),
-            "n_sumas": len(checks), "ok": nok, "dif": ndif,
+        tablas.append({
+            'n_tabla': i_tabla,
+            'seccion': sec[:80],
+            'tabla_idx': 0,
+            'n_cols':  len(cols),
+            'n_sumas': len(checks),
+            'ok':      nok,
+            'dif':     nz,
         })
 
-    return {"ok": ok, "hallazgos": hallazgos, "revisar": revisar, "indice": indice}
+    # Post-proceso: diferencias que se compensan entre columnas de la misma fila
+    # (matrices de segmento: col_A diff = +X, col_B diff = -X => error real de desglose)
+    grp = defaultdict(list)
+    for rec in rows_chk:
+        grp[(rec['n_tabla'], rec['fila'])].append(rec)
+    for key, recs in grp.items():
+        if (len(recs) >= 2
+                and sum(r['dif'] for r in recs) == 0
+                and all(r['dif'] != 0 for r in recs)):
+            for r in recs:
+                r['localizado'] = True
+                r['causa'] = ('Columnas de segmento NO cuadran (el consolidado si): '
+                              'el desglose difiere en +-igual monto que se compensa — REVISAR')
+
+    # Hallazgos = revisar con diferencia pequena o localizada
+    hallazgos = [r for r in rows_chk
+                 if r.get('localizado') or abs(r['dif']) <= UMBRAL]
+
+    return {
+        'ok':        rows_ok,
+        'hallazgos': hallazgos,
+        'revisar':   rows_chk,
+        'indice':    tablas,
+    }
 
 # ---------------------------------------------------------------------------
 # Escribir las 4 sub-hojas en Workiva
 # ---------------------------------------------------------------------------
-HDR_HALL = ["Sociedad", "Seccion", "Tabla", "Fila (total/subtotal)", "Columna",
-            "Impreso", "Calculado", "Diferencia", "Metodo", "Causa", "Localizado"]
-HDR_OK   = ["Sociedad", "Seccion", "Tabla", "Fila (total/subtotal)", "Columna", "Valor impreso", "Metodo"]
-HDR_IDX  = ["Sociedad", "Seccion", "Tabla", "Tipo", "Cols monto", "Sumas verificadas", "Cuadran", "Con diferencia"]
+# Cabeceras identicas al xlsx de referencia (verificar_sumas.py output),
+# con "Sociedad" como primera columna para identificar la empresa.
+HDR_HALL = ["Sociedad", "N tabla", "Cuadro / Nota", "Tabla",
+            "Fila", "Columna", "Impreso", "Calculado", "Diferencia",
+            "Regla", "Causa probable"]
+HDR_OK   = ["Sociedad", "N tabla", "Cuadro / Nota", "Tabla",
+            "Fila (subtotal/total)", "Columna", "Valor impreso", "Regla"]
+HDR_IDX  = ["Sociedad", "N tabla", "Cuadro / Nota", "Tabla",
+            "Cols. monto", "Sumas", "Cuadran", "A revisar"]
 
 NOMBRE_HOJAS = {
-    "hallazgos":  "Hallazgos",
-    "revisar":    "Revisar_manual",
-    "ok":         "Verificadas_OK",
-    "indice":     "Indice_cuadros",
+    "hallazgos": "Hallazgos",
+    "revisar":   "Revisar_manual",
+    "ok":        "Verificadas_OK",
+    "indice":    "Indice_cuadros",
 }
 
 def _escribir_hoja(ss_id, nombre_hoja, encabezados, filas):
     sheet_id, es_nueva = obtener_o_crear_hoja(ss_id, nombre_hoja)
     if es_nueva:
         n = len(encabezados)
-        put_range(ss_id, sheet_id, f"A1:{chr(64+n)}1", [encabezados])
+        put_range(ss_id, sheet_id, f"A1:{chr(64 + n)}1", [encabezados])
     if filas:
         n = len(encabezados)
         primera = max(contar_filas(ss_id, sheet_id) + 1, 2)
-        put_range(ss_id, sheet_id, f"A{primera}:{chr(64+n)}{primera+len(filas)-1}", filas)
+        ultima  = primera + len(filas) - 1
+        put_range(ss_id, sheet_id, f"A{primera}:{chr(64 + n)}{ultima}", filas)
 
 def escribir_4_hojas(ss_id, codigo, resultado):
-    filas_h = [[codigo, r["seccion"], r["tabla"], r["linea"], r["columna"],
-                r["impreso"], r["calc"], r["dif"], r["metodo"], r["causa"],
-                "Si" if r["localizado"] else "No"]
-               for r in resultado["hallazgos"]]
+    # Hallazgos (diferencias pequenas + localizadas)
+    filas_h = [
+        [codigo, r['n_tabla'], r['seccion'], r['tabla_idx'],
+         r['fila'], r['columna'], r['impreso'], r['calc'], r['dif'],
+         r['metodo'], r['causa']]
+        for r in resultado['hallazgos']
+    ]
     _escribir_hoja(ss_id, NOMBRE_HOJAS["hallazgos"], HDR_HALL, filas_h)
 
-    filas_r = [[codigo, r["seccion"], r["tabla"], r["linea"], r["columna"],
-                r["impreso"], r["calc"], r["dif"], r["metodo"], r["causa"],
-                "Si" if r["localizado"] else "No"]
-               for r in resultado["revisar"]]
+    # Revisar_manual (todas las diferencias)
+    filas_r = [
+        [codigo, r['n_tabla'], r['seccion'], r['tabla_idx'],
+         r['fila'], r['columna'], r['impreso'], r['calc'], r['dif'],
+         r['metodo'], r['causa']]
+        for r in resultado['revisar']
+    ]
     _escribir_hoja(ss_id, NOMBRE_HOJAS["revisar"], HDR_HALL, filas_r)
 
-    filas_ok = [[codigo, r["seccion"], r["tabla"], r["linea"], r["columna"],
-                 r["impreso"], r["metodo"]]
-                for r in resultado["ok"]]
+    # Verificadas_OK
+    filas_ok = [
+        [codigo, r['n_tabla'], r['seccion'], r['tabla_idx'],
+         r['fila'], r['columna'], r['impreso'], r['metodo']]
+        for r in resultado['ok']
+    ]
     _escribir_hoja(ss_id, NOMBRE_HOJAS["ok"], HDR_OK, filas_ok)
 
-    filas_i = [[codigo, r["seccion"], r["tabla"], r["tipo"],
-                r["n_cols"], r["n_sumas"], r["ok"], r["dif"]]
-               for r in resultado["indice"]]
+    # Indice_cuadros
+    filas_i = [
+        [codigo, t['n_tabla'], t['seccion'], t['tabla_idx'],
+         t['n_cols'], t['n_sumas'], t['ok'], t['dif']]
+        for t in resultado['indice']
+    ]
     _escribir_hoja(ss_id, NOMBRE_HOJAS["indice"], HDR_IDX, filas_i)
 
 # ---------------------------------------------------------------------------
@@ -748,12 +876,12 @@ def main():
         mes = MESES.get(mes_raw.lower())
 
     anio = ask("  Ano (ej: 2026)")
-    while not __import__('re').fullmatch(r"\d{4}", anio):
+    while not re.fullmatch(r"\d{4}", anio):
         print("  Ano invalido.")
         anio = ask("  Ano")
 
     print("\n  IDIOMA\n")
-    idioma = ask("  Idioma", opts=["ESP","ENG","AMBOS"], default="AMBOS")
+    idioma = ask("  Idioma", opts=["ESP", "ENG", "AMBOS"], default="AMBOS")
 
     print(f"\n  Conectando a Workiva [{mes}-{anio} / {idioma}]...\n")
     docs = buscar_documentos(mes, anio, idioma)
@@ -782,34 +910,34 @@ def main():
 
     for i, doc in enumerate(seleccionados, 1):
         m = re.match(r"^([A-Z]\d+)", doc["nombre"].strip())
-        nombre_hoja = m.group(1) if m else doc["nombre"][:20]
+        codigo = m.group(1) if m else doc["nombre"][:20]
 
         print(f"\n  [{i}/{len(seleccionados)}] {doc['nombre']}")
-        print(f"    Hoja destino : '{nombre_hoja}'")
-        print("    Exportando   ...", end=" ", flush=True)
+        print(f"    Codigo sociedad: '{codigo}'")
+        print("    Exportando  ...", end=" ", flush=True)
         try:
             ruta = exportar_docx(doc)
-            print(f"OK ({ruta.stat().st_size//1024} KB)")
+            print(f"OK ({ruta.stat().st_size // 1024} KB)")
         except Exception as e:
             print(f"ERROR: {e}")
             continue
 
-        print("    Verificando  ...", end=" ", flush=True)
+        print("    Verificando ...", end=" ", flush=True)
         try:
             resultado = verificar_docx(ruta)
         except Exception as e:
             print(f"ERROR al leer: {e}")
             continue
 
-        n_rev = len(resultado["revisar"])
-        n_ok  = len(resultado["ok"])
-        n_hall= len(resultado["hallazgos"])
+        n_rev  = len(resultado["revisar"])
+        n_ok   = len(resultado["ok"])
+        n_hall = len(resultado["hallazgos"])
         total_hall += n_hall
         print(f"OK:{n_ok}  Revisar:{n_rev}  Hallazgos:{n_hall}")
 
-        print("    Escribiendo 4 hojas ...", end=" ", flush=True)
+        print("    Escribiendo hojas ...", end=" ", flush=True)
         try:
-            escribir_4_hojas(ss_id, nombre_hoja, resultado)
+            escribir_4_hojas(ss_id, codigo, resultado)
             print("OK")
         except Exception as e:
             print(f"ERROR: {e}")
@@ -819,7 +947,7 @@ def main():
     print(f"  Documentos procesados : {len(seleccionados)}")
     print(f"  Hallazgos prioritarios: {total_hall}")
     print(f"\n  Workiva -> '{SS_VERIF_NAME}'")
-    print(f"  Por cada sociedad: [cod] Hallazgos / Revisar_manual / Verificadas_OK / Indice_cuadros")
+    print(f"  Hojas: Hallazgos / Revisar_manual / Verificadas_OK / Indice_cuadros")
     hr("=")
     input("\n  Presiona Enter para salir...")
 
