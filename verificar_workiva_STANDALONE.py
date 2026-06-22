@@ -833,6 +833,9 @@ def _escribir_hoja(ss_id, nombre_hoja, encabezados, filas):
         put_range(ss_id, sheet_id, f"A{primera}:{chr(64 + n)}{ultima}", filas)
 
 def escribir_4_hojas(ss_id, codigo, resultado):
+    def nombre(clave):
+        return f"{codigo}.- {NOMBRE_HOJAS[clave]}"
+
     # Hallazgos (diferencias pequenas + localizadas)
     filas_h = [
         [codigo, r['n_tabla'], r['seccion'], r['tabla_idx'],
@@ -840,7 +843,7 @@ def escribir_4_hojas(ss_id, codigo, resultado):
          r['metodo'], r['causa']]
         for r in resultado['hallazgos']
     ]
-    _escribir_hoja(ss_id, NOMBRE_HOJAS["hallazgos"], HDR_HALL, filas_h)
+    _escribir_hoja(ss_id, nombre("hallazgos"), HDR_HALL, filas_h)
 
     # Revisar_manual (todas las diferencias)
     filas_r = [
@@ -849,7 +852,7 @@ def escribir_4_hojas(ss_id, codigo, resultado):
          r['metodo'], r['causa']]
         for r in resultado['revisar']
     ]
-    _escribir_hoja(ss_id, NOMBRE_HOJAS["revisar"], HDR_HALL, filas_r)
+    _escribir_hoja(ss_id, nombre("revisar"), HDR_HALL, filas_r)
 
     # Verificadas_OK
     filas_ok = [
@@ -857,7 +860,7 @@ def escribir_4_hojas(ss_id, codigo, resultado):
          r['fila'], r['columna'], r['impreso'], r['metodo']]
         for r in resultado['ok']
     ]
-    _escribir_hoja(ss_id, NOMBRE_HOJAS["ok"], HDR_OK, filas_ok)
+    _escribir_hoja(ss_id, nombre("ok"), HDR_OK, filas_ok)
 
     # Indice_cuadros
     filas_i = [
@@ -865,7 +868,7 @@ def escribir_4_hojas(ss_id, codigo, resultado):
          t['n_cols'], t['n_sumas'], t['ok'], t['dif']]
         for t in resultado['indice']
     ]
-    _escribir_hoja(ss_id, NOMBRE_HOJAS["indice"], HDR_IDX, filas_i)
+    _escribir_hoja(ss_id, nombre("indice"), HDR_IDX, filas_i)
 
 # ---------------------------------------------------------------------------
 # UI helpers
