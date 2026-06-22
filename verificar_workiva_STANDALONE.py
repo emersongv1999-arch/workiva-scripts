@@ -776,6 +776,32 @@ def verificar_docx(ruta):
     }
 
 # ---------------------------------------------------------------------------
+# Escribir resumen en la hoja propia de la sociedad (ej. "E514")
+# ---------------------------------------------------------------------------
+def escribir_resumen(ss_id, codigo, nombre_doc, resultado):
+    """Escribe un bloque de resumen en la hoja de la sociedad (nombre = codigo).
+    Nunca toca la fila 1 (encabezados del usuario). Siempre escribe desde fila 2
+    o desde la primera fila libre si ya hay datos previos."""
+    sheet_id, _ = obtener_o_crear_hoja(ss_id, codigo)
+    primera = max(contar_filas(ss_id, sheet_id) + 1, 2)
+
+    n_ok    = len(resultado['ok'])
+    n_hall  = len(resultado['hallazgos'])
+    n_rev   = len(resultado['revisar'])
+    n_cuad  = len(resultado['indice'])
+
+    filas = [
+        [f"Documento: {nombre_doc}"],
+        [f"Sumas verificadas que cuadran exacto: {n_ok}"],
+        [f"Hallazgos prioritarios (dif. pequena o localizada): {n_hall}"],
+        [f"A revisar manualmente: {n_rev}"],
+        [f"Cuadros con sumas detectados: {n_cuad}"],
+        [""],   # fila separadora
+    ]
+    ultima = primera + len(filas) - 1
+    put_range(ss_id, sheet_id, f"A{primera}:A{ultima}", filas)
+
+# ---------------------------------------------------------------------------
 # Escribir las 4 sub-hojas en Workiva
 # ---------------------------------------------------------------------------
 # Cabeceras identicas al xlsx de referencia (verificar_sumas.py output),
@@ -935,7 +961,14 @@ def main():
         total_hall += n_hall
         print(f"OK:{n_ok}  Revisar:{n_rev}  Hallazgos:{n_hall}")
 
-        print("    Escribiendo hojas ...", end=" ", flush=True)
+        print("    Escribiendo resumen ...", end=" ", flush=True)
+        try:
+            escribir_resumen(ss_id, codigo, doc["nombre"], resultado)
+            print("OK")
+        except Exception as e:
+            print(f"ERROR: {e}")
+
+        print("    Escribiendo subhojas ...", end=" ", flush=True)
         try:
             escribir_4_hojas(ss_id, codigo, resultado)
             print("OK")
