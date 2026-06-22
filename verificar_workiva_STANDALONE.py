@@ -491,22 +491,17 @@ def main():
         input("\n  Enter para salir...")
         return
 
-    nombre_hoja = f"{NOMBRE_MES[mes]} {anio}"
-    print(f"  Hoja destino: '{nombre_hoja}'")
-    sheet_id = obtener_o_crear_hoja(ss_id, nombre_hoja)
-
-    if not hoja_tiene_datos(ss_id, sheet_id):
-        put_range(ss_id, sheet_id, "A1:H1", [[
-            "Documento","Estado Financiero","Descripcion Total",
-            "Periodo","Declarado (M$)","Calculado (M$)","Diferencia (M$)","Estado"
-        ]])
-
     DOCX_DIR.mkdir(exist_ok=True)
     hr()
     total_ok = total_err = 0
 
     for i, doc in enumerate(seleccionados, 1):
+        # Extraer codigo de sociedad del nombre del documento (ej: "E514 (ESP) - ...")
+        m = re.match(r"^([A-Z]\d+)", doc["nombre"].strip())
+        nombre_hoja = m.group(1) if m else doc["nombre"][:20]
+
         print(f"\n  [{i}/{len(seleccionados)}] {doc['nombre']}")
+        print(f"    Hoja destino: '{nombre_hoja}'")
         print("    Exportando .docx...", end=" ", flush=True)
         try:
             ruta = exportar_docx(doc)
@@ -528,6 +523,12 @@ def main():
 
         print("    Escribiendo en Workiva...", end=" ", flush=True)
         try:
+            sheet_id = obtener_o_crear_hoja(ss_id, nombre_hoja)
+            if not hoja_tiene_datos(ss_id, sheet_id):
+                put_range(ss_id, sheet_id, "A1:H1", [[
+                    "Documento","Estado Financiero","Descripcion Total",
+                    "Periodo","Declarado (M$)","Calculado (M$)","Diferencia (M$)","Estado"
+                ]])
             escribir_resultados(ss_id, sheet_id, doc["nombre"], resultados)
             print("OK")
         except Exception as e:
@@ -538,7 +539,7 @@ def main():
     print(f"  Documentos  : {len(seleccionados)}")
     print(f"  OK          : {total_ok}")
     print(f"  REVISAR     : {total_err}")
-    print(f"\n  Resultados en Workiva -> '{SS_VERIF_NAME}' -> hoja '{nombre_hoja}'")
+    print(f"\n  Resultados en Workiva -> '{SS_VERIF_NAME}' -> hoja por sociedad")
     hr("=")
     input("\n  Presiona Enter para salir...")
 
