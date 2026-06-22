@@ -446,31 +446,37 @@ def es_fila_total(celdas):
     primera = celdas[0].lower().strip() if celdas else ""
     return any(kw in primera for kw in TOTAL_KEYWORDS)
 
+def es_titulo_seccion(texto):
+    """Párrafo que parece título de sección, no solo una fecha o línea corta."""
+    if len(texto) < 10:
+        return False
+    # Excluir frases que son solo fechas o "Movimiento al..."
+    if re.match(r"^Movimiento al\b", texto, re.IGNORECASE):
+        return False
+    if re.match(r"^\d{2}-\d{2}-\d{4}", texto):
+        return False
+    return True
+
 def verificar_tablas(ruta):
     """
-    Retorna lista de dicts: hoja, descripcion, actual, anterior, ok, diff_actual, diff_anterior
-    'hoja' es el párrafo anterior a la tabla en el Word (título real de la sección).
-    Verifica suma de filas visibles vs declarado en fila total.
-    Ignora filas de saldo inicial/final (no las acumula).
+    Verifica sumas en TODAS las columnas numéricas de cada tabla.
+    'hoja' = título de sección real (no fechas).
+    Detalle indica qué columnas tienen diferencia.
     """
     resultados = []
     elementos = extraer_cuerpo_docx(ruta)
     hoja_actual = ""
-    ultimo_parrafo = ""
 
     for elem in elementos:
         if elem["tipo"] == "parrafo":
-            ultimo_parrafo = elem["texto"]
+            texto = elem["texto"]
+            if es_titulo_seccion(texto):
+                hoja_actual = texto
             continue
 
-        # Es una tabla
         filas = elem["filas"]
         if not filas:
             continue
-
-        # El título de la sección es el último párrafo relevante antes de la tabla
-        if ultimo_parrafo:
-            hoja_actual = ultimo_parrafo
 
         num_cols = max(len(f) for f in filas)
         acum  = [0.0] * num_cols
@@ -481,27 +487,31 @@ def verificar_tablas(ruta):
                 fila.append("")
 
             if es_fila_reset(fila):
-                # Saldo inicial/final: reinicia acumuladores sin generar check
                 acum  = [0.0] * num_cols
                 tiene = [False] * num_cols
             elif es_fila_total(fila):
-                dec1 = limpiar_numero(fila[1]) if num_cols > 1 else None
-                dec2 = limpiar_numero(fila[2]) if num_cols > 2 else None
+                # Verificar TODAS las columnas numéricas
+                diffs = {}
+                for col in range(1, num_cols):
+                    dec = limpiar_numero(fila[col])
+                    if dec is not None and tiene[col]:
+                        d = round(dec - acum[col], 0)
+                        if abs(d) >= 2:
+                            diffs[col] = d
 
-                diff1 = round(dec1 - acum[1], 0) if (dec1 is not None and tiene[1]) else None
-                diff2 = round(dec2 - acum[2], 0) if (dec2 is not None and tiene[2]) else None
-                ok1 = diff1 is None or abs(diff1) < 2
-                ok2 = diff2 is None or abs(diff2) < 2
-
-                if dec1 is not None or dec2 is not None:
+                hay_numeros = any(limpiar_numero(fila[c]) is not None for c in range(1, num_cols))
+                if hay_numeros:
+                    # Actual = col 1, Anterior = col 2 (para tablas de 2 periodos)
+                    dec1 = limpiar_numero(fila[1]) if num_cols > 1 else None
+                    dec2 = limpiar_numero(fila[2]) if num_cols > 2 else None
+                    detalle_cols = " | ".join(f"Col{c} diff={d:+.0f}" for c, d in sorted(diffs.items()))
                     resultados.append({
-                        "hoja":          hoja_actual[:80],
-                        "descripcion":   fila[0][:80],
-                        "actual":        dec1,
-                        "anterior":      dec2,
-                        "diff_actual":   diff1,
-                        "diff_anterior": diff2,
-                        "ok":            ok1 and ok2,
+                        "hoja":        hoja_actual[:80],
+                        "descripcion": fila[0][:80],
+                        "actual":      dec1,
+                        "anterior":    dec2,
+                        "ok":          len(diffs) == 0,
+                        "detalle":     detalle_cols,
                     })
                 acum  = [0.0] * num_cols
                 tiene = [False] * num_cols
@@ -522,24 +532,13 @@ def escribir_resultados(ss_id, sheet_id, resultados):
     if not solo_revisar: return
     rows = []
     for r in solo_revisar:
-        if r["ok"]:
-            detalle = ""
-        else:
-            partes = []
-            if r.get("diff_actual") is not None and abs(r["diff_actual"]) >= 2:
-                partes.append(f"Actual diff={r['diff_actual']:+.0f}")
-            if r.get("diff_anterior") is not None and abs(r["diff_anterior"]) >= 2:
-                partes.append(f"Anterior diff={r['diff_anterior']:+.0f}")
-            if not partes:
-                partes = ["diferencia detectada"]
-            detalle = " | ".join(partes)
         rows.append([
             r["hoja"],
             r["descripcion"],
             r["actual"]   if r["actual"]   is not None else "",
             r["anterior"] if r["anterior"] is not None else "",
-            "OK" if r["ok"] else "REVISAR",
-            detalle,
+            "REVISAR",
+            r.get("detalle", ""),
         ])
     # Siempre respetar fila 1 (encabezados del usuario): minimo fila 2
     primera = max(contar_filas(ss_id, sheet_id) + 1, 2)
