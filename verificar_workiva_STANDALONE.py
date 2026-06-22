@@ -39,25 +39,10 @@ TOTAL_KEYWORDS = [
     "resultado integral","total flujos","total cambios","total","subtotal",
 ]
 
-# SSL sin verificacion (red corporativa con inspeccion SSL)
-CTX = ssl._create_unverified_context()
+# SSL sin verificacion (red corporativa)
+CTX = ssl.create_default_context()
 CTX.check_hostname = False
 CTX.verify_mode = ssl.CERT_NONE
-try:
-    CTX.set_ciphers("DEFAULT:@SECLEVEL=0")
-except Exception:
-    pass
-try:
-    CTX.minimum_version = ssl.TLSVersion.TLSv1
-except Exception:
-    pass
-
-# Instalar handler que usa proxy del sistema Windows automaticamente
-_proxy_opener = urllib.request.build_opener(
-    urllib.request.ProxyHandler(),          # hereda proxies del sistema
-    urllib.request.HTTPSHandler(context=CTX),
-)
-urllib.request.install_opener(_proxy_opener)
 
 # ---------------------------------------------------------------------------
 # HTTP helpers (sin requests)
