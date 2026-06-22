@@ -574,7 +574,16 @@ def verify(rows, cols):
                         subs = []
                 elif KW_FLAG.search(lab) and best is not None:
                     bd = difs[best]
-                    if P == 0 and abs(bd) > 1000:
+                    # E_acum_total con acumulador en 0: no habia detalle sumable
+                    # (o fue reseteado antes). No es un error real -> linea.
+                    if best == 'E_acum_total' and cum == 0:
+                        res.append({'col': j, 'label': lab, 'printed': P,
+                                    'dif': None, 'clase': 'linea'})
+                    # C_subtotales sin subtotales acumulados: misma situacion
+                    elif best == 'C_subtotales' and not subs:
+                        res.append({'col': j, 'label': lab, 'printed': P,
+                                    'dif': None, 'clase': 'linea'})
+                    elif P == 0 and abs(bd) > 1000:
                         res.append({'col': j, 'label': lab, 'printed': P,
                                     'dif': None, 'clase': 'linea'})
                     elif P != 0 and abs(bd) > abs(P):
