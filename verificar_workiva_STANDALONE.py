@@ -49,15 +49,27 @@ CTX.verify_mode = ssl.CERT_NONE
 # ---------------------------------------------------------------------------
 def http(method, url, headers=None, body=None, timeout=60):
     data = json.dumps(body).encode() if body is not None else None
-    h = {"Content-Type": "application/json", **(headers or {})}
+    h = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Python/3.13",
+        **(headers or {}),
+    }
     req = urllib.request.Request(url, data=data, headers=h, method=method)
-    try:
-        with urllib.request.urlopen(req, context=CTX, timeout=timeout) as resp:
-            raw = resp.read()
-            return resp.status, json.loads(raw) if raw else {}
-    except urllib.error.HTTPError as e:
-        raw = e.read()
-        return e.code, json.loads(raw) if raw else {}
+    last_err = None
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, context=CTX, timeout=timeout) as resp:
+                raw = resp.read()
+                return resp.status, json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as e:
+            raw = e.read()
+            return e.code, json.loads(raw) if raw else {}
+        except Exception as e:
+            last_err = e
+            wait = 2 ** attempt
+            print(f"\n    [reintento {attempt+1}/3 en {wait}s...]", end=" ", flush=True)
+            time.sleep(wait)
+    raise last_err
 
 def http_bytes(url, headers=None, timeout=120):
     req = urllib.request.Request(url, headers=headers or {})
@@ -245,18 +257,32 @@ def buscar_documentos(mes, anio, idioma):
 # ---------------------------------------------------------------------------
 # Workiva: spreadsheet verificacion
 # ---------------------------------------------------------------------------
+SS_CACHE = Path(__file__).parent / ".ss_verif_id"
+
 def buscar_spreadsheet_verif():
-    print("  Buscando spreadsheet...", end=" ", flush=True)
+    # Usar ID cacheado si existe (evita paginar 2745 spreadsheets cada vez)
+    if SS_CACHE.exists():
+        cached = SS_CACHE.read_text().strip()
+        if cached:
+            print(f"  Spreadsheet (cache): {cached}")
+            return cached
+
+    print("  Buscando spreadsheet (puede tardar)...", end=" ", flush=True)
     url = "/platform/v1/spreadsheets?$top=100"
     while url:
-        data = api_get(url) if url.startswith("/") else http("GET", url, headers={
-            "Authorization": f"Bearer {get_token()}",
-            "X-Version": "2022-01-01",
-        })[1]
+        if url.startswith("/"):
+            data = api_get(url)
+        else:
+            _, data = http("GET", url, headers={
+                "Authorization": f"Bearer {get_token()}",
+                "X-Version": "2022-01-01",
+            })
         for ss in data.get("value", data.get("data", [])):
             if SS_VERIF_NAME in ss.get("name","").lower():
-                print(f"encontrado: '{ss['name']}'")
-                return ss["id"]
+                sid = ss["id"]
+                print(f"encontrado: '{ss['name']}' [{sid}]")
+                SS_CACHE.write_text(sid)
+                return sid
         url = data.get("@nextLink") or data.get("nextLink","") or None
     print("NO encontrado.")
     return None
