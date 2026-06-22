@@ -1,9 +1,12 @@
 # verificar_workiva_STANDALONE.py
 # NO necesita instalar ninguna libreria. Solo Python puro (stdlib).
+# Verifica sumas en tablas de archivos Word (.docx) descargados desde Workiva
+# y escribe los hallazgos directamente en la spreadsheet "verificacion de sumas".
 
-import io, json, os, re, ssl, sys, time, urllib.request, urllib.error, zipfile
+import json, re, ssl, time, urllib.request, urllib.error, zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from collections import defaultdict
 
 # ---------------------------------------------------------------------------
 # CREDENCIALES
@@ -17,6 +20,7 @@ WDESK_BASE = "https://api.app.wdesk.com"
 
 SS_VERIF_NAME = "verificación de sumas"
 DOCX_DIR      = Path("docx_tmp_verif")
+SS_CACHE      = Path(__file__).parent / ".ss_verif_id"
 
 MESES = {
     "1":"01","01":"01","enero":"01","2":"02","02":"02","febrero":"02",
@@ -31,33 +35,16 @@ NOMBRE_MES = {
     "06":"Junio","07":"Julio","08":"Agosto","09":"Septiembre",
     "10":"Octubre","11":"Noviembre","12":"Diciembre",
 }
-TOTAL_KEYWORDS = [
-    "total activos corrientes",
-    "total activos no corrientes",
-    "total activos",
-    "total pasivos corrientes",
-    "total pasivos no corrientes",
-    "total pasivos",
-    "total patrimonio",
-    "total pasivos y patrimonio",
-    "total patrimonio y pasivos",
-    "ganancia bruta",
-    "ganancia (pérdida)",
-    "resultado del periodo",
-    "resultado integral del periodo",
-    "resultado integral",
-    "total flujos",
-    "total cambios",
-    "subtotal",
-]
-
-# SSL sin verificacion (red corporativa)
-CTX = ssl.create_default_context()
-CTX.check_hostname = False
-CTX.verify_mode = ssl.CERT_NONE
 
 # ---------------------------------------------------------------------------
-# HTTP helpers (sin requests)
+# SSL (red corporativa)
+# ---------------------------------------------------------------------------
+CTX = ssl.create_default_context()
+CTX.check_hostname = False
+CTX.verify_mode    = ssl.CERT_NONE
+
+# ---------------------------------------------------------------------------
+# HTTP helpers
 # ---------------------------------------------------------------------------
 def http(method, url, headers=None, body=None, timeout=60):
     data = json.dumps(body).encode() if body is not None else None
@@ -78,18 +65,24 @@ def http(method, url, headers=None, body=None, timeout=60):
             return e.code, json.loads(raw) if raw else {}
         except Exception as e:
             last_err = e
-            wait = 2 ** attempt
-            print(f"\n    [reintento {attempt+1}/3 en {wait}s...]", end=" ", flush=True)
-            time.sleep(wait)
+            time.sleep(2 ** attempt)
     raise last_err
 
 def http_bytes(url, headers=None, timeout=120):
-    req = urllib.request.Request(url, headers=headers or {})
-    with urllib.request.urlopen(req, context=CTX, timeout=timeout) as resp:
-        return resp.read()
+    req = urllib.request.Request(url, headers=headers or {},
+        method="GET")
+    last_err = None
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, context=CTX, timeout=timeout) as resp:
+                return resp.read()
+        except Exception as e:
+            last_err = e
+            time.sleep(2 ** attempt)
+    raise last_err
 
 # ---------------------------------------------------------------------------
-# Autenticacion Workiva
+# Auth
 # ---------------------------------------------------------------------------
 _token = None
 _token_expiry = 0
@@ -99,8 +92,8 @@ def get_token():
     if _token and time.time() < _token_expiry:
         return _token
     status, data = http("POST", TOKEN_URL, body={
-        "grant_type": "client_credentials",
-        "client_id": CLIENT_ID,
+        "grant_type":    "client_credentials",
+        "client_id":     CLIENT_ID,
         "client_secret": CLIENT_SECRET,
     })
     if status != 200:
@@ -110,7 +103,7 @@ def get_token():
     return _token
 
 def api_get(path, params=""):
-    url = f"{WDESK_BASE}{path}{params}"
+    url = f"{WDESK_BASE}{path}{params}" if path.startswith("/") else path
     token = get_token()
     status, data = http("GET", url, headers={
         "Authorization": f"Bearer {token}",
@@ -137,16 +130,12 @@ def api_post(path, body):
         )
         try:
             with urllib.request.urlopen(req, context=CTX, timeout=60) as resp:
-                location = resp.getheader("Location","")
-                return resp.status, {}, location
+                return resp.status, {}, resp.getheader("Location", "")
         except urllib.error.HTTPError as e:
-            location = e.headers.get("Location","")
-            raw = e.read()
-            return e.code, json.loads(raw) if raw else {}, location
+            return e.code, json.loads(e.read() or b"{}"), e.headers.get("Location", "")
         except Exception as e:
             last_err = e
-            wait = 2 ** attempt
-            time.sleep(wait)
+            time.sleep(2 ** attempt)
     raise last_err
 
 def api_put(path, body):
@@ -166,16 +155,12 @@ def api_put(path, body):
         )
         try:
             with urllib.request.urlopen(req, context=CTX, timeout=90) as resp:
-                location = resp.getheader("Location","")
-                return resp.status, {}, location
+                return resp.status, {}, resp.getheader("Location", "")
         except urllib.error.HTTPError as e:
-            location = e.headers.get("Location","")
-            raw = e.read()
-            return e.code, json.loads(raw) if raw else {}, location
+            return e.code, json.loads(e.read() or b"{}"), e.headers.get("Location", "")
         except Exception as e:
             last_err = e
-            wait = 2 ** attempt
-            time.sleep(wait)
+            time.sleep(2 ** attempt)
     raise last_err
 
 def poll_operation(location, max_tries=40, wait=3):
@@ -186,115 +171,59 @@ def poll_operation(location, max_tries=40, wait=3):
             "Authorization": f"Bearer {token}",
             "X-Version": "2022-01-01",
         })
-        if data.get("status") == "completed":
+        s = data.get("status", "")
+        if s == "completed":
             return data
-        if "fail" in data.get("status","").lower() or "error" in data.get("status","").lower():
+        if "fail" in s or "error" in s:
             raise RuntimeError(f"Operacion fallida: {data}")
     raise RuntimeError("Timeout esperando operacion")
-
-def paginar(path):
-    results = []
-    url_suffix = path
-    while url_suffix:
-        data = api_get(url_suffix) if url_suffix.startswith("/") else http("GET", url_suffix, headers={
-            "Authorization": f"Bearer {get_token()}",
-            "X-Version": "2022-01-01",
-        })[1]
-        items = data.get("value", data.get("data", []))
-        results.extend(items)
-        next_url = data.get("@nextLink") or data.get("nextLink")
-        url_suffix = next_url if next_url and not next_url.startswith("/") else None
-        if next_url and next_url.startswith("/"):
-            url_suffix = next_url
-        if not next_url:
-            break
-    return results
-
-# ---------------------------------------------------------------------------
-# Consola helpers
-# ---------------------------------------------------------------------------
-def hr(c="─", n=64): print(c * n)
-
-def ask(prompt, opts=None, default=None):
-    while True:
-        suffix = f" [{'/'.join(opts)}]" if opts else ""
-        suffix += f" (Enter={default})" if default else ""
-        val = input(f"{prompt}{suffix}: ").strip()
-        if not val and default:
-            return default
-        if opts:
-            if val.upper() in [o.upper() for o in opts]:
-                return val.upper()
-            print(f"  Elige: {', '.join(opts)}")
-        elif val:
-            return val
-        else:
-            print("  No puede estar vacio.")
-
-def seleccionar_docs(docs):
-    hr()
-    print(f"  {len(docs)} documento(s) encontrado(s):\n")
-    for i, d in enumerate(docs, 1):
-        print(f"  {i:>2}. {d['nombre']}")
-    hr()
-    print()
-    resp = input("  Seleccionar todos? [TODOS / NINGUNO / uno por uno]: ").strip().upper()
-    if resp == "TODOS":
-        print("  Todos seleccionados.")
-        return list(docs)
-    if resp == "NINGUNO":
-        return []
-    sel = []
-    print()
-    for i, d in enumerate(docs, 1):
-        r = ask(f"  {i:>2}. {d['nombre']}", opts=["S","N"])
-        if r == "S":
-            sel.append(d)
-    return sel
 
 # ---------------------------------------------------------------------------
 # Workiva: buscar documentos
 # ---------------------------------------------------------------------------
 def buscar_documentos(mes, anio, idioma):
     print("  Descargando catalogo...", end=" ", flush=True)
-    todos = []
-    url = "/platform/v1/documents?$top=100"
+    patron = f"EE.FF {mes}-{anio}"
+    docs = []
+    url = f"/platform/v1/documents?$top=100"
     while url:
-        data = api_get(url) if url.startswith("/") else http("GET", url, headers={
-            "Authorization": f"Bearer {get_token()}",
-            "X-Version": "2022-01-01",
-        })[1]
-        items = data.get("value", data.get("data", []))
-        todos.extend(items)
-        nxt = data.get("@nextLink") or data.get("nextLink","")
-        url = nxt if nxt else None
+        data = api_get(url)
+        for d in data.get("value", data.get("data", [])):
+            nombre = d.get("name", "")
+            if patron not in nombre:
+                continue
+            if idioma != "AMBOS":
+                if f"({idioma})" not in nombre:
+                    continue
+            docs.append({"id": d["id"], "nombre": nombre})
+        url = data.get("@nextLink") or data.get("nextLink") or None
+    docs.sort(key=lambda x: x["nombre"])
+    print(f"{len(docs)} documentos encontrados.")
+    return docs
 
-    print(f"{len(todos)} docs.")
-    def ok_idioma(n):
-        if idioma == "AMBOS": return True
-        return f"({idioma})" in n.upper()
-    resultado = [
-        {"id": d["id"], "nombre": d["name"]}
-        for d in todos
-        if any(p in d.get("name","") for p in [f"{mes}-{anio}", f"{mes}/{anio}"])
-        and ok_idioma(d.get("name",""))
-    ]
-    resultado.sort(key=lambda x: x["nombre"])
-    return resultado
+def seleccionar_docs(docs):
+    print("\n  Seleccionar todos? [TODOS / NINGUNO / uno por uno]: ", end="")
+    modo = input().strip().upper()
+    if modo == "TODOS":
+        return docs
+    if modo == "NINGUNO":
+        return []
+    sel = []
+    for i, d in enumerate(docs, 1):
+        print(f"  {i:>3}. {d['nombre']} [S/N]: ", end="")
+        if input().strip().upper() == "S":
+            sel.append(d)
+    return sel
 
 # ---------------------------------------------------------------------------
 # Workiva: spreadsheet verificacion
 # ---------------------------------------------------------------------------
-SS_CACHE = Path(__file__).parent / ".ss_verif_id"
-
 def buscar_spreadsheet_verif():
-    # Usar ID cacheado si existe (evita paginar 2745 spreadsheets cada vez)
     if SS_CACHE.exists():
         cached = SS_CACHE.read_text().strip()
         if cached:
             print(f"  Spreadsheet (cache): {cached}")
             return cached
-
     print("  Buscando spreadsheet (puede tardar)...", end=" ", flush=True)
     url = "/platform/v1/spreadsheets?$top=100"
     while url:
@@ -306,26 +235,37 @@ def buscar_spreadsheet_verif():
                 "X-Version": "2022-01-01",
             })
         for ss in data.get("value", data.get("data", [])):
-            if SS_VERIF_NAME in ss.get("name","").lower():
+            if SS_VERIF_NAME in ss.get("name", "").lower():
                 sid = ss["id"]
                 print(f"encontrado: '{ss['name']}' [{sid}]")
                 SS_CACHE.write_text(sid)
                 return sid
-        url = data.get("@nextLink") or data.get("nextLink","") or None
+        url = data.get("@nextLink") or data.get("nextLink") or None
     print("NO encontrado.")
     return None
 
 def obtener_o_crear_hoja(ss_id, nombre_hoja):
-    """Retorna (sheet_id, es_nueva). es_nueva=True solo si la creó ahora."""
     data = api_get(f"/platform/v1/spreadsheets/{ss_id}/sheets?$top=50")
     for s in data.get("value", data.get("data", [])):
-        if s.get("name","").lower() == nombre_hoja.lower():
+        if s.get("name", "").lower() == nombre_hoja.lower():
             return s["id"], False
     status, resp, _ = api_post(f"/platform/v1/spreadsheets/{ss_id}/sheets", {"name": nombre_hoja})
     if status not in (200, 201, 202):
         raise RuntimeError(f"No se pudo crear hoja: {status}")
-    sid = resp.get("id") or resp.get("data",{}).get("id")
+    sid = resp.get("id") or resp.get("data", {}).get("id")
     return sid, True
+
+def contar_filas(ss_id, sheet_id):
+    try:
+        data = api_get(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}/values/A1:A2000")
+        rows = data.get("values", [])
+        last = 0
+        for i, row in enumerate(rows, 1):
+            if row and any(str(c).strip() for c in row):
+                last = i
+        return last
+    except Exception:
+        return 0
 
 def put_range(ss_id, sheet_id, rango, values):
     status, _, location = api_put(
@@ -335,205 +275,389 @@ def put_range(ss_id, sheet_id, rango, values):
     if status == 202 and location:
         poll_operation(location, wait=2)
 
-def contar_filas(ss_id, sheet_id):
-    """Cuenta filas usadas leyendo A1:A2000 y buscando la ultima no vacia."""
-    try:
-        data = api_get(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}/values/A1:A2000")
-        rows = data.get("values", [])
-        last = 0
-        for i, row in enumerate(rows, 1):
-            if row and any(c for c in row if str(c).strip()):
-                last = i
-        return last
-    except Exception:
-        return 0
-
-def hoja_tiene_datos(ss_id, sheet_id):
-    return contar_filas(ss_id, sheet_id) > 0
-
 # ---------------------------------------------------------------------------
-# Descarga .docx desde Workiva (sin requests)
+# Exportar .docx desde Workiva
 # ---------------------------------------------------------------------------
 def exportar_docx(doc):
     nombre = re.sub(r'[\\/:*?"<>|]', "-", doc["nombre"]) + ".docx"
     ruta = DOCX_DIR / nombre
     if ruta.exists():
         return ruta
-
-    status, _, location = api_post(
-        f"/platform/v1/documents/{doc['id']}/export",
-        {"format": "docx"}
-    )
+    status, _, location = api_post(f"/platform/v1/documents/{doc['id']}/export", {"format": "docx"})
     if status != 202:
         raise RuntimeError(f"Export fallo: {status}")
-
     data = poll_operation(location, max_tries=40, wait=3)
-    download_url = data.get("resourceUrl","")
-
-    token = get_token()
-    content = http_bytes(download_url, headers={
-        "Authorization": f"Bearer {token}",
-    })
+    url  = data.get("resourceUrl", "")
+    content = http_bytes(url, headers={"Authorization": f"Bearer {get_token()}"})
     ruta.write_bytes(content)
     return ruta
 
 # ---------------------------------------------------------------------------
-# Parsear .docx con stdlib (zipfile + xml)
+# Parsear .docx: extraer cuerpo (parrafos + tablas) con deteccion de fila azul
 # ---------------------------------------------------------------------------
-NS = {
-    "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
-}
+WNS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+def _wtag(name):
+    return f"{{{WNS}}}{name}"
 
 def get_cell_text(tc):
-    texts = []
-    for t in tc.iter(f"{{{NS['w']}}}t"):
-        if t.text:
-            texts.append(t.text)
-    return "".join(texts).strip()
+    return "".join(t.text for t in tc.iter(_wtag("t")) if t.text).strip()
 
-def extraer_cuerpo_docx(ruta):
-    """
-    Retorna lista de elementos en orden del documento:
-      {'tipo': 'parrafo', 'texto': str}
-      {'tipo': 'tabla',   'filas': [[str, ...], ...]}
-    """
-    elementos = []
-    with zipfile.ZipFile(ruta) as z:
-        with z.open("word/document.xml") as f:
-            tree = ET.parse(f)
-    root = tree.getroot()
-    body = root.find(f"{{{NS['w']}}}body")
-    if body is None:
-        return elementos
-    for child in list(body):
-        tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-        if tag == "p":
-            texts = [t.text for t in child.iter(f"{{{NS['w']}}}t") if t.text]
-            texto = "".join(texts).strip()
-            if texto:
-                elementos.append({"tipo": "parrafo", "texto": texto})
-        elif tag == "tbl":
-            filas = []
-            for tr in child.findall(f"{{{NS['w']}}}tr"):
-                celdas = [get_cell_text(tc) for tc in tr.findall(f"{{{NS['w']}}}tc")]
-                filas.append(celdas)
-            if filas:
-                elementos.append({"tipo": "tabla", "filas": filas})
-    return elementos
-
-# Filas que reinician acumuladores sin generar check (balances de apertura/cierre)
-RESET_KEYWORDS = ["saldo inicial", "saldo al ", "saldo final", "saldo de apertura"]
-
-def es_fila_reset(celdas):
-    primera = celdas[0].lower().strip() if celdas else ""
-    return any(kw in primera for kw in RESET_KEYWORDS)
-
-# ---------------------------------------------------------------------------
-# Verificacion de sumas
-# ---------------------------------------------------------------------------
-def limpiar_numero(texto):
-    t = texto.strip().replace("\xa0","").replace(" ","")
-    if not t or t in ("-","—","–"): return None
-    neg = t.startswith("(") and t.endswith(")")
-    t = t.strip("()").replace(".","").replace(",",".")
-    try:
-        v = float(t)
-        return -v if neg else v
-    except ValueError:
+def _fill_color(el):
+    """Devuelve color de fondo (hex) del elemento w:shd mas cercano, o None."""
+    shd = el.find(_wtag("shd"))
+    if shd is None:
         return None
+    fill = shd.get(_wtag("fill")) or shd.get("fill") or ""
+    return fill.upper() if fill and fill.upper() not in ("AUTO", "", "FFFFFF") else None
 
-def es_fila_total(celdas):
-    primera = celdas[0].lower().strip() if celdas else ""
-    return any(kw in primera for kw in TOTAL_KEYWORDS)
+def _is_dark(hex_color):
+    if not hex_color or len(hex_color) < 6:
+        return False
+    try:
+        r, g, b = int(hex_color[0:2],16), int(hex_color[2:4],16), int(hex_color[4:6],16)
+        return (r*299 + g*587 + b*114) / 1000 < 128
+    except Exception:
+        return False
+
+def _row_is_blue(tr):
+    """True si la fila tiene fondo oscuro (azul navy = fila de total/encabezado)."""
+    # 1. Nivel de fila
+    trPr = tr.find(_wtag("trPr"))
+    if trPr is not None:
+        c = _fill_color(trPr)
+        if c and _is_dark(c):
+            return True
+    # 2. Nivel de celda: mayoria con fondo oscuro
+    tcs = tr.findall(_wtag("tc"))
+    dark = sum(1 for tc in tcs
+               for tcPr in [tc.find(_wtag("tcPr"))]
+               if tcPr is not None and _is_dark(_fill_color(tcPr) or ""))
+    if tcs and dark / len(tcs) >= 0.5:
+        return True
+    # 3. Texto blanco en la fila (>= 60% de runs con color blanco)
+    runs = tr.findall(f".//{_wtag('rPr')}")
+    white = sum(1 for rPr in runs
+                for color in [rPr.find(_wtag("color"))]
+                if color is not None and (color.get(_wtag("val")) or "").upper() == "FFFFFF")
+    if runs and white / len(runs) >= 0.6:
+        return True
+    return False
 
 def es_titulo_seccion(texto):
-    """Párrafo que parece título de sección, no solo una fecha o línea corta."""
     if len(texto) < 10:
         return False
-    # Excluir frases que son solo fechas o "Movimiento al..."
-    if re.match(r"^Movimiento al\b", texto, re.IGNORECASE):
+    if re.match(r"^Movimiento al\b", texto, re.I):
         return False
     if re.match(r"^\d{2}-\d{2}-\d{4}", texto):
         return False
     return True
 
-def verificar_tablas(ruta):
-    """
-    Verifica sumas en TODAS las columnas numéricas de cada tabla.
-    'hoja' = título de sección real (no fechas).
-    Detalle indica qué columnas tienen diferencia.
-    """
-    resultados = []
-    elementos = extraer_cuerpo_docx(ruta)
-    hoja_actual = ""
+def extraer_cuerpo_docx(ruta):
+    """Devuelve lista de {'tipo':'parrafo'|'tabla', 'texto':str | 'filas':[{'cells':[],'blue':bool}]}."""
+    elementos = []
+    with zipfile.ZipFile(ruta) as z:
+        with z.open("word/document.xml") as f:
+            tree = ET.parse(f)
+    body = tree.getroot().find(_wtag("body"))
+    if body is None:
+        return elementos
+    for child in list(body):
+        tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+        if tag == "p":
+            texto = "".join(t.text for t in child.iter(_wtag("t")) if t.text).strip()
+            if texto:
+                elementos.append({"tipo": "parrafo", "texto": texto})
+        elif tag == "tbl":
+            filas = []
+            for tr in child.findall(_wtag("tr")):
+                celdas = [get_cell_text(tc) for tc in tr.findall(_wtag("tc"))]
+                filas.append({"cells": celdas, "blue": _row_is_blue(tr)})
+            if filas:
+                elementos.append({"tipo": "tabla", "filas": filas})
+    return elementos
 
+# ---------------------------------------------------------------------------
+# Logica de verificacion (adaptada de verificar_sumas.py)
+# ---------------------------------------------------------------------------
+KW = re.compile(
+    r'(total|totales|subtotal|sub-total|saldo\s+final|saldos?\s+al|'
+    r'patrimonio\s+(total|al\s+final)|ganancia\s+bruta|'
+    r'ganancia\s*\(p[eé]rdida\)\s*(bruta|antes|del|\b)|'
+    r'resultado\s+integral\s+total|incremento\s*\(disminuci[oó]n\))', re.I)
+
+KW_FLAG = re.compile(
+    r'(\b(total(?:es)?|sub-?total)\b|saldo\s+(final|al\b)|total\s+d[eo]l?\b|patrimonio\s+total)', re.I)
+
+BAL    = re.compile(r'(saldo\b|patrimonio\s+al\b)', re.I)
+TOTMOV = re.compile(r'(total.*(increment|movimiento|disminuci|cambios|'
+                    r'resultado\s+integral|del\s+per[ií]odo|patrimonio)'
+                    r'|^cambios[,\s]+total)', re.I)
+REF_NOTA = re.compile(r'\(nota\s+\d+[\.\d]*\)', re.I)
+
+def parse_num(s):
+    """Formato chileno: 1.234.567; negativos en parentesis; '' = None."""
+    if s is None: return None
+    t = s.strip().replace('\n','').replace(' ','')
+    if t in ('','-','—','–'): return None
+    neg = False
+    if t.startswith('(') and t.endswith(')'):
+        neg = True; t = t[1:-1]
+    if t.startswith('-'):
+        neg = True; t = t[1:]
+    if ',' in t: return None
+    core = t.replace('.','')
+    if not re.fullmatch(r'\d+', core): return None
+    v = int(core)
+    return -v if neg else v
+
+def cell(r, j):
+    return r['cells'][j] if j < len(r['cells']) else ''
+
+def amount_cols(rows):
+    """Columnas numericas: excluye col0 (etiqueta) y columnas de notas (1-2 digitos)."""
+    ncol = max((len(r['cells']) for r in rows), default=0)
+    def colvals(j):
+        return [r['cells'][j].strip() for r in rows
+                if j < len(r['cells']) and parse_num(r['cells'][j]) is not None]
+    numeric = [j for j in range(1, ncol) if colvals(j)]
+    # Detectar columna de notas: solo digitos 1-2, valores pequeños a la izquierda
+    note_col = None
+    if numeric:
+        jL = numeric[0]
+        vs = colvals(jL)
+        if (vs and all(re.fullmatch(r'\d{1,2}', v) for v in vs)
+                and any(parse_num(v) != 0 for v in vs)
+                and any(any(len(re.sub(r'\D','',x)) > 2 for x in colvals(jr)) for jr in numeric[1:])):
+            note_col = jL
+    return [j for j in numeric if j != note_col]
+
+def is_movement_table(rows, cols):
+    nbal = sum(1 for r in rows
+               if BAL.search(r['cells'][0] if r['cells'] else '')
+               and any(parse_num(cell(r,j)) is not None for j in cols))
+    ntot = sum(1 for r in rows
+               if TOTMOV.search(r['cells'][0] if r['cells'] else ''))
+    return nbal >= 1 and (nbal >= 2 or ntot >= 1)
+
+def verify(rows, cols):
+    """Verifica sumas verticales en cuadros generales."""
+    contrast = any((not r['blue']) and any(parse_num(cell(r,j)) is not None for j in cols)
+                   for r in rows)
+
+    def numeric(r):
+        return any(parse_num(cell(r,j)) is not None for j in cols)
+
+    def is_ckpt(r):
+        if not numeric(r): return False
+        lab = r['cells'][0] if r['cells'] else ''
+        if REF_NOTA.search(lab): return False
+        if KW.search(lab): return True
+        if r['blue'] and contrast: return True
+        return False
+
+    klass = ['ckpt' if is_ckpt(r) else ('add' if numeric(r) else 'none') for r in rows]
+    res = []
+    for j in cols:
+        fwd = {}; fwd_sub = {}
+        for i in range(len(rows)):
+            if klass[i] != 'ckpt': continue
+            s_all = None; s_sub = None
+            for k in range(i+1, len(rows)):
+                if klass[k] == 'ckpt': break
+                if klass[k] == 'add':
+                    v = parse_num(cell(rows[k], j))
+                    if v is not None: s_all = (s_all or 0) + v
+                    lab_k = rows[k]['cells'][0] if rows[k]['cells'] else ''
+                    is_sub = bool(re.match(r'^[\-\•\–]\s', lab_k) or re.match(r'^\s{2,}', lab_k))
+                    if is_sub and v is not None: s_sub = (s_sub or 0) + v
+                    elif not is_sub and s_sub is not None: break
+            fwd[i] = s_all; fwd_sub[i] = s_sub
+
+        stack_ok = {}; units = []
+        for i in range(len(rows)):
+            if klass[i] == 'add':
+                v = parse_num(cell(rows[i], j))
+                if v is not None: units.append(v)
+            elif klass[i] == 'ckpt':
+                P = parse_num(cell(rows[i], j))
+                if P is None: continue
+                acc = 0; found = None
+                for k in range(1, len(units)+1):
+                    acc += units[-k]
+                    if acc == P: found = k; break
+                if found is not None: units[-found:] = [P]; stack_ok[i] = True
+                else: units.append(P); stack_ok[i] = False
+
+        prev = None; block = []; cum = 0; subs = []
+        for i, r in enumerate(rows):
+            v = parse_num(cell(r, j))
+            if klass[i] == 'ckpt':
+                if v is None: block = []; continue
+                P = v
+                cands = {}
+                if block: cands['A'] = sum(block)
+                if fwd.get(i) is not None: cands['F'] = fwd[i]
+                if fwd_sub.get(i) is not None: cands['G'] = fwd_sub[i]
+                if prev is not None: cands['B'] = prev + sum(block)
+                cands['E'] = cum
+                if subs: cands['C'] = sum(subs)
+                if stack_ok.get(i): cands['S'] = P
+                lab = r['cells'][0] if r['cells'] else ''
+                difs = {n: (P-c) for n,c in cands.items() if c is not None}
+                best = min(difs, key=lambda n: abs(difs[n])) if difs else None
+                if best is not None and difs[best] == 0:
+                    res.append({'col':j,'label':lab,'printed':P,'dif':0,'metodo':best,'clase':'check'})
+                    if best in ('E','C'): cum=0; subs=[]
+                elif KW_FLAG.search(lab) and best is not None:
+                    bd = difs[best]
+                    if P==0 and abs(bd)>1000:
+                        res.append({'col':j,'label':lab,'printed':P,'dif':None,'clase':'linea'})
+                    elif P!=0 and abs(bd)>abs(P):
+                        res.append({'col':j,'label':lab,'printed':P,'dif':None,'clase':'linea'})
+                    else:
+                        res.append({'col':j,'label':lab,'printed':P,'dif':bd,'metodo':best,'clase':'check'})
+                else:
+                    res.append({'col':j,'label':lab,'printed':P,'dif':None,'clase':'linea'})
+                prev=P; subs.append(P); block=[]
+            elif klass[i] == 'add':
+                if v is not None: block.append(v); cum+=v
+    return res
+
+def verify_movement(rows, cols):
+    """Verifica tablas de movimiento: saldo_final = saldo_inicial + movimientos."""
+    res = []
+    for j in cols:
+        opening=None; summov=0; have_open=False
+        for r in rows:
+            lab = r['cells'][0] if r['cells'] else ''
+            v = parse_num(cell(r,j))
+            is_bal = bool(BAL.search(lab)) or bool(
+                r['blue'] and re.match(r'^Sald', lab, re.I) and not have_open and v is not None)
+            if is_bal:
+                if v is None: continue
+                if not have_open: opening=v; have_open=True
+                else:
+                    exp = (opening or 0) + summov
+                    res.append({'col':j,'label':lab,'printed':v,'dif':v-exp,
+                                'metodo':'saldo_inicial+movimientos','clase':'check'})
+                    opening=v; summov=0
+            elif REF_NOTA.search(lab): pass
+            elif 'total' in lab.lower() or TOTMOV.search(lab):
+                if v is None: continue
+                d_sub = v - summov
+                d_close = (v - ((opening or 0)+summov)) if have_open else None
+                if d_close == 0:
+                    res.append({'col':j,'label':lab,'printed':v,'dif':0,
+                                'metodo':'saldo_final=inicial+movimientos','clase':'check'})
+                    opening=v; summov=0
+                elif d_sub == 0:
+                    res.append({'col':j,'label':lab,'printed':v,'dif':0,
+                                'metodo':'suma_movimientos','clase':'check'})
+                elif d_close is not None and abs(d_close) < abs(d_sub):
+                    res.append({'col':j,'label':lab,'printed':v,'dif':d_close,
+                                'metodo':'saldo_final=inicial+movimientos','clase':'check'})
+                    opening=v; summov=0
+                else:
+                    res.append({'col':j,'label':lab,'printed':v,'dif':d_sub,
+                                'metodo':'suma_movimientos','clase':'check'})
+            else:
+                if v is not None: summov += v
+    return res
+
+# ---------------------------------------------------------------------------
+# Verificar archivo .docx completo
+# ---------------------------------------------------------------------------
+def verificar_docx(ruta):
+    """
+    Devuelve lista de hallazgos con diferencias reales (dif != 0).
+    Cada hallazgo: {seccion, linea, col_idx, dif, tipo_tabla}
+    """
+    elementos  = extraer_cuerpo_docx(ruta)
+    seccion    = ""
+    hallazgos  = []
+
+    # Agrupar tablas con su sección
+    tablas_con_seccion = []
     for elem in elementos:
         if elem["tipo"] == "parrafo":
-            texto = elem["texto"]
-            if es_titulo_seccion(texto):
-                hoja_actual = texto
+            if es_titulo_seccion(elem["texto"]):
+                seccion = elem["texto"]
+        else:
+            tablas_con_seccion.append((seccion, elem["filas"]))
+
+    for seccion, filas in tablas_con_seccion:
+        cols = amount_cols(filas)
+        if not cols:
             continue
 
-        filas = elem["filas"]
-        if not filas:
+        if is_movement_table(filas, cols):
+            res = verify_movement(filas, cols)
+            tipo = "movimiento"
+        else:
+            res = verify(filas, cols)
+            tipo = "general"
+
+        checks = [r for r in res if r['clase'] == 'check']
+        if not checks:
             continue
 
-        num_cols = max(len(f) for f in filas)
-        acum  = [0.0] * num_cols
-        tiene = [False] * num_cols
+        # Agrupar por etiqueta para detectar diferencias localizadas
+        por_label = defaultdict(list)
+        for r in checks:
+            por_label[r['label']].append(r)
 
-        for fila in filas:
-            while len(fila) < num_cols:
-                fila.append("")
+        for label, grupo in por_label.items():
+            cols_con_dif = [r for r in grupo if r['dif'] is not None and r['dif'] != 0]
+            if not cols_con_dif:
+                continue
+            cols_ok  = [r for r in grupo if r['dif'] == 0]
+            localizado = len(cols_ok) > 0  # otras columnas sí cuadran
 
-            if es_fila_reset(fila):
-                acum  = [0.0] * num_cols
-                tiene = [False] * num_cols
-            elif es_fila_total(fila):
-                # Verificar TODAS las columnas numéricas
-                diffs = {}
-                for col in range(1, num_cols):
-                    dec = limpiar_numero(fila[col])
-                    if dec is not None and tiene[col]:
-                        d = round(dec - acum[col], 0)
-                        if abs(d) >= 2:
-                            diffs[col] = d
+            col_nums = ", ".join(f"Col{r['col']}" for r in cols_con_dif)
+            hallazgos.append({
+                "seccion":    seccion[:80],
+                "linea":      re.sub(r'\s+', ' ', label).strip()[:80],
+                "columnas":   col_nums,
+                "localizado": localizado,
+                "tipo_tabla": tipo,
+            })
 
-                hay_numeros = any(limpiar_numero(fila[c]) is not None for c in range(1, num_cols))
-                if hay_numeros:
-                    cols_error = ", ".join(f"Col{c}" for c in sorted(diffs.keys()))
-                    resultados.append({
-                        "hoja":        hoja_actual[:80],
-                        "descripcion": fila[0][:80],
-                        "ok":          len(diffs) == 0,
-                        "detalle":     cols_error,
-                    })
-                acum  = [0.0] * num_cols
-                tiene = [False] * num_cols
-            else:
-                for col in range(1, num_cols):
-                    v = limpiar_numero(fila[col]) if col < len(fila) else None
-                    if v is not None:
-                        acum[col]  += v
-                        tiene[col]  = True
+    return hallazgos
 
-    return resultados
+# ---------------------------------------------------------------------------
+# Escribir resultados en Workiva
+# ---------------------------------------------------------------------------
+ENCABEZADOS = ["Seccion", "Total / Subtotal", "Columnas", "Localizado", "Estado"]
 
-ENCABEZADOS = ["Seccion", "Tabla / Total", "Columnas con error", "Estado"]
-
-def escribir_resultados(ss_id, sheet_id, resultados):
-    if not resultados: return
-    solo_revisar = [r for r in resultados if not r["ok"]]
-    if not solo_revisar: return
+def escribir_resultados(ss_id, sheet_id, hallazgos):
+    if not hallazgos: return
     rows = [[
-        r["hoja"],
-        r["descripcion"],
-        r.get("detalle", ""),
+        h["seccion"],
+        h["linea"],
+        h["columnas"],
+        "Si (otras columnas OK)" if h["localizado"] else "No",
         "REVISAR",
-    ] for r in solo_revisar]
-    # Siempre respetar fila 1 (encabezados del usuario): minimo fila 2
+    ] for h in hallazgos]
     primera = max(contar_filas(ss_id, sheet_id) + 1, 2)
-    put_range(ss_id, sheet_id, f"A{primera}:D{primera+len(rows)-1}", rows)
+    put_range(ss_id, sheet_id, f"A{primera}:E{primera+len(rows)-1}", rows)
+
+# ---------------------------------------------------------------------------
+# UI helpers
+# ---------------------------------------------------------------------------
+def hr(c="-"):
+    print(c * 64)
+
+def ask(prompt, opts=None, default=None):
+    if opts:
+        txt = f"{prompt} [{'/'.join(opts)}]"
+        if default:
+            txt += f" (default {default})"
+        print(f"  {txt}: ", end="")
+        v = input().strip().upper() or (default or "")
+        return v if not opts or v in opts else (default or opts[0])
+    print(f"  {prompt}: ", end="")
+    return input().strip()
 
 # ---------------------------------------------------------------------------
 # Main
@@ -541,7 +665,7 @@ def escribir_resultados(ss_id, sheet_id, resultados):
 def main():
     hr("=")
     print("  VERIFICADOR DE SUMAS - EE.FF. WORKIVA")
-    print("  (sin instalacion de librerias)")
+    print("  (sin instalacion de librerias adicionales)")
     hr("=")
 
     print("\n  PERIODO\n")
@@ -553,7 +677,7 @@ def main():
         mes = MESES.get(mes_raw.lower())
 
     anio = ask("  Ano (ej: 2026)")
-    while not re.fullmatch(r"\d{4}", anio):
+    while not __import__('re').fullmatch(r"\d{4}", anio):
         print("  Ano invalido.")
         anio = ask("  Ano")
 
@@ -583,16 +707,15 @@ def main():
 
     DOCX_DIR.mkdir(exist_ok=True)
     hr()
-    total_ok = total_err = 0
+    total_hall = 0
 
     for i, doc in enumerate(seleccionados, 1):
-        # Extraer codigo de sociedad del nombre del documento (ej: "E514 (ESP) - ...")
         m = re.match(r"^([A-Z]\d+)", doc["nombre"].strip())
         nombre_hoja = m.group(1) if m else doc["nombre"][:20]
 
         print(f"\n  [{i}/{len(seleccionados)}] {doc['nombre']}")
-        print(f"    Hoja destino: '{nombre_hoja}'")
-        print("    Exportando .docx...", end=" ", flush=True)
+        print(f"    Hoja destino : '{nombre_hoja}'")
+        print("    Exportando   ...", end=" ", flush=True)
         try:
             ruta = exportar_docx(doc)
             print(f"OK ({ruta.stat().st_size//1024} KB)")
@@ -600,32 +723,34 @@ def main():
             print(f"ERROR: {e}")
             continue
 
-        print("    Verificando sumas...", end=" ", flush=True)
+        print("    Verificando  ...", end=" ", flush=True)
         try:
-            resultados = verificar_tablas(ruta)
+            hallazgos = verificar_docx(ruta)
         except Exception as e:
             print(f"ERROR al leer: {e}")
             continue
-        ok  = sum(1 for r in resultados if r["ok"])
-        err = len(resultados) - ok
-        total_ok += ok; total_err += err
-        print(f"{len(resultados)} checks | OK: {ok} | REVISAR: {err}")
 
-        print("    Escribiendo en Workiva...", end=" ", flush=True)
+        n = len(hallazgos)
+        total_hall += n
+        if n == 0:
+            print("sin hallazgos")
+            continue
+        print(f"{n} hallazgos")
+
+        print("    Escribiendo  ...", end=" ", flush=True)
         try:
             sheet_id, es_nueva = obtener_o_crear_hoja(ss_id, nombre_hoja)
             if es_nueva:
-                put_range(ss_id, sheet_id, "A1:D1", [ENCABEZADOS])
-            escribir_resultados(ss_id, sheet_id, resultados)
+                put_range(ss_id, sheet_id, "A1:E1", [ENCABEZADOS])
+            escribir_resultados(ss_id, sheet_id, hallazgos)
             print("OK")
         except Exception as e:
             print(f"ERROR: {e}")
 
     hr("=")
     print(f"\n  RESUMEN FINAL")
-    print(f"  Documentos  : {len(seleccionados)}")
-    print(f"  OK          : {total_ok}")
-    print(f"  REVISAR     : {total_err}")
+    print(f"  Documentos procesados : {len(seleccionados)}")
+    print(f"  Hallazgos totales     : {total_hall}")
     print(f"\n  Resultados en Workiva -> '{SS_VERIF_NAME}' -> hoja por sociedad")
     hr("=")
     input("\n  Presiona Enter para salir...")
