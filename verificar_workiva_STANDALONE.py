@@ -279,13 +279,21 @@ def put_range(ss_id, sheet_id, rango, values):
     if status == 202 and location:
         poll_operation(location, wait=2)
 
-def hoja_tiene_datos(ss_id, sheet_id):
-    data = api_get(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}/sheetdata?$fields=cells.calculatedValue&$maxcellsperpage=5")
-    return bool(data.get("data",{}).get("cells"))
-
 def contar_filas(ss_id, sheet_id):
-    data = api_get(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}/sheetdata?$fields=cells.calculatedValue&$maxcellsperpage=5000")
-    return len(data.get("data",{}).get("cells",[]))
+    """Cuenta filas usadas leyendo A1:A2000 y buscando la ultima no vacia."""
+    try:
+        data = api_get(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}/values/A1:A2000")
+        rows = data.get("values", [])
+        last = 0
+        for i, row in enumerate(rows, 1):
+            if row and any(c for c in row if str(c).strip()):
+                last = i
+        return last
+    except Exception:
+        return 0
+
+def hoja_tiene_datos(ss_id, sheet_id):
+    return contar_filas(ss_id, sheet_id) > 0
 
 # ---------------------------------------------------------------------------
 # Descarga .docx desde Workiva (sin requests)
