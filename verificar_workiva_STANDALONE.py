@@ -791,9 +791,8 @@ def escribir_resumen(ss_id, codigo, nombre_doc, resultado):
     """Escribe un bloque de resumen en la hoja de la sociedad (nombre = codigo).
     Nunca toca la fila 1 (encabezados del usuario). Siempre escribe desde fila 2
     o desde la primera fila libre si ya hay datos previos."""
-    sheet_id, es_nueva = obtener_o_crear_hoja(ss_id, codigo)
-    if not es_nueva:
-        _limpiar_desde_fila2(ss_id, sheet_id, 1)
+    sheet_id, _ = obtener_o_crear_hoja(ss_id, codigo)
+    _limpiar_desde_fila2(ss_id, sheet_id, 1)
 
     n_ok   = len(resultado['ok'])
     n_hall = len(resultado['hallazgos'])
@@ -830,14 +829,11 @@ NOMBRE_HOJAS = {
 }
 
 def _limpiar_desde_fila2(ss_id, sheet_id, n_cols):
-    """Borra todo el contenido desde fila 2 hacia abajo (deja fila 1 intacta)."""
-    ultima = contar_filas(ss_id, sheet_id)
-    if ultima < 2:
-        return
+    """Borra filas 2..3000 incondicionalmente (fila 1 = encabezados, intacta)."""
     fila_vacia = [""] * n_cols
-    filas_vacias = [fila_vacia for _ in range(ultima - 1)]
+    filas_vacias = [fila_vacia for _ in range(2999)]   # filas 2..3000
     col_fin = chr(64 + n_cols)
-    put_range(ss_id, sheet_id, f"A2:{col_fin}{ultima}", filas_vacias)
+    put_range(ss_id, sheet_id, f"A2:{col_fin}3000", filas_vacias)
 
 def _escribir_hoja(ss_id, nombre_hoja, encabezados, filas):
     sheet_id, es_nueva = obtener_o_crear_hoja(ss_id, nombre_hoja)
