@@ -391,24 +391,42 @@ def get_cell_text(tc):
             texts.append(t.text)
     return "".join(texts).strip()
 
-def extraer_tablas_docx(ruta):
-    """Retorna lista de tablas, cada tabla es lista de filas, cada fila lista de strings."""
-    tablas = []
+def extraer_cuerpo_docx(ruta):
+    """
+    Retorna lista de elementos en orden del documento:
+      {'tipo': 'parrafo', 'texto': str}
+      {'tipo': 'tabla',   'filas': [[str, ...], ...]}
+    """
+    elementos = []
     with zipfile.ZipFile(ruta) as z:
         with z.open("word/document.xml") as f:
             tree = ET.parse(f)
     root = tree.getroot()
     body = root.find(f"{{{NS['w']}}}body")
     if body is None:
-        return tablas
-    for tbl in body.iter(f"{{{NS['w']}}}tbl"):
-        filas = []
-        for tr in tbl.findall(f"{{{NS['w']}}}tr"):
-            celdas = [get_cell_text(tc) for tc in tr.findall(f"{{{NS['w']}}}tc")]
-            filas.append(celdas)
-        if filas:
-            tablas.append(filas)
-    return tablas
+        return elementos
+    for child in list(body):
+        tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+        if tag == "p":
+            texts = [t.text for t in child.iter(f"{{{NS['w']}}}t") if t.text]
+            texto = "".join(texts).strip()
+            if texto:
+                elementos.append({"tipo": "parrafo", "texto": texto})
+        elif tag == "tbl":
+            filas = []
+            for tr in child.findall(f"{{{NS['w']}}}tr"):
+                celdas = [get_cell_text(tc) for tc in tr.findall(f"{{{NS['w']}}}tc")]
+                filas.append(celdas)
+            if filas:
+                elementos.append({"tipo": "tabla", "filas": filas})
+    return elementos
+
+# Filas que reinician acumuladores sin generar check (balances de apertura/cierre)
+RESET_KEYWORDS = ["saldo inicial", "saldo al ", "saldo final", "saldo de apertura"]
+
+def es_fila_reset(celdas):
+    primera = celdas[0].lower().strip() if celdas else ""
+    return any(kw in primera for kw in RESET_KEYWORDS)
 
 # ---------------------------------------------------------------------------
 # Verificacion de sumas
@@ -428,32 +446,31 @@ def es_fila_total(celdas):
     primera = celdas[0].lower().strip() if celdas else ""
     return any(kw in primera for kw in TOTAL_KEYWORDS)
 
-def es_fila_encabezado(fila):
-    """Fila de encabezado: primera celda no vacía, todas las numéricas vacías."""
-    if not fila or not fila[0].strip():
-        return False
-    return all(limpiar_numero(c) is None for c in fila[1:])
-
 def verificar_tablas(ruta):
     """
-    Retorna lista de dicts con keys: hoja, descripcion, actual, anterior, ok
-    'hoja' es el texto real del encabezado de la tabla en el Word.
-    Una fila por total detectado, verifica suma de filas visibles vs declarado.
+    Retorna lista de dicts: hoja, descripcion, actual, anterior, ok, diff_actual, diff_anterior
+    'hoja' es el párrafo anterior a la tabla en el Word (título real de la sección).
+    Verifica suma de filas visibles vs declarado en fila total.
+    Ignora filas de saldo inicial/final (no las acumula).
     """
     resultados = []
-    tablas = extraer_tablas_docx(ruta)
+    elementos = extraer_cuerpo_docx(ruta)
     hoja_actual = ""
+    ultimo_parrafo = ""
 
-    for filas in tablas:
-        if not filas: continue
+    for elem in elementos:
+        if elem["tipo"] == "parrafo":
+            ultimo_parrafo = elem["texto"]
+            continue
 
-        # Primera fila de la tabla: si todas las celdas numéricas son vacías
-        # es el encabezado/título de esa sección
-        primera = filas[0]
-        if es_fila_encabezado(primera):
-            texto = primera[0].strip()
-            if texto and len(texto) > 3:
-                hoja_actual = texto
+        # Es una tabla
+        filas = elem["filas"]
+        if not filas:
+            continue
+
+        # El título de la sección es el último párrafo relevante antes de la tabla
+        if ultimo_parrafo:
+            hoja_actual = ultimo_parrafo
 
         num_cols = max(len(f) for f in filas)
         acum  = [0.0] * num_cols
@@ -462,7 +479,12 @@ def verificar_tablas(ruta):
         for fila in filas:
             while len(fila) < num_cols:
                 fila.append("")
-            if es_fila_total(fila):
+
+            if es_fila_reset(fila):
+                # Saldo inicial/final: reinicia acumuladores sin generar check
+                acum  = [0.0] * num_cols
+                tiene = [False] * num_cols
+            elif es_fila_total(fila):
                 dec1 = limpiar_numero(fila[1]) if num_cols > 1 else None
                 dec2 = limpiar_numero(fila[2]) if num_cols > 2 else None
 
@@ -473,7 +495,7 @@ def verificar_tablas(ruta):
 
                 if dec1 is not None or dec2 is not None:
                     resultados.append({
-                        "hoja":          hoja_actual,
+                        "hoja":          hoja_actual[:80],
                         "descripcion":   fila[0][:80],
                         "actual":        dec1,
                         "anterior":      dec2,
@@ -489,6 +511,7 @@ def verificar_tablas(ruta):
                     if v is not None:
                         acum[col]  += v
                         tiene[col]  = True
+
     return resultados
 
 ENCABEZADOS = ["Hoja", "Linea", "Actual", "Anterior", "Estado", "Detalle"]
