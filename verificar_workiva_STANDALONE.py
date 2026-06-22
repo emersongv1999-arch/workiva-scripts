@@ -565,19 +565,40 @@ def verify_movement(rows, cols):
                 if v is not None: summov += v
     return res
 
+UMBRAL = 1000
+
+def causa(label, dif, localizado, calc, tipo_tabla):
+    lab = (label or '').lower()
+    if localizado:
+        return 'Diferencia localizada: otras columnas cuadran'
+    if tipo_tabla == 'movimiento':
+        return 'Movimiento: saldo final != saldo inicial + movimientos'
+    if calc == 0:
+        return 'Sin detalle sumable visible (posible fila oculta)'
+    if 'atribuible a' in lab:
+        return 'Desagregacion (propietarios/no controladoras)'
+    if abs(dif) <= UMBRAL:
+        return 'Diferencia pequena: posible redondeo o error real'
+    return 'Total que combina secciones o estructura no estandar'
+
+def get_col_headers(filas, cols):
+    headers = {j: f"Col{j}" for j in cols}
+    for fila in filas[:6]:
+        if fila['blue']:
+            for j in cols:
+                if j < len(fila['cells']):
+                    txt = fila['cells'][j].strip()
+                    if txt and not parse_num(txt):
+                        headers[j] = txt[:25]
+    return headers
+
 # ---------------------------------------------------------------------------
-# Verificar archivo .docx completo
+# Verificar archivo .docx — devuelve 4 categorias
 # ---------------------------------------------------------------------------
 def verificar_docx(ruta):
-    """
-    Devuelve lista de hallazgos con diferencias reales (dif != 0).
-    Cada hallazgo: {seccion, linea, col_idx, dif, tipo_tabla}
-    """
-    elementos  = extraer_cuerpo_docx(ruta)
-    seccion    = ""
-    hallazgos  = []
-
-    # Agrupar tablas con su sección
+    """Devuelve dict {ok, hallazgos, revisar, indice} con las 4 sub-hojas."""
+    elementos = extraer_cuerpo_docx(ruta)
+    seccion   = ""
     tablas_con_seccion = []
     for elem in elementos:
         if elem["tipo"] == "parrafo":
@@ -586,61 +607,104 @@ def verificar_docx(ruta):
         else:
             tablas_con_seccion.append((seccion, elem["filas"]))
 
-    for seccion, filas in tablas_con_seccion:
+    ok = []; hallazgos = []; revisar = []; indice = []
+
+    for i_tabla, (sec, filas) in enumerate(tablas_con_seccion, 1):
         cols = amount_cols(filas)
         if not cols:
             continue
 
-        if is_movement_table(filas, cols):
-            res = verify_movement(filas, cols)
-            tipo = "movimiento"
-        else:
-            res = verify(filas, cols)
-            tipo = "general"
-
+        tipo = "movimiento" if is_movement_table(filas, cols) else "general"
+        res  = verify_movement(filas, cols) if tipo == "movimiento" else verify(filas, cols)
+        col_headers = get_col_headers(filas, cols)
         checks = [r for r in res if r['clase'] == 'check']
         if not checks:
             continue
 
-        # Agrupar por etiqueta para detectar diferencias localizadas
-        por_label = defaultdict(list)
+        nok = 0; ndif = 0
+        por_col = defaultdict(list)
         for r in checks:
-            por_label[r['label']].append(r)
+            por_col[r['col']].append(r)
+        cols_ok_total = {c for c, rs in por_col.items() if all(r['dif'] == 0 for r in rs)}
 
-        for label, grupo in por_label.items():
-            cols_con_dif = [r for r in grupo if r['dif'] is not None and r['dif'] != 0]
-            if not cols_con_dif:
-                continue
-            cols_ok  = [r for r in grupo if r['dif'] == 0]
-            localizado = len(cols_ok) > 0  # otras columnas sí cuadran
+        for r in checks:
+            col_nombre = col_headers.get(r['col'], f"Col{r['col']}")
+            dif   = r['dif']
+            calc  = r['printed'] - (dif or 0) if dif is not None else 0
+            label = re.sub(r'\s+', ' ', r['label']).strip()[:80]
+            base  = {
+                "seccion": sec[:80],
+                "tabla":   f"Tabla {i_tabla}",
+                "linea":   label,
+                "columna": col_nombre,
+                "impreso": r['printed'],
+                "calc":    calc,
+                "dif":     dif,
+                "metodo":  r.get('metodo', ''),
+            }
+            if dif == 0:
+                nok += 1
+                ok.append(base)
+            elif dif is not None:
+                ndif += 1
+                localizado = (r['col'] not in cols_ok_total
+                              and bool(cols_ok_total)
+                              and r['printed'] != 0)
+                rec = {**base,
+                       "localizado": localizado,
+                       "causa": causa(label, dif, localizado, calc, tipo)}
+                revisar.append(rec)
+                if localizado or abs(dif) <= UMBRAL:
+                    hallazgos.append(rec)
 
-            col_nums = ", ".join(f"Col{r['col']}" for r in cols_con_dif)
-            hallazgos.append({
-                "seccion":    seccion[:80],
-                "linea":      re.sub(r'\s+', ' ', label).strip()[:80],
-                "columnas":   col_nums,
-                "localizado": localizado,
-                "tipo_tabla": tipo,
-            })
+        indice.append({
+            "seccion": sec[:80], "tabla": f"Tabla {i_tabla}",
+            "tipo": tipo, "n_cols": len(cols),
+            "n_sumas": len(checks), "ok": nok, "dif": ndif,
+        })
 
-    return hallazgos
+    return {"ok": ok, "hallazgos": hallazgos, "revisar": revisar, "indice": indice}
 
 # ---------------------------------------------------------------------------
-# Escribir resultados en Workiva
+# Escribir las 4 sub-hojas en Workiva
 # ---------------------------------------------------------------------------
-ENCABEZADOS = ["Seccion", "Total / Subtotal", "Columnas", "Localizado", "Estado"]
+HDR_HALL = ["Seccion", "Tabla", "Fila (total/subtotal)", "Columna",
+            "Impreso", "Calculado", "Diferencia", "Metodo", "Causa", "Localizado"]
+HDR_OK   = ["Seccion", "Tabla", "Fila (total/subtotal)", "Columna", "Valor impreso", "Metodo"]
+HDR_IDX  = ["Seccion", "Tabla", "Tipo", "Cols monto", "Sumas verificadas", "Cuadran", "Con diferencia"]
 
-def escribir_resultados(ss_id, sheet_id, hallazgos):
-    if not hallazgos: return
-    rows = [[
-        h["seccion"],
-        h["linea"],
-        h["columnas"],
-        "Si (otras columnas OK)" if h["localizado"] else "No",
-        "REVISAR",
-    ] for h in hallazgos]
-    primera = max(contar_filas(ss_id, sheet_id) + 1, 2)
-    put_range(ss_id, sheet_id, f"A{primera}:E{primera+len(rows)-1}", rows)
+def _escribir_hoja(ss_id, nombre_hoja, encabezados, filas):
+    sheet_id, es_nueva = obtener_o_crear_hoja(ss_id, nombre_hoja)
+    if es_nueva:
+        n = len(encabezados)
+        put_range(ss_id, sheet_id, f"A1:{chr(64+n)}1", [encabezados])
+    if filas:
+        n = len(encabezados)
+        primera = max(contar_filas(ss_id, sheet_id) + 1, 2)
+        put_range(ss_id, sheet_id, f"A{primera}:{chr(64+n)}{primera+len(filas)-1}", filas)
+
+def escribir_4_hojas(ss_id, codigo, resultado):
+    filas_h = [[r["seccion"], r["tabla"], r["linea"], r["columna"],
+                r["impreso"], r["calc"], r["dif"], r["metodo"], r["causa"],
+                "Si" if r["localizado"] else "No"]
+               for r in resultado["hallazgos"]]
+    _escribir_hoja(ss_id, f"{codigo} Hallazgos", HDR_HALL, filas_h)
+
+    filas_r = [[r["seccion"], r["tabla"], r["linea"], r["columna"],
+                r["impreso"], r["calc"], r["dif"], r["metodo"], r["causa"],
+                "Si" if r["localizado"] else "No"]
+               for r in resultado["revisar"]]
+    _escribir_hoja(ss_id, f"{codigo} Revisar_manual", HDR_HALL, filas_r)
+
+    filas_ok = [[r["seccion"], r["tabla"], r["linea"], r["columna"],
+                 r["impreso"], r["metodo"]]
+                for r in resultado["ok"]]
+    _escribir_hoja(ss_id, f"{codigo} Verificadas_OK", HDR_OK, filas_ok)
+
+    filas_i = [[r["seccion"], r["tabla"], r["tipo"],
+                r["n_cols"], r["n_sumas"], r["ok"], r["dif"]]
+               for r in resultado["indice"]]
+    _escribir_hoja(ss_id, f"{codigo} Indice_cuadros", HDR_IDX, filas_i)
 
 # ---------------------------------------------------------------------------
 # UI helpers
@@ -725,24 +789,20 @@ def main():
 
         print("    Verificando  ...", end=" ", flush=True)
         try:
-            hallazgos = verificar_docx(ruta)
+            resultado = verificar_docx(ruta)
         except Exception as e:
             print(f"ERROR al leer: {e}")
             continue
 
-        n = len(hallazgos)
-        total_hall += n
-        if n == 0:
-            print("sin hallazgos")
-            continue
-        print(f"{n} hallazgos")
+        n_rev = len(resultado["revisar"])
+        n_ok  = len(resultado["ok"])
+        n_hall= len(resultado["hallazgos"])
+        total_hall += n_hall
+        print(f"OK:{n_ok}  Revisar:{n_rev}  Hallazgos:{n_hall}")
 
-        print("    Escribiendo  ...", end=" ", flush=True)
+        print("    Escribiendo 4 hojas ...", end=" ", flush=True)
         try:
-            sheet_id, es_nueva = obtener_o_crear_hoja(ss_id, nombre_hoja)
-            if es_nueva:
-                put_range(ss_id, sheet_id, "A1:E1", [ENCABEZADOS])
-            escribir_resultados(ss_id, sheet_id, hallazgos)
+            escribir_4_hojas(ss_id, nombre_hoja, resultado)
             print("OK")
         except Exception as e:
             print(f"ERROR: {e}")
@@ -750,8 +810,9 @@ def main():
     hr("=")
     print(f"\n  RESUMEN FINAL")
     print(f"  Documentos procesados : {len(seleccionados)}")
-    print(f"  Hallazgos totales     : {total_hall}")
-    print(f"\n  Resultados en Workiva -> '{SS_VERIF_NAME}' -> hoja por sociedad")
+    print(f"  Hallazgos prioritarios: {total_hall}")
+    print(f"\n  Workiva -> '{SS_VERIF_NAME}'")
+    print(f"  Por cada sociedad: [cod] Hallazgos / Revisar_manual / Verificadas_OK / Indice_cuadros")
     hr("=")
     input("\n  Presiona Enter para salir...")
 
