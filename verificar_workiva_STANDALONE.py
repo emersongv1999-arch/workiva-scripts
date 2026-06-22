@@ -501,17 +501,12 @@ def verificar_tablas(ruta):
 
                 hay_numeros = any(limpiar_numero(fila[c]) is not None for c in range(1, num_cols))
                 if hay_numeros:
-                    # Actual = col 1, Anterior = col 2 (para tablas de 2 periodos)
-                    dec1 = limpiar_numero(fila[1]) if num_cols > 1 else None
-                    dec2 = limpiar_numero(fila[2]) if num_cols > 2 else None
-                    detalle_cols = " | ".join(f"Col{c} diff={d:+.0f}" for c, d in sorted(diffs.items()))
+                    cols_error = ", ".join(f"Col{c}" for c in sorted(diffs.keys()))
                     resultados.append({
                         "hoja":        hoja_actual[:80],
                         "descripcion": fila[0][:80],
-                        "actual":      dec1,
-                        "anterior":    dec2,
                         "ok":          len(diffs) == 0,
-                        "detalle":     detalle_cols,
+                        "detalle":     cols_error,
                     })
                 acum  = [0.0] * num_cols
                 tiene = [False] * num_cols
@@ -524,25 +519,21 @@ def verificar_tablas(ruta):
 
     return resultados
 
-ENCABEZADOS = ["Hoja", "Linea", "Actual", "Anterior", "Estado", "Detalle"]
+ENCABEZADOS = ["Seccion", "Tabla / Total", "Columnas con error", "Estado"]
 
 def escribir_resultados(ss_id, sheet_id, resultados):
     if not resultados: return
     solo_revisar = [r for r in resultados if not r["ok"]]
     if not solo_revisar: return
-    rows = []
-    for r in solo_revisar:
-        rows.append([
-            r["hoja"],
-            r["descripcion"],
-            r["actual"]   if r["actual"]   is not None else "",
-            r["anterior"] if r["anterior"] is not None else "",
-            "REVISAR",
-            r.get("detalle", ""),
-        ])
+    rows = [[
+        r["hoja"],
+        r["descripcion"],
+        r.get("detalle", ""),
+        "REVISAR",
+    ] for r in solo_revisar]
     # Siempre respetar fila 1 (encabezados del usuario): minimo fila 2
     primera = max(contar_filas(ss_id, sheet_id) + 1, 2)
-    put_range(ss_id, sheet_id, f"A{primera}:F{primera+len(rows)-1}", rows)
+    put_range(ss_id, sheet_id, f"A{primera}:D{primera+len(rows)-1}", rows)
 
 # ---------------------------------------------------------------------------
 # Main
@@ -624,7 +615,7 @@ def main():
         try:
             sheet_id, es_nueva = obtener_o_crear_hoja(ss_id, nombre_hoja)
             if es_nueva:
-                put_range(ss_id, sheet_id, "A1:E1", [ENCABEZADOS])
+                put_range(ss_id, sheet_id, "A1:D1", [ENCABEZADOS])
             escribir_resultados(ss_id, sheet_id, resultados)
             print("OK")
         except Exception as e:
