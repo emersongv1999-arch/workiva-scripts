@@ -32,11 +32,23 @@ NOMBRE_MES = {
     "10":"Octubre","11":"Noviembre","12":"Diciembre",
 }
 TOTAL_KEYWORDS = [
-    "total activos","total pasivos","total patrimonio",
-    "total activos corrientes","total activos no corrientes",
-    "total pasivos corrientes","total pasivos no corrientes",
-    "ganancia bruta","ganancia (pérdida)","resultado del periodo",
-    "resultado integral","total flujos","total cambios","total","subtotal",
+    "total activos corrientes",
+    "total activos no corrientes",
+    "total activos",
+    "total pasivos corrientes",
+    "total pasivos no corrientes",
+    "total pasivos",
+    "total patrimonio",
+    "total pasivos y patrimonio",
+    "total patrimonio y pasivos",
+    "ganancia bruta",
+    "ganancia (pérdida)",
+    "resultado del periodo",
+    "resultado integral del periodo",
+    "resultado integral",
+    "total flujos",
+    "total cambios",
+    "subtotal",
 ]
 
 # SSL sin verificacion (red corporativa)
@@ -416,41 +428,34 @@ def es_fila_total(celdas):
     primera = celdas[0].lower().strip() if celdas else ""
     return any(kw in primera for kw in TOTAL_KEYWORDS)
 
-def detectar_estado(primera_fila):
-    txt = " ".join(primera_fila).upper()
-    if "ACTIVOS" in txt and "PATRIMONIO" not in txt:
-        return "Balance - Activos"
-    if "PATRIMONIO" in txt and "PASIVOS" in txt:
-        return "Balance - Patrimonio y Pasivos"
-    if "RESULTADO" in txt and "INTEGRAL" not in txt:
-        return "Estado de Resultados"
-    if "INTEGRAL" in txt:
-        return "Resultado Integral"
-    if "CAMBIOS EN EL PATRIMONIO" in txt:
-        return "Cambios en el Patrimonio"
-    if "FLUJO" in txt or "EFECTIVO" in txt:
-        return "Flujo de Efectivo"
-    return None
+def es_fila_encabezado(fila):
+    """Fila de encabezado: primera celda no vacía, todas las numéricas vacías."""
+    if not fila or not fila[0].strip():
+        return False
+    return all(limpiar_numero(c) is None for c in fila[1:])
 
 def verificar_tablas(ruta):
     """
-    Retorna lista de dicts con keys: estado, descripcion, actual, anterior, ok
-    Una fila por total detectado, con valor del periodo actual (col 1) y anterior (col 2).
-    Verifica que cada total = suma de sus componentes (tolerancia < 2 M$).
+    Retorna lista de dicts con keys: hoja, descripcion, actual, anterior, ok
+    'hoja' es el texto real del encabezado de la tabla en el Word.
+    Una fila por total detectado, verifica suma de filas visibles vs declarado.
     """
     resultados = []
     tablas = extraer_tablas_docx(ruta)
-    estado_actual = "Documento"
+    hoja_actual = ""
 
     for filas in tablas:
         if not filas: continue
-        estado = detectar_estado(filas[0])
-        if estado:
-            estado_actual = estado
+
+        # Primera fila de la tabla: si todas las celdas numéricas son vacías
+        # es el encabezado/título de esa sección
+        primera = filas[0]
+        if es_fila_encabezado(primera):
+            texto = primera[0].strip()
+            if texto and len(texto) > 3:
+                hoja_actual = texto
 
         num_cols = max(len(f) for f in filas)
-
-        # acumuladores por columna: col1=Actual, col2=Anterior
         acum  = [0.0] * num_cols
         tiene = [False] * num_cols
 
@@ -468,7 +473,7 @@ def verificar_tablas(ruta):
 
                 if dec1 is not None or dec2 is not None:
                     resultados.append({
-                        "estado":        estado_actual,
+                        "hoja":          hoja_actual,
                         "descripcion":   fila[0][:80],
                         "actual":        dec1,
                         "anterior":      dec2,
@@ -486,7 +491,7 @@ def verificar_tablas(ruta):
                         tiene[col]  = True
     return resultados
 
-ENCABEZADOS = ["Seccion", "Linea", "Actual", "Anterior", "Estado", "Detalle"]
+ENCABEZADOS = ["Hoja", "Linea", "Actual", "Anterior", "Estado", "Detalle"]
 
 def escribir_resultados(ss_id, sheet_id, resultados):
     if not resultados: return
@@ -504,7 +509,7 @@ def escribir_resultados(ss_id, sheet_id, resultados):
                 partes = ["diferencia detectada"]
             detalle = " | ".join(partes)
         rows.append([
-            r["estado"],
+            r["hoja"],
             r["descripcion"],
             r["actual"]   if r["actual"]   is not None else "",
             r["anterior"] if r["anterior"] is not None else "",
