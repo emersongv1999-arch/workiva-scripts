@@ -109,46 +109,62 @@ def api_get(path, params=""):
     return data
 
 def api_post(path, body):
-    token = get_token()
-    req = urllib.request.Request(
-        f"{WDESK_BASE}{path}",
-        data=json.dumps(body).encode(),
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "X-Version": "2022-01-01",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, context=CTX, timeout=30) as resp:
-            location = resp.getheader("Location","")
-            return resp.status, {}, location
-    except urllib.error.HTTPError as e:
-        location = e.headers.get("Location","")
-        raw = e.read()
-        return e.code, json.loads(raw) if raw else {}, location
+    last_err = None
+    for attempt in range(4):
+        token = get_token()
+        req = urllib.request.Request(
+            f"{WDESK_BASE}{path}",
+            data=json.dumps(body).encode(),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Python/3.13",
+                "X-Version": "2022-01-01",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, context=CTX, timeout=60) as resp:
+                location = resp.getheader("Location","")
+                return resp.status, {}, location
+        except urllib.error.HTTPError as e:
+            location = e.headers.get("Location","")
+            raw = e.read()
+            return e.code, json.loads(raw) if raw else {}, location
+        except Exception as e:
+            last_err = e
+            wait = 2 ** attempt
+            time.sleep(wait)
+    raise last_err
 
 def api_put(path, body):
-    token = get_token()
-    req = urllib.request.Request(
-        f"{WDESK_BASE}{path}",
-        data=json.dumps(body).encode(),
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "X-Version": "2022-01-01",
-        },
-        method="PUT",
-    )
-    try:
-        with urllib.request.urlopen(req, context=CTX, timeout=60) as resp:
-            location = resp.getheader("Location","")
-            return resp.status, {}, location
-    except urllib.error.HTTPError as e:
-        location = e.headers.get("Location","")
-        raw = e.read()
-        return e.code, json.loads(raw) if raw else {}, location
+    last_err = None
+    for attempt in range(4):
+        token = get_token()
+        req = urllib.request.Request(
+            f"{WDESK_BASE}{path}",
+            data=json.dumps(body).encode(),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Python/3.13",
+                "X-Version": "2022-01-01",
+            },
+            method="PUT",
+        )
+        try:
+            with urllib.request.urlopen(req, context=CTX, timeout=90) as resp:
+                location = resp.getheader("Location","")
+                return resp.status, {}, location
+        except urllib.error.HTTPError as e:
+            location = e.headers.get("Location","")
+            raw = e.read()
+            return e.code, json.loads(raw) if raw else {}, location
+        except Exception as e:
+            last_err = e
+            wait = 2 ** attempt
+            time.sleep(wait)
+    raise last_err
 
 def poll_operation(location, max_tries=40, wait=3):
     token = get_token()
