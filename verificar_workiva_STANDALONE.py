@@ -1,12 +1,5 @@
-"""
-verificar_workiva_STANDALONE.py
-================================
-NO necesita instalar ninguna libreria.
-Funciona con Python puro (stdlib).
-
-COMO EJECUTAR en PowerShell:
-  & "C:\Users\egarridov\AppData\Local\Programs\Python\Python313\python.exe" "C:\Users\egarridov\OneDrive - Grupo CGE\Escritorio\Documentos\Scripts de Claude\verificar_workiva_STANDALONE.py"
-"""
+# verificar_workiva_STANDALONE.py
+# NO necesita instalar ninguna libreria. Solo Python puro (stdlib).
 
 import io, json, os, re, ssl, sys, time, urllib.request, urllib.error, zipfile
 import xml.etree.ElementTree as ET
