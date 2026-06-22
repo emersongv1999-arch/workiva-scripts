@@ -37,7 +37,6 @@ WORKIVA_WORKSPACE_ID=w_34913aadaa38420eabd7e4d341b78a1a
     Write-Host ".env ya existe, no se sobreescribe" -ForegroundColor Gray
 }
 
-Write-Host "`n=== Listo! Ahora ejecuta los pasos en orden ===" -ForegroundColor Cyan
-Write-Host "  python 1_listar_documentos_junio.py" -ForegroundColor White
-Write-Host "  python 2_descargar_docx.py" -ForegroundColor White
-Write-Host "  python 3_verificar_sumas.py" -ForegroundColor White
+Write-Host "`n=== Listo! Ejecuta el verificador interactivo ===" -ForegroundColor Cyan
+Write-Host "  python verificar_eeff.py" -ForegroundColor White
+Write-Host "`nTe preguntará: periodo, año, idioma y cuáles archivos verificar." -ForegroundColor Gray
