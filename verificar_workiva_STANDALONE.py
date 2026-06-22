@@ -304,14 +304,16 @@ def buscar_spreadsheet_verif():
     return None
 
 def obtener_o_crear_hoja(ss_id, nombre_hoja):
+    """Retorna (sheet_id, es_nueva). es_nueva=True solo si la creó ahora."""
     data = api_get(f"/platform/v1/spreadsheets/{ss_id}/sheets?$top=50")
     for s in data.get("value", data.get("data", [])):
         if s.get("name","").lower() == nombre_hoja.lower():
-            return s["id"]
+            return s["id"], False
     status, resp, _ = api_post(f"/platform/v1/spreadsheets/{ss_id}/sheets", {"name": nombre_hoja})
     if status not in (200, 201, 202):
         raise RuntimeError(f"No se pudo crear hoja: {status}")
-    return resp.get("id") or resp.get("data",{}).get("id")
+    sid = resp.get("id") or resp.get("data",{}).get("id")
+    return sid, True
 
 def put_range(ss_id, sheet_id, rango, values):
     status, _, location = api_put(
@@ -572,8 +574,8 @@ def main():
 
         print("    Escribiendo en Workiva...", end=" ", flush=True)
         try:
-            sheet_id = obtener_o_crear_hoja(ss_id, nombre_hoja)
-            if not hoja_tiene_datos(ss_id, sheet_id):
+            sheet_id, es_nueva = obtener_o_crear_hoja(ss_id, nombre_hoja)
+            if es_nueva:
                 put_range(ss_id, sheet_id, "A1:E1", [ENCABEZADOS])
             escribir_resultados(ss_id, sheet_id, resultados)
             print("OK")
