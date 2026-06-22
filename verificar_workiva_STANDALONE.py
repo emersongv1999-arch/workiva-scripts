@@ -668,10 +668,17 @@ def verificar_docx(ruta):
 # ---------------------------------------------------------------------------
 # Escribir las 4 sub-hojas en Workiva
 # ---------------------------------------------------------------------------
-HDR_HALL = ["Seccion", "Tabla", "Fila (total/subtotal)", "Columna",
+HDR_HALL = ["Sociedad", "Seccion", "Tabla", "Fila (total/subtotal)", "Columna",
             "Impreso", "Calculado", "Diferencia", "Metodo", "Causa", "Localizado"]
-HDR_OK   = ["Seccion", "Tabla", "Fila (total/subtotal)", "Columna", "Valor impreso", "Metodo"]
-HDR_IDX  = ["Seccion", "Tabla", "Tipo", "Cols monto", "Sumas verificadas", "Cuadran", "Con diferencia"]
+HDR_OK   = ["Sociedad", "Seccion", "Tabla", "Fila (total/subtotal)", "Columna", "Valor impreso", "Metodo"]
+HDR_IDX  = ["Sociedad", "Seccion", "Tabla", "Tipo", "Cols monto", "Sumas verificadas", "Cuadran", "Con diferencia"]
+
+NOMBRE_HOJAS = {
+    "hallazgos":  "Hallazgos",
+    "revisar":    "Revisar_manual",
+    "ok":         "Verificadas_OK",
+    "indice":     "Indice_cuadros",
+}
 
 def _escribir_hoja(ss_id, nombre_hoja, encabezados, filas):
     sheet_id, es_nueva = obtener_o_crear_hoja(ss_id, nombre_hoja)
@@ -684,27 +691,27 @@ def _escribir_hoja(ss_id, nombre_hoja, encabezados, filas):
         put_range(ss_id, sheet_id, f"A{primera}:{chr(64+n)}{primera+len(filas)-1}", filas)
 
 def escribir_4_hojas(ss_id, codigo, resultado):
-    filas_h = [[r["seccion"], r["tabla"], r["linea"], r["columna"],
+    filas_h = [[codigo, r["seccion"], r["tabla"], r["linea"], r["columna"],
                 r["impreso"], r["calc"], r["dif"], r["metodo"], r["causa"],
                 "Si" if r["localizado"] else "No"]
                for r in resultado["hallazgos"]]
-    _escribir_hoja(ss_id, f"{codigo} Hallazgos", HDR_HALL, filas_h)
+    _escribir_hoja(ss_id, NOMBRE_HOJAS["hallazgos"], HDR_HALL, filas_h)
 
-    filas_r = [[r["seccion"], r["tabla"], r["linea"], r["columna"],
+    filas_r = [[codigo, r["seccion"], r["tabla"], r["linea"], r["columna"],
                 r["impreso"], r["calc"], r["dif"], r["metodo"], r["causa"],
                 "Si" if r["localizado"] else "No"]
                for r in resultado["revisar"]]
-    _escribir_hoja(ss_id, f"{codigo} Revisar_manual", HDR_HALL, filas_r)
+    _escribir_hoja(ss_id, NOMBRE_HOJAS["revisar"], HDR_HALL, filas_r)
 
-    filas_ok = [[r["seccion"], r["tabla"], r["linea"], r["columna"],
+    filas_ok = [[codigo, r["seccion"], r["tabla"], r["linea"], r["columna"],
                  r["impreso"], r["metodo"]]
                 for r in resultado["ok"]]
-    _escribir_hoja(ss_id, f"{codigo} Verificadas_OK", HDR_OK, filas_ok)
+    _escribir_hoja(ss_id, NOMBRE_HOJAS["ok"], HDR_OK, filas_ok)
 
-    filas_i = [[r["seccion"], r["tabla"], r["tipo"],
+    filas_i = [[codigo, r["seccion"], r["tabla"], r["tipo"],
                 r["n_cols"], r["n_sumas"], r["ok"], r["dif"]]
                for r in resultado["indice"]]
-    _escribir_hoja(ss_id, f"{codigo} Indice_cuadros", HDR_IDX, filas_i)
+    _escribir_hoja(ss_id, NOMBRE_HOJAS["indice"], HDR_IDX, filas_i)
 
 # ---------------------------------------------------------------------------
 # UI helpers
