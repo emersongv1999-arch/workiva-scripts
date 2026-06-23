@@ -670,7 +670,11 @@ def verify_movement(rows, cols):
                     continue
                 d_sub = v - summov
                 d_close = (v - ((opening or 0) + summov)) if have_open else None
-                if d_close == 0:
+                # Solo reseteamos opening si la fila tambien parece un saldo
+                # (label tipo "saldo final" o "total cambios") para no confundir
+                # subtotales intermedios (e.g. "Total M$") con saldo de cierre.
+                _is_close_candidate = BAL.search(lab) or TOTMOV.search(lab)
+                if d_close == 0 and _is_close_candidate:
                     res.append({'col': j, 'label': lab, 'printed': v, 'dif': 0,
                                 'metodo': 'Movimiento: saldo final = inicial + movimientos',
                                 'clase': 'check'})
@@ -679,7 +683,7 @@ def verify_movement(rows, cols):
                 elif d_sub == 0:
                     res.append({'col': j, 'label': lab, 'printed': v, 'dif': 0,
                                 'metodo': 'Suma de movimientos', 'clase': 'check'})
-                elif d_close is not None and abs(d_close) < abs(d_sub):
+                elif d_close is not None and abs(d_close) < abs(d_sub) and _is_close_candidate:
                     res.append({'col': j, 'label': lab, 'printed': v, 'dif': d_close,
                                 'metodo': 'Movimiento: saldo final = inicial + movimientos',
                                 'clase': 'check'})
@@ -736,7 +740,23 @@ def verificar_docx(ruta):
         if not cols:
             continue
 
-        tipo = "movimiento" if is_movement_table(filas, cols) else "general"
+        # Matriz horizontal de rollforward: columnas de tipo "Saldo al dd-mm-aaaa".
+        # En estas tablas las filas son instrumentos/entidades y las columnas son
+        # periodos/movimientos -> la logica de sumas verticales no aplica directamente.
+        # Detectamos por la presencia de "saldo" + fecha en los encabezados de columna.
+        _saldo_en_header = any(
+            re.search(r'saldo', h, re.I) and re.search(r'\d{2}-\d{2}-\d{4}', h)
+            for h in htxt
+        )
+        # Si el encabezado tiene columna "saldo al fecha" pero las filas de datos NO
+        # tienen labels de tipo saldo/balance, es una matriz horizontal -> omitir.
+        _row_labels_have_saldo = any(BAL.search(_row_label(r)) for r in filas if not r['blue'])
+        if _saldo_en_header and not _row_labels_have_saldo:
+            tipo = "omitir"
+        else:
+            tipo = "movimiento" if is_movement_table(filas, cols) else "general"
+        if tipo == "omitir":
+            continue
         res  = verify_movement(filas, cols) if tipo == "movimiento" else verify(filas, cols)
         checks = [r for r in res if r['clase'] == 'check']
         if not checks:
