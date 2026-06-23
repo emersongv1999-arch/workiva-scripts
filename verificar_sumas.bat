@@ -47,7 +47,7 @@ echo.
 echo ============================================================
 echo.
 
-py verificar_workiva_STANDALONE.py %PERIODO%
+py verificar_workiva_STANDALONE_V11.py %PERIODO%
 
 echo.
 echo ============================================================
