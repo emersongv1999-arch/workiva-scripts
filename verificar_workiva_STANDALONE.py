@@ -427,6 +427,15 @@ def parse_num(s):
 def cell(r, j):
     return r['cells'][j] if j < len(r['cells']) else ''
 
+def _row_label(r):
+    """Primer texto no vacio de la fila. Maneja celdas fusionadas verticalmente
+    (w:vMerge) donde cells[0] queda vacio y el label real esta en cells[1]."""
+    for c in r.get('cells', []):
+        t = c.strip()
+        if t:
+            return t
+    return ''
+
 def amount_cols(rows):
     """Columnas de monto: excluye col0 (etiqueta), columnas de notas.
     Devuelve (cols, htxt) donde htxt[j] es el texto del encabezado de col j."""
@@ -470,10 +479,10 @@ def colhdr(htxt, j):
 
 def is_movement_table(rows, cols):
     nbal = sum(1 for r in rows
-               if BAL.search(r['cells'][0] if r['cells'] else '')
+               if BAL.search(_row_label(r))
                and any(parse_num(cell(r, j)) is not None for j in cols))
     ntot = sum(1 for r in rows
-               if TOTMOV.search(r['cells'][0] if r['cells'] else ''))
+               if TOTMOV.search(_row_label(r)))
     return nbal >= 1 and (nbal >= 2 or ntot >= 1)
 
 def verify(rows, cols):
@@ -491,7 +500,7 @@ def verify(rows, cols):
     def is_ckpt(r):
         if not numeric(r):
             return False
-        lab = r['cells'][0] if r['cells'] else ''
+        lab = _row_label(r)
         if REF_NOTA.search(lab):
             return False
         if KW.search(lab):
@@ -585,7 +594,7 @@ def verify(rows, cols):
                             cands['D_seccion_anterior'] = P
                             break
                 avail = {n: c for n, c in cands.items() if c is not None}
-                lab = r['cells'][0] if r['cells'] else ''
+                lab = _row_label(r)
                 difs = {n: (P - c) for n, c in avail.items()}
                 best = min(difs, key=lambda n: abs(difs[n])) if difs else None
                 if best is not None and difs[best] == 0:
@@ -635,7 +644,7 @@ def verify_movement(rows, cols):
         summov = 0
         have_open = False
         for r in rows:
-            lab = r['cells'][0] if r['cells'] else ''
+            lab = _row_label(r)
             v = parse_num(cell(r, j))
             is_bal = bool(BAL.search(lab)) or bool(
                 r['blue'] and re.match(r'^Sald', lab, re.I)
