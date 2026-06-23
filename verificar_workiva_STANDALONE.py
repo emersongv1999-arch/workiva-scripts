@@ -4,10 +4,32 @@
 # y escribe los hallazgos directamente en la spreadsheet "verificacion de sumas".
 # Logica de verificacion basada en verificar_sumas.py (motor PDF depurado).
 
-import json, re, ssl, time, urllib.request, urllib.error, zipfile
+import json, re, ssl, sys, time, urllib.request, urllib.error, zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from collections import defaultdict
+
+# ---------------------------------------------------------------------------
+# PERIODO  (argumento CLI o deteccion automatica desde la carpeta actual)
+# Uso: py verificar_workiva_STANDALONE.py 03-2026
+# Sin argumento: detecta MM-AAAA del nombre de la carpeta actual.
+# ---------------------------------------------------------------------------
+def _detectar_periodo():
+    # 1) argumento CLI
+    for arg in sys.argv[1:]:
+        if re.fullmatch(r'\d{2}-\d{4}', arg):
+            return arg
+    # 2) nombre de la carpeta de trabajo actual
+    cwd = Path.cwd().name
+    m = re.search(r'(\d{2}[-_]\d{4})', cwd)
+    if m:
+        return m.group(1).replace('_', '-')
+    # 3) preguntar al usuario
+    while True:
+        p = input("  Periodo (MM-AAAA, ej: 03-2026): ").strip()
+        if re.fullmatch(r'\d{2}-\d{4}', p):
+            return p
+        print("  Formato incorrecto, ingresa MM-AAAA")
 
 # ---------------------------------------------------------------------------
 # CREDENCIALES
@@ -19,9 +41,10 @@ WORKSPACE_ID  = "w_34913aadaa38420eabd7e4d341b78a1a"
 TOKEN_URL  = "https://api.app.wdesk.com/iam/v1/oauth2/token"
 WDESK_BASE = "https://api.app.wdesk.com"
 
-SS_VERIF_NAME = "verificacion de sumas"
+PERIODO       = _detectar_periodo()
+SS_VERIF_NAME = f"verificacion de sumas {PERIODO}"
 DOCX_DIR      = Path("docx_tmp_verif")
-SS_CACHE      = Path(__file__).parent / ".ss_verif_id"
+SS_CACHE      = Path(__file__).parent / f".ss_verif_id_{PERIODO}"
 
 MESES = {
     "1":"01","01":"01","enero":"01","2":"02","02":"02","febrero":"02",
