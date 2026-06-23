@@ -577,6 +577,13 @@ def verify(rows, cols):
                     cands['C_subtotales'] = sum(subs)
                 if stack_ok.get(i):
                     cands['S_jerarquia'] = P
+                # Grand total = subtotal_anterior + prev (ej: Total Pasivos + Patrimonio Total)
+                # Solo cuando el bloque inmediato esta vacio (no hay filas de detalle entre ambos totales)
+                if not block and prev is not None and len(subs) >= 2:
+                    for s in subs[:-1]:   # todos los subtotales excepto el ultimo (=prev)
+                        if s + prev == P:
+                            cands['D_seccion_anterior'] = P
+                            break
                 avail = {n: c for n, c in cands.items() if c is not None}
                 lab = r['cells'][0] if r['cells'] else ''
                 difs = {n: (P - c) for n, c in avail.items()}
@@ -586,7 +593,7 @@ def verify(rows, cols):
                                 'metodo': best, 'clase': 'check'})
                     if best in ('E_acum_total', 'C_subtotales'):
                         cum = 0
-                        subs = []
+                        subs = [P]   # conservar P como punto de partida del siguiente nivel
                 elif KW_FLAG.search(lab) and best is not None:
                     bd = difs[best]
                     # E_acum_total con acumulador en 0: no habia detalle sumable
