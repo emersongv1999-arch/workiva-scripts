@@ -30,16 +30,6 @@ if "%PERIODO%"=="" (
     set /p PERIODO="  Periodo: "
 )
 
-:: Validar formato MM-AAAA
-echo %PERIODO% | findstr /r "^[0-9][0-9]-[0-9][0-9][0-9][0-9]$" >nul
-if errorlevel 1 (
-    echo.
-    echo  ERROR: Formato incorrecto. Usa MM-AAAA (ej: 03-2026)
-    echo.
-    pause
-    exit /b 1
-)
-
 echo.
 echo  Periodo: %PERIODO%
 echo  Buscando spreadsheet: verificacion de sumas %PERIODO%
