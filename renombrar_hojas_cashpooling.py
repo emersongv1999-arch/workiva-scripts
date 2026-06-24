@@ -13,7 +13,7 @@ Flujo:
   6. Aplica los cambios al confirmar
 """
 
-import json, re, ssl, time, threading
+import datetime, json, re, ssl, time, threading
 import tkinter as tk
 from tkinter import ttk, messagebox
 
@@ -110,23 +110,39 @@ def listar_hojas(ss_id):
     url = f"/platform/v1/spreadsheets/{ss_id}/sheets?$top=200"
     while url:
         data = _get(url)
-        hojas.extend(data.get("value", data.get("data", [])))
+        items = data.get("value") or data.get("data") or []
+        hojas.extend(items)
         url = data.get("@nextLink") or data.get("nextLink") or None
     return hojas
 
+def _fecha_a_ddmm(texto):
+    """Convierte '2026-07-01' a '01.07'. Si no es fecha ISO devuelve el texto tal cual."""
+    try:
+        dt = datetime.date.fromisoformat(texto)
+        return f"{dt.day:02d}.{dt.month:02d}"
+    except Exception:
+        return texto
+
 def leer_rango(ss_id, sheet_id, rango):
-    """Lee valores de un rango y devuelve lista plana de strings."""
+    """
+    Lee valores de un rango y devuelve lista plana de strings en formato DD.MM.
+    La API devuelve: {"data": [{"range": "E2:E23", "values": [["2026-07-01"], ...]}]}
+    """
     data = _get(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}/values/{rango}")
-    # Workiva puede devolver el arreglo en distintas claves
-    vals = (data.get("values")
-            or data.get("data", {}).get("values")
-            or data.get("body", {}).get("values")
-            or [])
+    raw = data.get("data", [])
+    # raw es una lista: [{"range": ..., "values": [[v1], [v2], ...]}]
+    if isinstance(raw, list) and raw and isinstance(raw[0], dict):
+        vals = raw[0].get("values", [])
+    elif isinstance(raw, list):
+        vals = raw
+    else:
+        vals = data.get("values") or []
+
     resultado = []
     for fila in vals:
         celda = fila[0] if isinstance(fila, list) and fila else fila
         texto = str(celda).strip() if celda is not None else ""
-        resultado.append(texto)
+        resultado.append(_fecha_a_ddmm(texto))
     return resultado
 
 def renombrar_hoja(ss_id, sheet_id, nuevo_nombre):
@@ -184,12 +200,13 @@ def obtener_subhojas(mes, anio):
     if summary_id:
         for h in hojas:
             pid = (h.get("parentId")
-                   or h.get("parent", {}).get("id", "")
+                   or (h.get("parent") or {}).get("id", "")
                    or "")
-            if pid == summary_id:
+            # Solo incluir las que tienen patrón DD.MM (excluye "- 3", "- 4", etc.)
+            if pid == summary_id and PATRON_SUBHOJA.match(h.get("name", "")):
                 subhojas.append(h)
 
-    # Si no encontramos por parentId, usar patrón de nombre
+    # Si no encontramos por parentId, usar solo patrón de nombre
     if not subhojas:
         subhojas = [h for h in hojas if PATRON_SUBHOJA.match(h.get("name", ""))]
 
