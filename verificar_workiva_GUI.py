@@ -875,13 +875,20 @@ class App(tk.Tk):
     def _build_ui(self):
         self._build_header()
 
+        # Footer fijo al fondo de la ventana principal (ancho completo)
+        footer = tk.Frame(self, bg=CGE_BLUE, pady=6)
+        footer.pack(fill="x", side="bottom")
+        tk.Label(footer,
+                 text="© Programado por Emerson Garrido — Todos los derechos reservados.",
+                 font=("Segoe UI", 8), bg=CGE_BLUE, fg="#8aaaf5").pack(side="left", padx=14)
+
         # Contenedor principal bajo el header
         main = tk.Frame(self, bg=CGE_LIGHT)
         main.pack(fill="both", expand=True)
 
         self._build_sidebar(main)
 
-        # Columna derecha: contenido + footer
+        # Columna derecha: contenido
         right_col = tk.Frame(main, bg=CGE_LIGHT)
         right_col.pack(side="left", fill="both", expand=True)
 
@@ -1130,20 +1137,13 @@ class App(tk.Tk):
 
         log_box = tk.Frame(parent, bg=CGE_CARD,
                            highlightbackground=CGE_BORDER, highlightthickness=1)
-        log_box.pack(fill="both", expand=True, pady=(0, 4))
+        log_box.pack(fill="both", expand=True)
 
         self._log = scrolledtext.ScrolledText(
             log_box, font=FONT_MONO, bg=CGE_CARD, fg=CGE_TEXT,
             insertbackground=CGE_TEXT, relief="flat", bd=8,
             state="disabled", wrap="word", height=8)
         self._log.pack(fill="both", expand=True)
-
-        # Footer dentro del area de contenido
-        footer_inner = tk.Frame(parent, bg=CGE_BORDER, pady=5)
-        footer_inner.pack(fill="x", side="bottom")
-        tk.Label(footer_inner,
-                 text="© Programado por Emerson Garrido — Todos los derechos reservados.",
-                 font=("Segoe UI", 8), bg=CGE_BORDER, fg=CGE_MUTED).pack(side="left", padx=14)
 
         self._log.tag_config("ok",     foreground=CGE_GREEN)
         self._log.tag_config("err",    foreground=CGE_RED)
