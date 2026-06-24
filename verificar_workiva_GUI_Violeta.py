@@ -1124,6 +1124,7 @@ class App(tk.Tk):
             messagebox.showerror("Error", "Año invalido. Ej: 2026")
             return
         self._lock()
+        self._clear_log()
         threading.Thread(target=self._thread_buscar,
                          args=(mes, anio, self._v_idioma.get()), daemon=True).start()
 
@@ -1137,7 +1138,7 @@ class App(tk.Tk):
             else:
                 self.log(f"  {len(docs)} documento(s) encontrado(s).", "ok")
             periodo = f"{mes}-{anio}"
-            self._ss_name  = f"verificacion de sumas {periodo}"
+            self._ss_name  = f"Verificación de sumas {periodo}"
             self._ss_cache = Path(__file__).parent / f".ss_verif_id_{periodo}"
             self._docx_dir = Path("docx_tmp_verif")
             self.after(0, lambda: self._render_docs(self._docs))
