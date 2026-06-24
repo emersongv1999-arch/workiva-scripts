@@ -323,75 +323,17 @@ def main():
         print("  No hay subhojas cargadas para limpiar.")
 
     print("\n" + "="*60)
-    print("PASO 5: Limpiar rangos Fund Request (respetando formulas)")
+    print("PASO 5: Limpiar rangos Fund Request (celdas sin formula)")
     print("="*60)
 
+    # Rangos exactos que NO contienen formulas (solo datos manuales)
     RANGOS_FUNDREQ = [
-        "F4:L58",
-        "P4:Q15",
-        "V4:V14",
+        "F4:L8",   "F10:L14",  "F16:L20",  "F22:L26",
+        "F28:L32", "F36:L40",  "F42:L46",  "F48:L52",
+        "F54:L58",
+        "P4:Q8",   "P11:Q15",
+        "V4:V8",   "V11:V14",
     ]
-
-    def leer_formulas(ss_id, sheet_id, rango):
-        """
-        Devuelve (matriz_formulas, raw_completo).
-        Imprime la respuesta raw para diagnostico.
-        """
-        try:
-            data = api_get(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}/formulas/{rango}", version="2026-01-01")
-            print(f"\n      [DIAG formulas {rango}] claves: {list(data.keys())}")
-            raw = data.get("data")
-            print(f"      [DIAG] tipo data['data']: {type(raw).__name__}, len={len(raw) if isinstance(raw, list) else '-'}")
-            if isinstance(raw, list) and raw:
-                print(f"      [DIAG] primer elemento: {str(raw[0])[:200]}")
-            if isinstance(raw, list) and raw and isinstance(raw[0], dict):
-                vals = raw[0].get("values", [])
-            elif isinstance(raw, list):
-                vals = raw
-            else:
-                vals = data.get("values") or []
-            n_formulas = sum(
-                1 for fila in vals for c in fila
-                if isinstance(c, str) and c.strip().startswith("=")
-            )
-            print(f"      [DIAG] filas={len(vals)}, formulas detectadas={n_formulas}")
-            return vals
-        except Exception as e:
-            print(f"\n      WARN leer_formulas {rango}: {e}")
-            return None  # None = error, no escribir
-
-    def col_letra_a_num(letra):
-        num = 0
-        for c in letra.upper():
-            num = num * 26 + (ord(c) - 64)
-        return num
-
-    def rango_dims(rango):
-        ini, fin = rango.split(":")
-        # Separar letras y numero
-        import re as _re
-        m_ini = _re.match(r"([A-Z]+)(\d+)", ini)
-        m_fin = _re.match(r"([A-Z]+)(\d+)", fin)
-        col_i = col_letra_a_num(m_ini.group(1))
-        col_f = col_letra_a_num(m_fin.group(1))
-        fil_i = int(m_ini.group(2))
-        fil_f = int(m_fin.group(2))
-        return col_f - col_i + 1, fil_f - fil_i + 1
-
-    def matriz_sin_formulas(formulas_matrix, ncols, nfilas):
-        """Construye matriz: '' donde no hay formula, formula original donde si hay."""
-        resultado = []
-        for r in range(nfilas):
-            fila_out = []
-            for c in range(ncols):
-                try:
-                    celda = formulas_matrix[r][c] if r < len(formulas_matrix) else None
-                except (IndexError, TypeError):
-                    celda = None
-                formula = str(celda).strip() if celda is not None else ""
-                fila_out.append(formula if formula.startswith("=") else "")
-            resultado.append(fila_out)
-        return resultado
 
     if ss_id_cash and pares_fr:
         hojas_fr = [h for h in hojas_cash
@@ -401,40 +343,21 @@ def main():
 
         print(f"\n  Rangos a limpiar: {RANGOS_FUNDREQ}")
         print(f"  Subhojas Fund Request: {len(hojas_fr)}")
-        resp3 = input("\n  ¿Limpiar rangos Fund Request (preservando formulas)? (s/n): ").strip().lower()
+        resp3 = input("\n  ¿Limpiar rangos Fund Request? (s/n): ").strip().lower()
         if resp3 == "s":
             for h in hojas_fr:
                 sheet_id = h["id"]
                 nombre   = h.get("name", sheet_id)
                 print(f"\n  Limpiando: {nombre}")
                 for rango in RANGOS_FUNDREQ:
-                    ncols, nfilas = rango_dims(rango)
-                    print(f"\n    {rango} ({nfilas}f x {ncols}c): leyendo formulas...")
-                    formulas = leer_formulas(ss_id_cash, sheet_id, rango)
-                    if formulas is None:
-                        print(f"    {rango}: SALTEADO (error leyendo formulas)")
-                        continue
-                    n_formulas_det = sum(
-                        1 for fila in formulas for c in fila
-                        if isinstance(c, str) and c.strip().startswith("=")
-                    )
-                    if n_formulas_det == 0:
-                        print(f"    {rango}: ADVERTENCIA — no se detectaron formulas.")
-                        print(f"    ¿Continuar de todas formas y borrar el rango? (s/n): ", end="")
-                        conf = input().strip().lower()
-                        if conf != "s":
-                            print(f"    {rango}: SALTEADO por el usuario.")
-                            continue
-                    matriz = matriz_sin_formulas(formulas, ncols, nfilas)
-                    n_formulas_ok = sum(1 for fila in matriz for c in fila if c.startswith("="))
-                    print(f"    {rango}: {n_formulas_ok} formulas preservadas. Escribiendo...", end=" ", flush=True)
+                    vals = vacias(rango)
                     st, resp_data = api_put(
                         f"/platform/v1/spreadsheets/{ss_id_cash}/sheets/{sheet_id}/values/{rango}",
-                        {"values": matriz}
+                        {"values": vals}
                     )
                     estado = "OK" if st in (200, 202, 204) else f"ERR {st} {resp_data}"
-                    print(estado)
-                    time.sleep(0.15)
+                    print(f"    {rango}: {estado}")
+                    time.sleep(0.1)
             print("\n  Limpieza Fund Request terminada.")
         else:
             print("  Cancelado.")
