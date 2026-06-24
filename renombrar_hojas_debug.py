@@ -55,17 +55,17 @@ def get_token():
     print(f"  Token OK")
     return _token
 
-def hdrs():
+def hdrs(version="2022-01-01"):
     return {
         "Authorization": f"Bearer {get_token()}",
         "Content-Type":  "application/json",
-        "X-Version":     "2022-01-01",
+        "X-Version":     version,
     }
 
-def api_get(path):
+def api_get(path, version="2022-01-01"):
     url = f"{WDESK_BASE}{path}" if path.startswith("/") else path
     print(f"  GET {path[:80]}")
-    st, data = _http("GET", url, headers=hdrs())
+    st, data = _http("GET", url, headers=hdrs(version))
     if st not in (200, 206):
         raise RuntimeError(f"GET {path} -> {st}: {data}")
     return data
@@ -338,7 +338,7 @@ def main():
         Imprime la respuesta raw para diagnostico.
         """
         try:
-            data = api_get(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}/formulas/{rango}")
+            data = api_get(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}/formulas/{rango}", version="2026-01-01")
             print(f"\n      [DIAG formulas {rango}] claves: {list(data.keys())}")
             raw = data.get("data")
             print(f"      [DIAG] tipo data['data']: {type(raw).__name__}, len={len(raw) if isinstance(raw, list) else '-'}")
