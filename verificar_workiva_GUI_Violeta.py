@@ -1039,8 +1039,8 @@ class App(tk.Tk):
         self._btn_detener = tk.Button(act_header, text="Detener", font=FONT_SMALL,
                   bg=CGE_RED, fg=CGE_WHITE, relief="flat", bd=0,
                   padx=8, pady=2, cursor="hand2",
-                  command=self._detener, state="disabled")
-        self._btn_detener.pack(side="right", padx=(0, 4))
+                  command=self._detener)
+        # se muestra solo cuando hay proceso activo
 
         log_box = tk.Frame(parent, bg=CGE_CARD,
                            highlightbackground=CGE_BORDER, highlightthickness=1)
@@ -1075,8 +1075,8 @@ class App(tk.Tk):
 
     def _detener(self):
         self._stop_flag = True
-        self._btn_detener.configure(state="disabled")
-        self.log("⏹ Deteniendo...", "warn")
+        self._btn_detener.pack_forget()
+        self.log("Deteniendo...", "warn")
 
     # ── DOCS LIST ─────────────────────────────────────────────────────────────
     def _render_docs(self, docs):
@@ -1116,13 +1116,13 @@ class App(tk.Tk):
         self._stop_flag = False
         self._btn_buscar.configure(state="disabled")
         self._btn_verificar.configure(state="disabled")
-        self._btn_detener.configure(state="normal")
+        self._btn_detener.pack(side="right", padx=(0, 4))
         self._progress.start(10)
 
     def _unlock(self):
         self._running = False
         self._btn_buscar.configure(state="normal")
-        self._btn_detener.configure(state="disabled")
+        self._btn_detener.pack_forget()
         if self._docs:
             self._btn_verificar.configure(state="normal")
         self._progress.stop()
