@@ -197,7 +197,7 @@ def buscar_spreadsheet_verif(ss_name, ss_cache):
                 "X-Version": "2022-01-01",
             })
         for ss in data.get("value", data.get("data", [])):
-            if ss_name in ss.get("name", "").lower():
+            if ss_name.lower() in ss.get("name", "").lower():
                 sid = ss["id"]
                 ss_cache.write_text(sid)
                 return sid
