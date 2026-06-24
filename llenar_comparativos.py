@@ -11,13 +11,36 @@ El script pregunta el año y mes y procesa todos los archivos de la
 carpeta Individuales de ese período automáticamente.
 """
 
-import warnings, time, re
+import warnings, time, re, ssl, urllib.request, urllib.parse, json
+import requests
 from urllib3.exceptions import InsecureRequestWarning
-
-# Importar función de limpieza
-exec(open("limpiar_comparativos.py", encoding="utf-8").read().split("# ── MAIN")[0])
 warnings.filterwarnings("ignore", category=InsecureRequestWarning)
-from workiva_client import get_session
+
+# ── CREDENCIALES ──────────────────────────────────────────────────────────────
+CLIENT_ID     = "db2c551e-e18a-417e-8e52-d182716b8ef2"
+CLIENT_SECRET = "wk_secret:oa2c:DzlUCmBQDv6raPxG09me"
+TOKEN_URL     = "https://api.app.wdesk.com/iam/v1/oauth2/token"
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_session():
+    resp = requests.post(TOKEN_URL, data={
+        "grant_type":    "client_credentials",
+        "client_id":     CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+    }, verify=False, timeout=30)
+    token = resp.json()["access_token"]
+    s = requests.Session()
+    s.headers.update({"Authorization": f"Bearer {token}"})
+    s.verify = False
+    return s
+
+# Importar función de limpieza si está disponible
+def clean_file(fid, name):
+    pass  # no-op si limpiar_comparativos.py no está disponible
+try:
+    exec(open("limpiar_comparativos.py", encoding="utf-8").read().split("# ── MAIN")[0])
+except FileNotFoundError:
+    print("  [INFO] limpiar_comparativos.py no encontrado — se omite limpieza")
 
 # ─── CONFIGURACIÓN ────────────────────────────────────────────────────────────
 WORKSPACE_ID = "w_34913aadaa38420eabd7e4d341b78a1a"
@@ -79,8 +102,7 @@ def refresh_token():
     if time.time() - _last_token[0] > 480:
         ns = get_session()
         ns.headers.update({"X-Version": "2022-01-01"})
-        for k, v in ns.headers.items():
-            session.headers[k] = v
+        session.headers.update(ns.headers)
         _last_token[0] = time.time()
         print("  [Token renovado]")
 
