@@ -873,28 +873,33 @@ class App(tk.Tk):
 
     # ── UI ────────────────────────────────────────────────────────────────────
     def _build_ui(self):
-        self._build_header()
+        # Grid layout en la ventana principal: header fila 0, contenido fila 1, footer fila 2
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure(0, weight=1)
 
-        # Footer fijo al fondo de la ventana principal (ancho completo)
-        footer = tk.Frame(self, bg=CGE_BLUE, pady=6)
-        footer.pack(fill="x", side="bottom")
-        tk.Label(footer,
-                 text="© Programado por Emerson Garrido — Todos los derechos reservados.",
-                 font=("Segoe UI", 8), bg=CGE_BLUE, fg="#8aaaf5").pack(side="left", padx=14)
+        # Header
+        hdr_frame = tk.Frame(self)
+        hdr_frame.grid(row=0, column=0, sticky="ew")
+        self._build_header(hdr_frame)
 
-        # Contenedor principal bajo el header
+        # Contenido principal
         main = tk.Frame(self, bg=CGE_LIGHT)
-        main.pack(fill="both", expand=True)
+        main.grid(row=1, column=0, sticky="nsew")
 
         self._build_sidebar(main)
 
-        # Columna derecha: contenido
         right_col = tk.Frame(main, bg=CGE_LIGHT)
         right_col.pack(side="left", fill="both", expand=True)
 
-        # Área de contenido
         self._content = tk.Frame(right_col, bg=CGE_LIGHT)
-        self._content.pack(side="top", fill="both", expand=True)
+        self._content.pack(fill="both", expand=True)
+
+        # Footer — siempre en fila 2, ancho completo
+        footer = tk.Frame(self, bg=CGE_BLUE, pady=6)
+        footer.grid(row=2, column=0, sticky="ew")
+        tk.Label(footer,
+                 text="© Programado por Emerson Garrido — Todos los derechos reservados.",
+                 font=("Segoe UI", 8), bg=CGE_BLUE, fg="#8aaaf5").pack(side="left", padx=14)
 
         # Construir vistas
         self._views = {}
@@ -955,9 +960,9 @@ class App(tk.Tk):
                  bg=CGE_LIGHT, fg=CGE_MUTED).pack()
         self._views[key] = frame
 
-    def _build_header(self):
-        hdr = tk.Frame(self, bg=CGE_BLUE, pady=0)
-        hdr.pack(fill="x")
+    def _build_header(self, container):
+        hdr = tk.Frame(container, bg=CGE_BLUE, pady=0)
+        hdr.pack(fill="both", expand=True)
 
         # Logo CGE
         logo_frame = tk.Frame(hdr, bg=CGE_BLUE, padx=18, pady=14)
