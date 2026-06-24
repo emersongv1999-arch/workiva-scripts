@@ -333,18 +333,32 @@ def main():
     ]
 
     def leer_formulas(ss_id, sheet_id, rango):
-        """Devuelve matriz de formulas del rango. Celdas sin formula vienen como '' o None."""
+        """
+        Devuelve (matriz_formulas, raw_completo).
+        Imprime la respuesta raw para diagnostico.
+        """
         try:
             data = api_get(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}/formulas/{rango}")
+            print(f"\n      [DIAG formulas {rango}] claves: {list(data.keys())}")
             raw = data.get("data")
+            print(f"      [DIAG] tipo data['data']: {type(raw).__name__}, len={len(raw) if isinstance(raw, list) else '-'}")
+            if isinstance(raw, list) and raw:
+                print(f"      [DIAG] primer elemento: {str(raw[0])[:200]}")
             if isinstance(raw, list) and raw and isinstance(raw[0], dict):
-                return raw[0].get("values", [])
+                vals = raw[0].get("values", [])
             elif isinstance(raw, list):
-                return raw
-            return data.get("values") or []
+                vals = raw
+            else:
+                vals = data.get("values") or []
+            n_formulas = sum(
+                1 for fila in vals for c in fila
+                if isinstance(c, str) and c.strip().startswith("=")
+            )
+            print(f"      [DIAG] filas={len(vals)}, formulas detectadas={n_formulas}")
+            return vals
         except Exception as e:
-            print(f"      WARN leer_formulas {rango}: {e}")
-            return []
+            print(f"\n      WARN leer_formulas {rango}: {e}")
+            return None  # None = error, no escribir
 
     def col_letra_a_num(letra):
         num = 0
@@ -395,11 +409,25 @@ def main():
                 print(f"\n  Limpiando: {nombre}")
                 for rango in RANGOS_FUNDREQ:
                     ncols, nfilas = rango_dims(rango)
-                    print(f"    {rango} ({nfilas}f x {ncols}c): leyendo formulas...", end=" ", flush=True)
+                    print(f"\n    {rango} ({nfilas}f x {ncols}c): leyendo formulas...")
                     formulas = leer_formulas(ss_id_cash, sheet_id, rango)
+                    if formulas is None:
+                        print(f"    {rango}: SALTEADO (error leyendo formulas)")
+                        continue
+                    n_formulas_det = sum(
+                        1 for fila in formulas for c in fila
+                        if isinstance(c, str) and c.strip().startswith("=")
+                    )
+                    if n_formulas_det == 0:
+                        print(f"    {rango}: ADVERTENCIA — no se detectaron formulas.")
+                        print(f"    ¿Continuar de todas formas y borrar el rango? (s/n): ", end="")
+                        conf = input().strip().lower()
+                        if conf != "s":
+                            print(f"    {rango}: SALTEADO por el usuario.")
+                            continue
                     matriz = matriz_sin_formulas(formulas, ncols, nfilas)
-                    n_formulas = sum(1 for fila in matriz for c in fila if c.startswith("="))
-                    print(f"{n_formulas} formulas preservadas. Escribiendo...", end=" ", flush=True)
+                    n_formulas_ok = sum(1 for fila in matriz for c in fila if c.startswith("="))
+                    print(f"    {rango}: {n_formulas_ok} formulas preservadas. Escribiendo...", end=" ", flush=True)
                     st, resp_data = api_put(
                         f"/platform/v1/spreadsheets/{ss_id_cash}/sheets/{sheet_id}/values/{rango}",
                         {"values": matriz}
