@@ -885,10 +885,7 @@ class App(tk.Tk):
         right_col = tk.Frame(main, bg=CGE_LIGHT)
         right_col.pack(side="left", fill="both", expand=True)
 
-        # Footer anclado al fondo de la columna derecha
-        self._build_footer(right_col)
-
-        # Área de contenido (sobre el footer)
+        # Área de contenido
         self._content = tk.Frame(right_col, bg=CGE_LIGHT)
         self._content.pack(side="top", fill="both", expand=True)
 
@@ -942,12 +939,6 @@ class App(tk.Tk):
         label = next(l for l, k in NAV_ITEMS if k == key)
         self._header_subtitle.configure(text=label)
 
-    def _build_footer(self, parent):
-        footer = tk.Frame(parent, bg=CGE_BORDER, pady=6)
-        footer.pack(fill="x", side="bottom")
-        tk.Label(footer,
-                 text="© Programado por Emerson Garrido — Todos los derechos reservados.",
-                 font=("Segoe UI", 8), bg=CGE_BORDER, fg=CGE_MUTED).pack(side="left", padx=14)
 
     def _build_view_placeholder(self, key, name):
         frame = tk.Frame(self._content, bg=CGE_LIGHT)
@@ -1139,13 +1130,20 @@ class App(tk.Tk):
 
         log_box = tk.Frame(parent, bg=CGE_CARD,
                            highlightbackground=CGE_BORDER, highlightthickness=1)
-        log_box.pack(fill="both", expand=True)
+        log_box.pack(fill="both", expand=True, pady=(0, 4))
 
         self._log = scrolledtext.ScrolledText(
             log_box, font=FONT_MONO, bg=CGE_CARD, fg=CGE_TEXT,
             insertbackground=CGE_TEXT, relief="flat", bd=8,
             state="disabled", wrap="word", height=8)
         self._log.pack(fill="both", expand=True)
+
+        # Footer dentro del area de contenido
+        footer_inner = tk.Frame(parent, bg=CGE_BORDER, pady=5)
+        footer_inner.pack(fill="x", side="bottom")
+        tk.Label(footer_inner,
+                 text="© Programado por Emerson Garrido — Todos los derechos reservados.",
+                 font=("Segoe UI", 8), bg=CGE_BORDER, fg=CGE_MUTED).pack(side="left", padx=14)
 
         self._log.tag_config("ok",     foreground=CGE_GREEN)
         self._log.tag_config("err",    foreground=CGE_RED)
