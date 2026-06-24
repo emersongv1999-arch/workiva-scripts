@@ -836,13 +836,20 @@ FONT_SMALL  = ("Segoe UI", 9)
 FONT_MONO   = ("Consolas", 9)
 
 
+NAV_ITEMS = [
+    ("Verificador de Sumas",  "verif"),
+    ("Módulo 2",              "mod2"),
+    ("Módulo 3",              "mod3"),
+    ("Módulo 4",              "mod4"),
+]
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Verificador de Sumas — CGE Workiva")
+        self.title("NOMBRE PENDIENTE — CGE Workiva")
         self.configure(bg=CGE_LIGHT)
         self.resizable(True, True)
-        self.minsize(860, 620)
+        self.minsize(980, 680)
 
         self._docs      = []
         self._doc_vars  = []
@@ -852,9 +859,10 @@ class App(tk.Tk):
         self._ss_name   = None
         self._ss_cache  = None
         self._docx_dir  = None
+        self._active_view = None
 
         self._build_ui()
-        self._center(980, 700)
+        self._center(1080, 720)
 
     def _center(self, w, h):
         self.update_idletasks()
@@ -865,18 +873,80 @@ class App(tk.Tk):
     # ── UI ────────────────────────────────────────────────────────────────────
     def _build_ui(self):
         self._build_header()
-        body = tk.Frame(self, bg=CGE_LIGHT)
-        body.pack(fill="both", expand=True, padx=18, pady=14)
 
-        left = tk.Frame(body, bg=CGE_LIGHT, width=230)
-        left.pack(side="left", fill="y", padx=(0, 14))
-        left.pack_propagate(False)
+        # Contenedor principal bajo el header
+        main = tk.Frame(self, bg=CGE_LIGHT)
+        main.pack(fill="both", expand=True)
 
-        right = tk.Frame(body, bg=CGE_LIGHT)
-        right.pack(side="left", fill="both", expand=True)
+        self._build_sidebar(main)
 
-        self._build_controls(left)
-        self._build_right(right)
+        # Área de contenido a la derecha del sidebar
+        self._content = tk.Frame(main, bg=CGE_LIGHT)
+        self._content.pack(side="left", fill="both", expand=True)
+
+        # Construir vistas
+        self._views = {}
+        self._build_view_verif()
+        self._build_view_placeholder("mod2", "Módulo 2")
+        self._build_view_placeholder("mod3", "Módulo 3")
+        self._build_view_placeholder("mod4", "Módulo 4")
+
+        # Footer
+        self._build_footer()
+
+        # Mostrar primera vista
+        self._show_view("verif")
+
+    def _build_sidebar(self, parent):
+        sidebar = tk.Frame(parent, bg=CGE_BLUE, width=200)
+        sidebar.pack(side="left", fill="y")
+        sidebar.pack_propagate(False)
+
+        tk.Frame(sidebar, bg=CGE_BLUE, height=16).pack()
+
+        self._nav_btns = {}
+        for label, key in NAV_ITEMS:
+            btn = tk.Button(
+                sidebar, text=label,
+                font=FONT_SMALL, anchor="w",
+                bg=CGE_BLUE, fg=CGE_WHITE,
+                activebackground=CGE_BLUE2, activeforeground=CGE_WHITE,
+                relief="flat", bd=0, padx=18, pady=11,
+                cursor="hand2",
+                command=lambda k=key: self._show_view(k)
+            )
+            btn.pack(fill="x")
+            self._nav_btns[key] = btn
+
+    def _show_view(self, key):
+        # Resaltar botón activo
+        for k, btn in self._nav_btns.items():
+            btn.configure(bg=CGE_BLUE2 if k == key else CGE_BLUE)
+
+        # Ocultar todas las vistas y mostrar la seleccionada
+        for k, frame in self._views.items():
+            frame.pack_forget()
+        self._views[key].pack(fill="both", expand=True, padx=18, pady=14)
+        self._active_view = key
+
+        # Actualizar subtítulo del header
+        label = next(l for l, k in NAV_ITEMS if k == key)
+        self._header_subtitle.configure(text=label)
+
+    def _build_footer(self):
+        footer = tk.Frame(self, bg=CGE_BORDER, pady=6)
+        footer.pack(fill="x", side="bottom")
+        tk.Label(footer,
+                 text="Programado por Emerson Garrido — Todos los derechos reservados",
+                 font=("Segoe UI", 8), bg=CGE_BORDER, fg=CGE_MUTED).pack(side="left", padx=14)
+
+    def _build_view_placeholder(self, key, name):
+        frame = tk.Frame(self._content, bg=CGE_LIGHT)
+        tk.Label(frame, text=name, font=("Segoe UI", 16, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_BLUE).pack(pady=(60, 10))
+        tk.Label(frame, text="En desarrollo", font=("Segoe UI", 11),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack()
+        self._views[key] = frame
 
     def _build_header(self):
         hdr = tk.Frame(self, bg=CGE_BLUE, pady=0)
@@ -903,20 +973,32 @@ class App(tk.Tk):
 
         title_frame = tk.Frame(logo_frame, bg=CGE_BLUE)
         title_frame.pack(side="left")
-        tk.Label(title_frame, text="Verificador de Sumas",
+        tk.Label(title_frame, text="NOMBRE PENDIENTE",
                  font=("Segoe UI", 15, "bold"),
                  bg=CGE_BLUE, fg=CGE_WHITE).pack(anchor="w")
-        tk.Label(title_frame, text="Estados Financieros — Workiva",
+        self._header_subtitle = tk.Label(title_frame, text="",
                  font=("Segoe UI", 9),
-                 bg=CGE_BLUE, fg="#8aaaf5").pack(anchor="w")
+                 bg=CGE_BLUE, fg="#8aaaf5")
+        self._header_subtitle.pack(anchor="w")
 
-        # Barra de progreso pegada al borde inferior del header
+        # Barra de progreso
         self._progress = ttk.Progressbar(hdr, mode="indeterminate", length=200)
         self._progress.pack(side="right", padx=18, pady=18)
         style = ttk.Style()
         style.theme_use("default")
         style.configure("TProgressbar", troughcolor=CGE_BLUE2,
                         background=CGE_WHITE, thickness=5)
+
+    def _build_view_verif(self):
+        frame = tk.Frame(self._content, bg=CGE_LIGHT)
+        left = tk.Frame(frame, bg=CGE_LIGHT, width=230)
+        left.pack(side="left", fill="y", padx=(0, 14))
+        left.pack_propagate(False)
+        right = tk.Frame(frame, bg=CGE_LIGHT)
+        right.pack(side="left", fill="both", expand=True)
+        self._build_controls(left)
+        self._build_right(right)
+        self._views["verif"] = frame
 
     def _build_controls(self, parent):
         # ── Card periodo ──
