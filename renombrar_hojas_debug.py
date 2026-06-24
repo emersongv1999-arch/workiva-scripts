@@ -252,6 +252,54 @@ def main():
                 print("  Cancelado.")
 
     print("\n" + "="*60)
+    print("PASO 4: Limpiar rangos de datos manuales")
+    print("="*60)
+
+    RANGOS_LIMPIAR = [
+        "D9:J15",
+        "M9:N15",
+        "D24:J26",
+        "M24:N26",
+        "Q9:R15",
+        "Q18:R19",
+        "Q24:R26",
+    ]
+
+    def vacias(rango):
+        """Genera matriz de strings vacios para el rango dado."""
+        col_ini = ord(rango[0]) - 64
+        col_fin = ord(rango.split(":")[1][0]) - 64
+        fila_ini = int(rango.split(":")[0][1:])
+        fila_fin = int(rango.split(":")[1][1:])
+        ncols = col_fin - col_ini + 1
+        nfilas = fila_fin - fila_ini + 1
+        return [[""] * ncols for _ in range(nfilas)]
+
+    if ss_id_cash and subhojas:
+        print(f"\n  Rangos a limpiar por hoja: {RANGOS_LIMPIAR}")
+        print(f"  Hojas a limpiar: {len(subhojas)}")
+        resp2 = input("\n  ¿Limpiar rangos en todas las subhojas? (s/n): ").strip().lower()
+        if resp2 == "s":
+            for h in subhojas:
+                sheet_id = h["id"]
+                nombre   = h.get("name", sheet_id)
+                print(f"\n  Limpiando: {nombre}")
+                for rango in RANGOS_LIMPIAR:
+                    vals = vacias(rango)
+                    st, resp_data = api_put(
+                        f"/platform/v1/spreadsheets/{ss_id_cash}/sheets/{sheet_id}/values/{rango}",
+                        {"values": vals}
+                    )
+                    estado = "OK" if st in (200, 202, 204) else f"ERR {st}"
+                    print(f"    {rango}: {estado}")
+                    time.sleep(0.1)
+            print("\n  Limpieza terminada.")
+        else:
+            print("  Cancelado.")
+    else:
+        print("  No hay subhojas cargadas para limpiar.")
+
+    print("\n" + "="*60)
     print("FIN")
     print("="*60)
 
