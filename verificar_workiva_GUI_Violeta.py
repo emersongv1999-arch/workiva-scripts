@@ -817,6 +817,7 @@ def escribir_4_hojas(ss_id, codigo, resultado):
 # ── COLORES CGE ───────────────────────────────────────────────────────────────
 CGE_BLUE    = "#011689"
 CGE_BLUE2   = "#0a2abf"   # hover / variante
+CGE_SIDEBAR = "#010e5a"   # sidebar más oscuro que el header
 CGE_WHITE   = "#ffffff"
 CGE_LIGHT   = "#f0f3fc"   # fondo general
 CGE_CARD    = "#ffffff"
@@ -898,20 +899,24 @@ class App(tk.Tk):
         self._show_view("verif")
 
     def _build_sidebar(self, parent):
-        sidebar = tk.Frame(parent, bg=CGE_BLUE, width=200)
+        sidebar = tk.Frame(parent, bg=CGE_SIDEBAR, width=210)
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
 
-        tk.Frame(sidebar, bg=CGE_BLUE, height=16).pack()
+        # Línea separadora derecha
+        tk.Frame(parent, bg=CGE_BLUE2, width=2).pack(side="left", fill="y")
+
+        tk.Label(sidebar, text="MENÚ", font=("Segoe UI", 7, "bold"),
+                 bg=CGE_SIDEBAR, fg="#4a6ab5").pack(anchor="w", padx=18, pady=(16, 4))
 
         self._nav_btns = {}
         for label, key in NAV_ITEMS:
             btn = tk.Button(
                 sidebar, text=label,
                 font=FONT_SMALL, anchor="w",
-                bg=CGE_BLUE, fg=CGE_WHITE,
-                activebackground=CGE_BLUE2, activeforeground=CGE_WHITE,
-                relief="flat", bd=0, padx=18, pady=11,
+                bg=CGE_SIDEBAR, fg=CGE_WHITE,
+                activebackground=CGE_BLUE, activeforeground=CGE_WHITE,
+                relief="flat", bd=0, padx=18, pady=12,
                 cursor="hand2",
                 command=lambda k=key: self._show_view(k)
             )
@@ -921,7 +926,7 @@ class App(tk.Tk):
     def _show_view(self, key):
         # Resaltar botón activo
         for k, btn in self._nav_btns.items():
-            btn.configure(bg=CGE_BLUE2 if k == key else CGE_BLUE)
+            btn.configure(bg=CGE_BLUE if k == key else CGE_SIDEBAR)
 
         # Ocultar todas las vistas y mostrar la seleccionada
         for k, frame in self._views.items():
