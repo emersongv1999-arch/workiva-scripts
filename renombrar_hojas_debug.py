@@ -70,6 +70,14 @@ def api_get(path):
         raise RuntimeError(f"GET {path} -> {st}: {data}")
     return data
 
+def api_patch(path, body):
+    url = f"{WDESK_BASE}{path}"
+    return _http("PATCH", url, headers=hdrs(), body=body)
+
+def api_put(path, body):
+    url = f"{WDESK_BASE}{path}"
+    return _http("PUT", url, headers=hdrs(), body=body)
+
 # ── BUSCAR SPREADSHEET ────────────────────────────────────────────────────────
 def buscar_spreadsheet(patron):
     print(f"\nBuscando spreadsheet con patron: '{patron}'")
@@ -157,7 +165,81 @@ def main():
         listar_hojas(ss_id_cash)
 
     print("\n" + "="*60)
-    print("FIN DEL DIAGNOSTICO")
+    print("PASO 3: Construir preview de renombrado")
+    print("="*60)
+
+    if ss_id_cash:
+        hojas_cash = listar_hojas(ss_id_cash)
+
+        # Encontrar id de la hoja Summary
+        summary_id = None
+        for h in hojas_cash:
+            if h.get("name", "").strip() == "CGE Cash management - Summary":
+                summary_id = h["id"]
+                break
+        print(f"\n  Summary sheet id: {summary_id}")
+
+        # Filtrar subhojas con patron DD.MM que sean hijas de Summary
+        import re as _re
+        patron = _re.compile(r"^CGE Cash management \d{2}\.\d{2}$")
+        subhojas = []
+        for h in hojas_cash:
+            pid = h.get("parentId") or (h.get("parent") or {}).get("id", "")
+            if pid == summary_id and patron.match(h.get("name", "")):
+                subhojas.append(h)
+        subhojas.sort(key=lambda h: h.get("name", ""))
+        print(f"  Subhojas con patron DD.MM: {len(subhojas)}")
+
+        # Obtener bases del paso 1
+        bases = []
+        if ss_id_bases:
+            hojas_b = listar_hojas(ss_id_bases)
+            if hojas_b:
+                bases = leer_rango(ss_id_bases, hojas_b[0]["id"], "E2:E23")
+
+        print(f"\n  {'#':<4} {'Nombre actual':<35} {'Nombre nuevo':<35} {'Cambio'}")
+        print(f"  {'-'*4} {'-'*35} {'-'*35} {'-'*6}")
+        pares = []
+        for i, h in enumerate(subhojas):
+            actual = h.get("name", "")
+            nuevo  = f"CGE Cash management {bases[i]}" if i < len(bases) and bases[i] else actual
+            cambia = "SI" if actual != nuevo else "-"
+            print(f"  {i+1:<4} {actual:<35} {nuevo:<35} {cambia}")
+            pares.append((h["id"], actual, nuevo))
+
+        n_cambios = sum(1 for _, a, n in pares if a != n)
+        print(f"\n  Total cambios a aplicar: {n_cambios}")
+
+        if n_cambios > 0:
+            resp = input("\n  ¿Aplicar cambios en Workiva? (s/n): ").strip().lower()
+            if resp == "s":
+                print()
+                for sheet_id, actual, nuevo in pares:
+                    if actual == nuevo:
+                        continue
+                    st, data = api_patch(
+                        f"/platform/v1/spreadsheets/{ss_id_cash}/sheets/{sheet_id}",
+                        {"name": nuevo}
+                    )
+                    if st in (200, 204, 202):
+                        print(f"  OK  {actual} -> {nuevo}")
+                    else:
+                        # intentar PUT
+                        st2, data2 = api_put(
+                            f"/platform/v1/spreadsheets/{ss_id_cash}/sheets/{sheet_id}",
+                            {"name": nuevo}
+                        )
+                        if st2 in (200, 204, 202):
+                            print(f"  OK  {actual} -> {nuevo} (via PUT)")
+                        else:
+                            print(f"  ERR {actual} -> PATCH:{st} PUT:{st2} {data2}")
+                    time.sleep(0.25)
+                print("\n  Proceso terminado.")
+            else:
+                print("  Cancelado.")
+
+    print("\n" + "="*60)
+    print("FIN")
     print("="*60)
 
 if __name__ == "__main__":
