@@ -875,6 +875,9 @@ class App(tk.Tk):
     def _build_ui(self):
         self._build_header()
 
+        # Footer anclado ANTES del contenido para que siempre quede visible
+        self._build_footer()
+
         # Contenedor principal bajo el header
         main = tk.Frame(self, bg=CGE_LIGHT)
         main.pack(fill="both", expand=True)
@@ -891,9 +894,6 @@ class App(tk.Tk):
         self._build_view_placeholder("mod2", "Módulo 2")
         self._build_view_placeholder("mod3", "Módulo 3")
         self._build_view_placeholder("mod4", "Módulo 4")
-
-        # Footer
-        self._build_footer()
 
         # Mostrar primera vista
         self._show_view("verif")
