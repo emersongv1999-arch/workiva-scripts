@@ -1,7 +1,7 @@
 """
 verificar_workiva_GUI.py
 Verificador de Sumas - EE.FF. Workiva
-Interfaz grafica con tkinter (incluido en Python, sin instalacion extra).
+Interfaz grafica con tkinter — colores corporativos CGE
 """
 import json, re, ssl, sys, time, urllib.request, urllib.error, zipfile
 import xml.etree.ElementTree as ET
@@ -158,7 +158,7 @@ def poll_operation(location, max_tries=40, wait=3):
             raise RuntimeError(f"Operacion fallida: {data}")
     raise RuntimeError("Timeout esperando operacion")
 
-# ── WORKIVA: DOCUMENTOS ───────────────────────────────────────────────────────
+# ── WORKIVA ───────────────────────────────────────────────────────────────────
 def buscar_documentos(mes, anio, idioma):
     patron = f"EE.FF {mes}-{anio}"
     docs = []
@@ -177,7 +177,6 @@ def buscar_documentos(mes, anio, idioma):
     docs.sort(key=lambda x: x["nombre"])
     return docs
 
-# ── WORKIVA: SPREADSHEET ──────────────────────────────────────────────────────
 def buscar_spreadsheet_verif(ss_name, ss_cache):
     if ss_cache.exists():
         cached = ss_cache.read_text().strip()
@@ -219,7 +218,6 @@ def put_range(ss_id, sheet_id, rango, values):
     if status == 202 and location:
         poll_operation(location, wait=2)
 
-# ── EXPORTAR DOCX ─────────────────────────────────────────────────────────────
 def exportar_docx(doc, docx_dir):
     nombre = re.sub(r'[\\/:*?"<>|]', "-", doc["nombre"]) + ".docx"
     ruta = docx_dir / nombre
@@ -811,19 +809,22 @@ def escribir_4_hojas(ss_id, codigo, resultado):
     ]
     _escribir_hoja(ss_id, nombre("indice"), HDR_IDX, filas_i)
 
-# ── INTERFAZ GRAFICA ──────────────────────────────────────────────────────────
-COLOR_BG     = "#1e2330"
-COLOR_PANEL  = "#252b3b"
-COLOR_CARD   = "#2d3447"
-COLOR_ACCENT = "#4f8ef7"
-COLOR_GREEN  = "#34c77b"
-COLOR_RED    = "#f05c5c"
-COLOR_YELLOW = "#f5c842"
-COLOR_TEXT   = "#e8eaf0"
-COLOR_MUTED  = "#8890a8"
-COLOR_BORDER = "#3a4159"
+# ── COLORES CGE ───────────────────────────────────────────────────────────────
+CGE_BLUE    = "#011689"
+CGE_BLUE2   = "#0a2abf"   # hover / variante
+CGE_WHITE   = "#ffffff"
+CGE_LIGHT   = "#f0f3fc"   # fondo general
+CGE_CARD    = "#ffffff"
+CGE_BORDER  = "#c8d0e8"
+CGE_TEXT    = "#0d1a4a"
+CGE_MUTED   = "#6b7aab"
+CGE_GREEN   = "#0a8f5c"
+CGE_RED     = "#c0001a"
+CGE_YELLOW  = "#e8a000"
+CGE_ROWALT  = "#eef1fb"   # fila alternada en lista docs
 
-FONT_TITLE  = ("Segoe UI", 16, "bold")
+FONT_HEAD   = ("Segoe UI", 18, "bold")
+FONT_SUB    = ("Segoe UI", 10)
 FONT_LABEL  = ("Segoe UI", 10)
 FONT_BOLD   = ("Segoe UI", 10, "bold")
 FONT_SMALL  = ("Segoe UI", 9)
@@ -833,181 +834,218 @@ FONT_MONO   = ("Consolas", 9)
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Verificador de Sumas — Workiva")
-        self.configure(bg=COLOR_BG)
+        self.title("Verificador de Sumas — CGE Workiva")
+        self.configure(bg=CGE_LIGHT)
         self.resizable(True, True)
-        self.minsize(900, 600)
+        self.minsize(860, 620)
 
-        # estado interno
-        self._docs = []
+        self._docs     = []
         self._doc_vars = []
-        self._running = False
-        self._ss_id = None
-        self._ss_name = None
+        self._running  = False
+        self._ss_id    = None
+        self._ss_name  = None
         self._ss_cache = None
         self._docx_dir = None
 
         self._build_ui()
-        self._center_window(960, 680)
+        self._center(980, 700)
 
-    def _center_window(self, w, h):
+    def _center(self, w, h):
         self.update_idletasks()
         x = (self.winfo_screenwidth()  - w) // 2
         y = (self.winfo_screenheight() - h) // 2
         self.geometry(f"{w}x{h}+{x}+{y}")
 
-    # ── CONSTRUCCION UI ───────────────────────────────────────────────────────
+    # ── UI ────────────────────────────────────────────────────────────────────
     def _build_ui(self):
-        # Barra superior
-        top = tk.Frame(self, bg=COLOR_PANEL, pady=14)
-        top.pack(fill="x")
-        tk.Label(top, text="  Verificador de Sumas", font=FONT_TITLE,
-                 bg=COLOR_PANEL, fg=COLOR_TEXT).pack(side="left")
-        tk.Label(top, text="Workiva EE.FF.", font=FONT_SMALL,
-                 bg=COLOR_PANEL, fg=COLOR_MUTED).pack(side="right", padx=16)
+        self._build_header()
+        body = tk.Frame(self, bg=CGE_LIGHT)
+        body.pack(fill="both", expand=True, padx=18, pady=14)
 
-        # Contenedor principal
-        main = tk.Frame(self, bg=COLOR_BG)
-        main.pack(fill="both", expand=True, padx=16, pady=12)
-
-        # Columna izquierda (controles)
-        left = tk.Frame(main, bg=COLOR_BG, width=260)
-        left.pack(side="left", fill="y", padx=(0, 12))
+        left = tk.Frame(body, bg=CGE_LIGHT, width=230)
+        left.pack(side="left", fill="y", padx=(0, 14))
         left.pack_propagate(False)
 
-        # Columna derecha (log)
-        right = tk.Frame(main, bg=COLOR_BG)
+        right = tk.Frame(body, bg=CGE_LIGHT)
         right.pack(side="left", fill="both", expand=True)
 
         self._build_controls(left)
-        self._build_log(right)
+        self._build_right(right)
 
-    def _card(self, parent, title):
-        frame = tk.Frame(parent, bg=COLOR_CARD, bd=0,
-                         highlightbackground=COLOR_BORDER, highlightthickness=1)
-        frame.pack(fill="x", pady=(0, 10))
-        tk.Label(frame, text=title, font=FONT_BOLD,
-                 bg=COLOR_CARD, fg=COLOR_ACCENT).pack(anchor="w", padx=12, pady=(10, 6))
-        inner = tk.Frame(frame, bg=COLOR_CARD)
-        inner.pack(fill="x", padx=12, pady=(0, 10))
-        return inner
+    def _build_header(self):
+        hdr = tk.Frame(self, bg=CGE_BLUE, pady=0)
+        hdr.pack(fill="x")
+
+        # Logo CGE (texto estilizado)
+        logo_frame = tk.Frame(hdr, bg=CGE_BLUE, padx=18, pady=14)
+        logo_frame.pack(side="left")
+
+        logo_box = tk.Frame(logo_frame, bg=CGE_WHITE,
+                            padx=8, pady=4)
+        logo_box.pack(side="left")
+        tk.Label(logo_box, text="CGE", font=("Segoe UI", 14, "bold"),
+                 bg=CGE_WHITE, fg=CGE_BLUE).pack()
+
+        tk.Frame(logo_frame, bg=CGE_BLUE, width=14).pack(side="left")
+
+        title_frame = tk.Frame(logo_frame, bg=CGE_BLUE)
+        title_frame.pack(side="left")
+        tk.Label(title_frame, text="Verificador de Sumas",
+                 font=("Segoe UI", 15, "bold"),
+                 bg=CGE_BLUE, fg=CGE_WHITE).pack(anchor="w")
+        tk.Label(title_frame, text="Estados Financieros — Workiva",
+                 font=("Segoe UI", 9),
+                 bg=CGE_BLUE, fg="#8aaaf5").pack(anchor="w")
+
+        # Barra de progreso pegada al borde inferior del header
+        self._progress = ttk.Progressbar(hdr, mode="indeterminate", length=200)
+        self._progress.pack(side="right", padx=18, pady=18)
+        style = ttk.Style()
+        style.theme_use("default")
+        style.configure("TProgressbar", troughcolor=CGE_BLUE2,
+                        background=CGE_WHITE, thickness=5)
+
+    def _build_controls(self, parent):
+        # ── Card periodo ──
+        self._card_title(parent, "Periodo")
+        pf = tk.Frame(parent, bg=CGE_CARD,
+                      highlightbackground=CGE_BORDER, highlightthickness=1)
+        pf.pack(fill="x", pady=(0, 10))
+        inner = tk.Frame(pf, bg=CGE_CARD, padx=12, pady=10)
+        inner.pack(fill="x")
+
+        self._v_mes  = self._field(inner, "Mes", 0)
+        self._v_anio = self._field(inner, "Ano", 1)
+
+        # ── Card idioma ──
+        self._card_title(parent, "Idioma")
+        idf = tk.Frame(parent, bg=CGE_CARD,
+                       highlightbackground=CGE_BORDER, highlightthickness=1)
+        idf.pack(fill="x", pady=(0, 10))
+        iinner = tk.Frame(idf, bg=CGE_CARD, padx=12, pady=8)
+        iinner.pack(fill="x")
+        self._v_idioma = tk.StringVar(value="AMBOS")
+        for txt in ("ESP", "ENG", "AMBOS"):
+            tk.Radiobutton(iinner, text=txt, variable=self._v_idioma, value=txt,
+                           font=FONT_SMALL, bg=CGE_CARD, fg=CGE_TEXT,
+                           selectcolor=CGE_LIGHT, activebackground=CGE_CARD,
+                           activeforeground=CGE_BLUE).pack(anchor="w", pady=1)
+
+        # ── Botones ──
+        tk.Frame(parent, bg=CGE_LIGHT, height=4).pack()
+        self._btn_buscar = self._make_btn(parent, "Buscar documentos",
+                                          self._on_buscar, CGE_BLUE)
+        tk.Frame(parent, bg=CGE_LIGHT, height=6).pack()
+        self._btn_verificar = self._make_btn(parent, "Verificar seleccionados",
+                                             self._on_verificar, CGE_GREEN)
+        self._btn_verificar.configure(state="disabled")
+
+    def _card_title(self, parent, text):
+        tk.Label(parent, text=text.upper(), font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(6, 2))
 
     def _field(self, parent, label, row, default=""):
         tk.Label(parent, text=label, font=FONT_SMALL,
-                 bg=COLOR_CARD, fg=COLOR_MUTED).grid(row=row, column=0, sticky="w", pady=3)
+                 bg=CGE_CARD, fg=CGE_MUTED).grid(row=row, column=0,
+                                                  sticky="w", pady=4)
         var = tk.StringVar(value=default)
         e = tk.Entry(parent, textvariable=var, font=FONT_LABEL,
-                     bg=COLOR_PANEL, fg=COLOR_TEXT, insertbackground=COLOR_TEXT,
-                     relief="flat", bd=4, width=14)
-        e.grid(row=row, column=1, sticky="ew", padx=(8, 0), pady=3)
+                     bg=CGE_LIGHT, fg=CGE_TEXT, insertbackground=CGE_TEXT,
+                     relief="flat", bd=4, width=12,
+                     highlightbackground=CGE_BORDER, highlightthickness=1)
+        e.grid(row=row, column=1, sticky="ew", padx=(8, 0), pady=4)
         parent.columnconfigure(1, weight=1)
         return var
 
-    def _build_controls(self, parent):
-        # Card periodo
-        c1 = self._card(parent, "Periodo")
-        self._v_mes  = self._field(c1, "Mes (01-12)", 0, "")
-        self._v_anio = self._field(c1, "Ano (ej: 2026)", 1, "")
-
-        # Card idioma
-        c2 = self._card(parent, "Idioma")
-        self._v_idioma = tk.StringVar(value="AMBOS")
-        for txt in ("ESP", "ENG", "AMBOS"):
-            tk.Radiobutton(c2, text=txt, variable=self._v_idioma, value=txt,
-                           font=FONT_SMALL, bg=COLOR_CARD, fg=COLOR_TEXT,
-                           selectcolor=COLOR_PANEL, activebackground=COLOR_CARD,
-                           activeforeground=COLOR_TEXT).pack(anchor="w", pady=1)
-
-        # Boton buscar
-        self._btn_buscar = self._btn(parent, "Buscar documentos", self._on_buscar, COLOR_ACCENT)
-
-        # Card documentos
-        c3 = self._card(parent, "Documentos")
-
-        # Botones seleccionar todo / ninguno
-        row_sel = tk.Frame(c3, bg=COLOR_CARD)
-        row_sel.pack(fill="x", pady=(0, 4))
-        tk.Button(row_sel, text="Todos", font=FONT_SMALL, bg=COLOR_PANEL, fg=COLOR_TEXT,
-                  relief="flat", bd=0, padx=6, pady=2, cursor="hand2",
-                  command=self._sel_todos).pack(side="left")
-        tk.Button(row_sel, text="Ninguno", font=FONT_SMALL, bg=COLOR_PANEL, fg=COLOR_TEXT,
-                  relief="flat", bd=0, padx=6, pady=2, cursor="hand2",
-                  command=self._sel_ninguno).pack(side="left", padx=(6, 0))
-
-        # Contenedor scrollable para checkboxes
-        self._doc_frame_outer = tk.Frame(c3, bg=COLOR_CARD,
-                                         highlightbackground=COLOR_BORDER, highlightthickness=1)
-        self._doc_frame_outer.pack(fill="x")
-
-        self._doc_canvas = tk.Canvas(self._doc_frame_outer, bg=COLOR_CARD,
-                                     highlightthickness=0, height=120)
-        sb = tk.Scrollbar(self._doc_frame_outer, orient="vertical",
-                          command=self._doc_canvas.yview)
-        self._doc_canvas.configure(yscrollcommand=sb.set)
-        sb.pack(side="right", fill="y")
-        self._doc_canvas.pack(side="left", fill="both", expand=True)
-
-        self._doc_inner = tk.Frame(self._doc_canvas, bg=COLOR_CARD)
-        self._doc_canvas_win = self._doc_canvas.create_window(
-            (0, 0), window=self._doc_inner, anchor="nw")
-        self._doc_inner.bind("<Configure>", self._on_doc_inner_resize)
-        self._doc_canvas.bind("<Configure>", self._on_doc_canvas_resize)
-
-        # Boton verificar
-        self._btn_verificar = self._btn(parent, "Verificar seleccionados",
-                                        self._on_verificar, COLOR_GREEN)
-        self._btn_verificar.configure(state="disabled")
-
-        # Barra de progreso
-        self._progress = ttk.Progressbar(parent, mode="indeterminate", length=240)
-        self._progress.pack(fill="x", pady=(4, 0))
-
-        # Estilo progress bar
-        style = ttk.Style()
-        style.theme_use("default")
-        style.configure("TProgressbar", troughcolor=COLOR_PANEL,
-                        background=COLOR_ACCENT, thickness=4)
-
-    def _btn(self, parent, text, cmd, color):
+    def _make_btn(self, parent, text, cmd, color):
         b = tk.Button(parent, text=text, font=FONT_BOLD,
-                      bg=color, fg="#ffffff", activebackground=color,
-                      activeforeground="#ffffff", relief="flat", bd=0,
-                      padx=10, pady=8, cursor="hand2", command=cmd)
-        b.pack(fill="x", pady=(4, 0))
+                      bg=color, fg=CGE_WHITE,
+                      activebackground=CGE_BLUE2, activeforeground=CGE_WHITE,
+                      relief="flat", bd=0, padx=10, pady=9,
+                      cursor="hand2", command=cmd)
+        b.pack(fill="x")
         return b
 
-    def _build_log(self, parent):
-        tk.Label(parent, text="Actividad", font=FONT_BOLD,
-                 bg=COLOR_BG, fg=COLOR_MUTED).pack(anchor="w", pady=(0, 4))
+    def _build_right(self, parent):
+        # ── Seccion documentos (arriba) ──
+        doc_header = tk.Frame(parent, bg=CGE_LIGHT)
+        doc_header.pack(fill="x", pady=(0, 4))
+        tk.Label(doc_header, text="DOCUMENTOS ENCONTRADOS",
+                 font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(side="left")
+
+        sel_frame = tk.Frame(doc_header, bg=CGE_LIGHT)
+        sel_frame.pack(side="right")
+        tk.Button(sel_frame, text="Todos", font=FONT_SMALL,
+                  bg=CGE_BORDER, fg=CGE_TEXT, relief="flat", bd=0,
+                  padx=8, pady=2, cursor="hand2",
+                  command=self._sel_todos).pack(side="left")
+        tk.Button(sel_frame, text="Ninguno", font=FONT_SMALL,
+                  bg=CGE_BORDER, fg=CGE_TEXT, relief="flat", bd=0,
+                  padx=8, pady=2, cursor="hand2",
+                  command=self._sel_ninguno).pack(side="left", padx=(4, 0))
+
+        # Frame para lista de docs
+        doc_box = tk.Frame(parent, bg=CGE_CARD,
+                           highlightbackground=CGE_BORDER, highlightthickness=1)
+        doc_box.pack(fill="x", pady=(0, 12))
+
+        self._doc_canvas = tk.Canvas(doc_box, bg=CGE_CARD,
+                                     highlightthickness=0, height=160)
+        sb_doc = tk.Scrollbar(doc_box, orient="vertical",
+                              command=self._doc_canvas.yview)
+        self._doc_canvas.configure(yscrollcommand=sb_doc.set)
+        sb_doc.pack(side="right", fill="y")
+        self._doc_canvas.pack(side="left", fill="both", expand=True)
+
+        self._doc_inner = tk.Frame(self._doc_canvas, bg=CGE_CARD)
+        self._doc_win = self._doc_canvas.create_window(
+            (0, 0), window=self._doc_inner, anchor="nw")
+        self._doc_inner.bind("<Configure>",
+            lambda e: self._doc_canvas.configure(
+                scrollregion=self._doc_canvas.bbox("all")))
+        self._doc_canvas.bind("<Configure>",
+            lambda e: self._doc_canvas.itemconfig(self._doc_win, width=e.width))
+
+        self._lbl_no_docs = tk.Label(self._doc_inner,
+                                     text="Ingresa el periodo y presiona 'Buscar documentos'",
+                                     font=FONT_SMALL, bg=CGE_CARD, fg=CGE_MUTED,
+                                     pady=20)
+        self._lbl_no_docs.pack()
+
+        # ── Seccion actividad (abajo) ──
+        act_header = tk.Frame(parent, bg=CGE_LIGHT)
+        act_header.pack(fill="x", pady=(0, 4))
+        tk.Label(act_header, text="ACTIVIDAD",
+                 font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(side="left")
+        tk.Button(act_header, text="Limpiar", font=FONT_SMALL,
+                  bg=CGE_BORDER, fg=CGE_TEXT, relief="flat", bd=0,
+                  padx=8, pady=2, cursor="hand2",
+                  command=self._clear_log).pack(side="right")
+
+        log_box = tk.Frame(parent, bg=CGE_CARD,
+                           highlightbackground=CGE_BORDER, highlightthickness=1)
+        log_box.pack(fill="both", expand=True)
+
         self._log = scrolledtext.ScrolledText(
-            parent, font=FONT_MONO, bg=COLOR_PANEL, fg=COLOR_TEXT,
-            insertbackground=COLOR_TEXT, relief="flat", bd=0,
-            state="disabled", wrap="word",
-            highlightbackground=COLOR_BORDER, highlightthickness=1)
+            log_box, font=FONT_MONO, bg=CGE_CARD, fg=CGE_TEXT,
+            insertbackground=CGE_TEXT, relief="flat", bd=8,
+            state="disabled", wrap="word")
         self._log.pack(fill="both", expand=True)
 
-        # Tags de color
-        self._log.tag_config("ok",      foreground=COLOR_GREEN)
-        self._log.tag_config("err",     foreground=COLOR_RED)
-        self._log.tag_config("warn",    foreground=COLOR_YELLOW)
-        self._log.tag_config("accent",  foreground=COLOR_ACCENT)
-        self._log.tag_config("muted",   foreground=COLOR_MUTED)
-        self._log.tag_config("bold",    font=("Consolas", 9, "bold"))
+        self._log.tag_config("ok",     foreground=CGE_GREEN)
+        self._log.tag_config("err",    foreground=CGE_RED)
+        self._log.tag_config("warn",   foreground=CGE_YELLOW)
+        self._log.tag_config("blue",   foreground=CGE_BLUE)
+        self._log.tag_config("muted",  foreground=CGE_MUTED)
+        self._log.tag_config("bold",   font=("Consolas", 9, "bold"))
 
-        # Boton limpiar log
-        tk.Button(parent, text="Limpiar", font=FONT_SMALL,
-                  bg=COLOR_PANEL, fg=COLOR_MUTED, relief="flat", bd=0,
-                  padx=6, pady=2, cursor="hand2",
-                  command=self._clear_log).pack(anchor="e", pady=(4, 0))
-
-    # ── HELPERS LOG ───────────────────────────────────────────────────────────
+    # ── LOG ───────────────────────────────────────────────────────────────────
     def log(self, msg, tag=None):
         def _do():
             self._log.configure(state="normal")
-            if tag:
-                self._log.insert("end", msg + "\n", tag)
-            else:
-                self._log.insert("end", msg + "\n")
+            self._log.insert("end", msg + "\n", tag or "")
             self._log.see("end")
             self._log.configure(state="disabled")
         self.after(0, _do)
@@ -1017,28 +1055,29 @@ class App(tk.Tk):
         self._log.delete("1.0", "end")
         self._log.configure(state="disabled")
 
-    # ── SCROLLABLE DOCS ───────────────────────────────────────────────────────
-    def _on_doc_inner_resize(self, e):
-        self._doc_canvas.configure(scrollregion=self._doc_canvas.bbox("all"))
-
-    def _on_doc_canvas_resize(self, e):
-        self._doc_canvas.itemconfig(self._doc_canvas_win, width=e.width)
-
+    # ── DOCS LIST ─────────────────────────────────────────────────────────────
     def _render_docs(self, docs):
         for w in self._doc_inner.winfo_children():
             w.destroy()
         self._doc_vars = []
-        for doc in docs:
+        if not docs:
+            tk.Label(self._doc_inner,
+                     text="No se encontraron documentos para el periodo indicado.",
+                     font=FONT_SMALL, bg=CGE_CARD, fg=CGE_RED, pady=14).pack()
+            return
+        for i, doc in enumerate(docs):
             var = tk.BooleanVar(value=True)
             self._doc_vars.append(var)
-            short = doc["nombre"]
-            if len(short) > 35:
-                short = short[:33] + "…"
-            cb = tk.Checkbutton(self._doc_inner, text=short, variable=var,
-                                font=FONT_SMALL, bg=COLOR_CARD, fg=COLOR_TEXT,
-                                selectcolor=COLOR_PANEL, activebackground=COLOR_CARD,
-                                activeforeground=COLOR_TEXT, anchor="w")
-            cb.pack(fill="x", anchor="w", padx=4, pady=1)
+            bg = CGE_ROWALT if i % 2 == 0 else CGE_CARD
+            row = tk.Frame(self._doc_inner, bg=bg)
+            row.pack(fill="x")
+            short = doc["nombre"] if len(doc["nombre"]) <= 60 else doc["nombre"][:58] + "…"
+            cb = tk.Checkbutton(row, text=short, variable=var,
+                                font=FONT_SMALL, bg=bg, fg=CGE_TEXT,
+                                selectcolor=CGE_LIGHT,
+                                activebackground=bg, activeforeground=CGE_BLUE,
+                                anchor="w", padx=10, pady=5)
+            cb.pack(fill="x")
 
     def _sel_todos(self):
         for v in self._doc_vars:
@@ -1053,7 +1092,7 @@ class App(tk.Tk):
         self._running = True
         self._btn_buscar.configure(state="disabled")
         self._btn_verificar.configure(state="disabled")
-        self._progress.start(12)
+        self._progress.start(10)
 
     def _unlock(self):
         self._running = False
@@ -1070,30 +1109,25 @@ class App(tk.Tk):
             messagebox.showerror("Error", f"Mes '{mes_raw}' no reconocido.\nUsa numero (01-12) o nombre.")
             return
         if not re.fullmatch(r"\d{4}", anio):
-            messagebox.showerror("Error", "Ano invalido. Usa 4 digitos, ej: 2026")
+            messagebox.showerror("Error", "Ano invalido. Ej: 2026")
             return
-        idioma = self._v_idioma.get()
         self._lock()
         threading.Thread(target=self._thread_buscar,
-                         args=(mes, anio, idioma), daemon=True).start()
+                         args=(mes, anio, self._v_idioma.get()), daemon=True).start()
 
     def _thread_buscar(self, mes, anio, idioma):
         try:
-            self.log(f"Conectando a Workiva [{mes}-{anio} / {idioma}]...", "accent")
+            self.log(f"Conectando a Workiva — {mes}-{anio} / {idioma}...", "blue")
             docs = buscar_documentos(mes, anio, idioma)
+            self._docs = docs
             if not docs:
-                self.log(f"No se encontraron documentos para {mes}-{anio} [{idioma}].", "warn")
-                self._docs = []
+                self.log("No se encontraron documentos.", "warn")
             else:
-                self._docs = docs
-                self.log(f"  {len(docs)} documento(s) encontrado(s):", "ok")
-                for d in docs:
-                    self.log(f"    • {d['nombre']}", "muted")
-                periodo = f"{mes}-{anio}"
-                self._ss_name  = f"verificacion de sumas {periodo}"
-                self._ss_cache = Path(__file__).parent / f".ss_verif_id_{periodo}"
-                self._docx_dir = Path("docx_tmp_verif")
-
+                self.log(f"  {len(docs)} documento(s) encontrado(s).", "ok")
+            periodo = f"{mes}-{anio}"
+            self._ss_name  = f"verificacion de sumas {periodo}"
+            self._ss_cache = Path(__file__).parent / f".ss_verif_id_{periodo}"
+            self._docx_dir = Path("docx_tmp_verif")
             self.after(0, lambda: self._render_docs(self._docs))
             if self._docs:
                 self.after(0, lambda: self._btn_verificar.configure(state="normal"))
@@ -1103,7 +1137,7 @@ class App(tk.Tk):
             self.after(0, self._unlock)
 
     def _on_verificar(self):
-        seleccionados = [doc for doc, var in zip(self._docs, self._doc_vars) if var.get()]
+        seleccionados = [d for d, v in zip(self._docs, self._doc_vars) if v.get()]
         if not seleccionados:
             messagebox.showwarning("Aviso", "Selecciona al menos un documento.")
             return
@@ -1113,12 +1147,12 @@ class App(tk.Tk):
 
     def _thread_verificar(self, seleccionados):
         try:
-            self.log(f"\nBuscando spreadsheet '{self._ss_name}'...", "accent")
+            self.log(f"\nBuscando spreadsheet '{self._ss_name}'...", "blue")
             ss_id = buscar_spreadsheet_verif(self._ss_name, self._ss_cache)
             if not ss_id:
                 self.log(f"No se encontro '{self._ss_name}'.", "err")
                 return
-            self.log(f"  Spreadsheet OK [{ss_id[:16]}...]", "ok")
+            self.log(f"  Spreadsheet encontrado.", "ok")
             self._docx_dir.mkdir(exist_ok=True)
 
             total_hall = 0
@@ -1127,19 +1161,19 @@ class App(tk.Tk):
                 codigo = m.group(1) if m else doc["nombre"][:20]
 
                 self.log(f"\n[{i}/{len(seleccionados)}] {doc['nombre']}", "bold")
-                self.log(f"  Exportando...", "muted")
+                self.log("  Exportando...", "muted")
                 try:
                     ruta = exportar_docx(doc, self._docx_dir)
-                    self.log(f"  Exportado OK ({ruta.stat().st_size // 1024} KB)", "ok")
+                    self.log(f"  Exportado ({ruta.stat().st_size // 1024} KB)", "ok")
                 except Exception as e:
-                    self.log(f"  ERROR exportando: {e}", "err")
+                    self.log(f"  ERROR: {e}", "err")
                     continue
 
                 self.log("  Verificando sumas...", "muted")
                 try:
                     resultado = verificar_docx(ruta)
                 except Exception as e:
-                    self.log(f"  ERROR verificando: {e}", "err")
+                    self.log(f"  ERROR: {e}", "err")
                     continue
 
                 n_ok   = len(resultado["ok"])
@@ -1147,7 +1181,7 @@ class App(tk.Tk):
                 n_rev  = len(resultado["revisar"])
                 total_hall += n_hall
                 tag = "ok" if n_hall == 0 else "warn"
-                self.log(f"  Sumas OK: {n_ok}  |  Hallazgos: {n_hall}  |  Revisar: {n_rev}", tag)
+                self.log(f"  OK: {n_ok}  |  Hallazgos: {n_hall}  |  Revisar: {n_rev}", tag)
 
                 self.log("  Escribiendo en Workiva...", "muted")
                 try:
@@ -1155,15 +1189,15 @@ class App(tk.Tk):
                     escribir_4_hojas(ss_id, codigo, resultado)
                     self.log("  Escrito OK", "ok")
                 except Exception as e:
-                    self.log(f"  ERROR escribiendo: {e}", "err")
+                    self.log(f"  ERROR: {e}", "err")
 
-            self.log(f"\n{'='*50}", "accent")
-            self.log(f"PROCESO COMPLETADO", "ok")
-            self.log(f"Documentos procesados : {len(seleccionados)}", "ok")
-            self.log(f"Hallazgos prioritarios: {total_hall}",
+            self.log(f"\n{'─'*52}", "blue")
+            self.log("PROCESO COMPLETADO", "ok")
+            self.log(f"Documentos : {len(seleccionados)}", "ok")
+            self.log(f"Hallazgos  : {total_hall}",
                      "warn" if total_hall > 0 else "ok")
-            self.log(f"Workiva -> '{self._ss_name}'", "muted")
-            self.log(f"{'='*50}", "accent")
+            self.log(f"Workiva    : '{self._ss_name}'", "muted")
+            self.log(f"{'─'*52}", "blue")
 
         except Exception as e:
             self.log(f"ERROR inesperado: {e}", "err")
