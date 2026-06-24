@@ -212,34 +212,42 @@ def main():
             nuevo  = f"CGE Cash management {bases[i]}" if i < len(bases) and bases[i] else actual
             cambia = "SI" if actual != nuevo else "-"
             print(f"  {i+1:<4} {actual:<35} {nuevo:<35} {cambia}")
-            pares.append((h["id"], actual, nuevo))
+            # Guardar tambien parentId e index para mantener posicion y subhoja
+            pid = h.get("parentId") or (h.get("parent") or {}).get("id", "")
+            idx = h.get("index") or h.get("position") or i
+            pares.append((h["id"], actual, nuevo, pid, idx))
 
-        n_cambios = sum(1 for _, a, n in pares if a != n)
+        n_cambios = sum(1 for _, a, n, _, _ in pares if a != n)
         print(f"\n  Total cambios a aplicar: {n_cambios}")
 
         if n_cambios > 0:
             resp = input("\n  ¿Aplicar cambios en Workiva? (s/n): ").strip().lower()
             if resp == "s":
                 print()
-                for sheet_id, actual, nuevo in pares:
+                for sheet_id, actual, nuevo, pid, idx in pares:
                     if actual == nuevo:
                         continue
+                    # Incluir parentId e index para no perder la subhoja ni el orden
+                    body = {"name": nuevo}
+                    if pid:
+                        body["parentId"] = pid
+                    if idx is not None:
+                        body["index"] = idx
                     st, data = api_patch(
                         f"/platform/v1/spreadsheets/{ss_id_cash}/sheets/{sheet_id}",
-                        {"name": nuevo}
+                        body
                     )
                     if st in (200, 204, 202):
                         print(f"  OK  {actual} -> {nuevo}")
                     else:
-                        # intentar PUT
                         st2, data2 = api_put(
                             f"/platform/v1/spreadsheets/{ss_id_cash}/sheets/{sheet_id}",
-                            {"name": nuevo}
+                            body
                         )
                         if st2 in (200, 204, 202):
                             print(f"  OK  {actual} -> {nuevo} (via PUT)")
                         else:
-                            print(f"  ERR {actual} -> PATCH:{st} PUT:{st2} {data2}")
+                            print(f"  ERR {actual} -> PATCH:{st} {data} PUT:{st2} {data2}")
                     time.sleep(0.25)
                 print("\n  Proceso terminado.")
             else:
