@@ -915,7 +915,7 @@ class App(tk.Tk):
         inner.pack(fill="x")
 
         self._v_mes  = self._field(inner, "Mes", 0)
-        self._v_anio = self._field(inner, "Ano", 1)
+        self._v_anio = self._field(inner, "Año", 1)
 
         # ── Card idioma ──
         self._card_title(parent, "Idioma")
@@ -991,7 +991,7 @@ class App(tk.Tk):
         doc_box.pack(fill="x", pady=(0, 12))
 
         self._doc_canvas = tk.Canvas(doc_box, bg=CGE_CARD,
-                                     highlightthickness=0, height=160)
+                                     highlightthickness=0, height=240)
         sb_doc = tk.Scrollbar(doc_box, orient="vertical",
                               command=self._doc_canvas.yview)
         self._doc_canvas.configure(yscrollcommand=sb_doc.set)
@@ -1031,7 +1031,7 @@ class App(tk.Tk):
         self._log = scrolledtext.ScrolledText(
             log_box, font=FONT_MONO, bg=CGE_CARD, fg=CGE_TEXT,
             insertbackground=CGE_TEXT, relief="flat", bd=8,
-            state="disabled", wrap="word")
+            state="disabled", wrap="word", height=8)
         self._log.pack(fill="both", expand=True)
 
         self._log.tag_config("ok",     foreground=CGE_GREEN)
@@ -1109,7 +1109,7 @@ class App(tk.Tk):
             messagebox.showerror("Error", f"Mes '{mes_raw}' no reconocido.\nUsa numero (01-12) o nombre.")
             return
         if not re.fullmatch(r"\d{4}", anio):
-            messagebox.showerror("Error", "Ano invalido. Ej: 2026")
+            messagebox.showerror("Error", "Año invalido. Ej: 2026")
             return
         self._lock()
         threading.Thread(target=self._thread_buscar,
