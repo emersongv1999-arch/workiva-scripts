@@ -906,7 +906,7 @@ class App(tk.Tk):
         # Línea separadora derecha
         tk.Frame(parent, bg=CGE_BLUE2, width=2).pack(side="left", fill="y")
 
-        tk.Label(sidebar, text="MENÚ", font=("Segoe UI", 7, "bold"),
+        tk.Label(sidebar, text="HERRAMIENTAS", font=("Segoe UI", 7, "bold"),
                  bg=CGE_SIDEBAR, fg="#4a6ab5").pack(anchor="w", padx=18, pady=(16, 4))
 
         self._nav_btns = {}
@@ -942,7 +942,7 @@ class App(tk.Tk):
         footer = tk.Frame(self, bg=CGE_BORDER, pady=6)
         footer.pack(fill="x", side="bottom")
         tk.Label(footer,
-                 text="Programado por Emerson Garrido — Todos los derechos reservados",
+                 text="© Programado por Emerson Garrido — Todos los derechos reservados.",
                  font=("Segoe UI", 8), bg=CGE_BORDER, fg=CGE_MUTED).pack(side="left", padx=14)
 
     def _build_view_placeholder(self, key, name):
