@@ -178,24 +178,22 @@ def main():
     if ss_id_cash:
         hojas_cash = listar_hojas(ss_id_cash)
 
-        # Encontrar id de la hoja Summary
-        summary_id = None
-        for h in hojas_cash:
-            if h.get("name", "").strip() == "CGE Cash management - Summary":
-                summary_id = h["id"]
-                break
-        print(f"\n  Summary sheet id: {summary_id}")
-
-        # Filtrar subhojas con patron DD.MM que sean hijas de Summary
         import re as _re
-        patron = _re.compile(r"^CGE Cash management \d{2}\.\d{2}$")
-        subhojas = []
+        patron_cgecash = _re.compile(r"^CGE Cash management \d{2}\.\d{2}$")
+        patron_fundreq  = _re.compile(r"^Fund Request \d{2}\.\d{2}$")
+
+        # Encontrar ids de hojas padre
+        summary_id   = None
+        fundreq_id   = None
         for h in hojas_cash:
-            pid = h.get("parentId") or (h.get("parent") or {}).get("id", "")
-            if pid == summary_id and patron.match(h.get("name", "")):
-                subhojas.append(h)
-        subhojas.sort(key=lambda h: h.get("name", ""))
-        print(f"  Subhojas con patron DD.MM: {len(subhojas)}")
+            nombre = h.get("name", "").strip()
+            if nombre == "CGE Cash management - Summary":
+                summary_id = h["id"]
+            elif nombre == "Fund Request":
+                fundreq_id = h["id"]
+
+        print(f"\n  CGE Cash management - Summary id : {summary_id}")
+        print(f"  Fund Request id                  : {fundreq_id}")
 
         # Obtener bases del paso 1
         bases = []
@@ -204,30 +202,50 @@ def main():
             if hojas_b:
                 bases = leer_rango(ss_id_bases, hojas_b[0]["id"], "E2:E23")
 
-        print(f"\n  {'#':<4} {'Nombre actual':<35} {'Nombre nuevo':<35} {'Cambio'}")
-        print(f"  {'-'*4} {'-'*35} {'-'*35} {'-'*6}")
-        pares = []
-        for i, h in enumerate(subhojas):
-            actual = h.get("name", "")
-            nuevo  = f"CGE Cash management {bases[i]}" if i < len(bases) and bases[i] else actual
-            cambia = "SI" if actual != nuevo else "-"
-            print(f"  {i+1:<4} {actual:<35} {nuevo:<35} {cambia}")
-            # Guardar tambien parentId e index para mantener posicion y subhoja
-            pid = h.get("parentId") or (h.get("parent") or {}).get("id", "")
-            idx = h.get("index") or h.get("position") or i
-            pares.append((h["id"], actual, nuevo, pid, idx))
+        def construir_pares(parent_id, patron, prefijo):
+            """Filtra subhojas del parent dado, ordena y mapea con bases."""
+            hijos = []
+            for h in hojas_cash:
+                pid = h.get("parentId") or (h.get("parent") or {}).get("id", "")
+                if pid == parent_id and patron.match(h.get("name", "")):
+                    hijos.append(h)
+            hijos.sort(key=lambda h: h.get("name", ""))
+            pares = []
+            for i, h in enumerate(hijos):
+                actual = h.get("name", "")
+                nuevo  = f"{prefijo} {bases[i]}" if i < len(bases) and bases[i] else actual
+                pid_h  = h.get("parentId") or (h.get("parent") or {}).get("id", "")
+                idx    = h.get("index") or h.get("position") or i
+                pares.append((h["id"], actual, nuevo, pid_h, idx))
+            return pares
 
-        n_cambios = sum(1 for _, a, n, _, _ in pares if a != n)
-        print(f"\n  Total cambios a aplicar: {n_cambios}")
+        pares_cge = construir_pares(summary_id, patron_cgecash, "CGE Cash management") if summary_id else []
+        pares_fr  = construir_pares(fundreq_id,  patron_fundreq,  "Fund Request")        if fundreq_id  else []
+        subhojas  = [h for h in hojas_cash
+                     if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == summary_id
+                     and patron_cgecash.match(h.get("name",""))]
+        subhojas.sort(key=lambda h: h.get("name",""))
+
+        todos_pares = pares_cge + pares_fr
+
+        print(f"\n  {'#':<4} {'Nombre actual':<38} {'Nombre nuevo':<38} Cambio")
+        print(f"  {'-'*4} {'-'*38} {'-'*38} ------")
+        for i, (sid, actual, nuevo, pid, idx) in enumerate(todos_pares):
+            cambia = "SI" if actual != nuevo else "-"
+            print(f"  {i+1:<4} {actual:<38} {nuevo:<38} {cambia}")
+
+        n_cambios = sum(1 for _, a, n, _, _ in todos_pares if a != n)
+        print(f"\n  CGE Cash management: {len(pares_cge)} subhojas")
+        print(f"  Fund Request       : {len(pares_fr)} subhojas")
+        print(f"  Total cambios      : {n_cambios}")
 
         if n_cambios > 0:
             resp = input("\n  ¿Aplicar cambios en Workiva? (s/n): ").strip().lower()
             if resp == "s":
                 print()
-                for sheet_id, actual, nuevo, pid, idx in pares:
+                for sheet_id, actual, nuevo, pid, idx in todos_pares:
                     if actual == nuevo:
                         continue
-                    # Incluir parent e index para no perder la subhoja ni el orden
                     body = {"name": nuevo, "index": idx}
                     if pid:
                         body["parent"] = {"id": pid}
