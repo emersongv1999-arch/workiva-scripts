@@ -101,7 +101,7 @@ def listar_hojas(ss_id):
         url = data.get("@nextLink") or data.get("nextLink") or None
     print(f"  Total hojas: {len(hojas)}")
     for h in hojas:
-        pid = h.get("parentId", h.get("parent", {}).get("id", "-"))
+        pid = h.get("parentId") or (h.get("parent") or {}).get("id", "-")
         print(f"    [{h['id']}] '{h.get('name','')}' parent={pid}")
     return hojas
 
