@@ -1106,6 +1106,10 @@ class App(tk.Tk):
                 scrollregion=self._doc_canvas.bbox("all")))
         self._doc_canvas.bind("<Configure>",
             lambda e: self._doc_canvas.itemconfig(self._doc_win, width=e.width))
+        self._doc_canvas.bind("<MouseWheel>",
+            lambda e: self._doc_canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+        self._doc_inner.bind("<MouseWheel>",
+            lambda e: self._doc_canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
 
         self._lbl_no_docs = tk.Label(self._doc_inner,
                                      text="Ingresa el periodo y presiona 'Buscar documentos'",
@@ -1188,6 +1192,9 @@ class App(tk.Tk):
                                 activebackground=bg, activeforeground=CGE_BLUE,
                                 anchor="w", padx=10, pady=5)
             cb.pack(fill="x")
+            for w in (row, cb):
+                w.bind("<MouseWheel>",
+                    lambda e: self._doc_canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
 
     def _sel_todos(self):
         for v in self._doc_vars:
