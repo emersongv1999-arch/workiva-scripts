@@ -160,7 +160,7 @@ def main():
     if ss_id_bases:
         hojas_bases = listar_hojas(ss_id_bases)
         if hojas_bases:
-            leer_rango(ss_id_bases, hojas_bases[0]["id"], "E2:E23")
+            leer_rango(ss_id_bases, hojas_bases[0]["id"], "E2:E50")
 
     print("\n" + "="*60)
     print("PASO 2: Buscar CGE Cash Management")
@@ -200,7 +200,7 @@ def main():
         if ss_id_bases:
             hojas_b = listar_hojas(ss_id_bases)
             if hojas_b:
-                bases = leer_rango(ss_id_bases, hojas_b[0]["id"], "E2:E23")
+                bases = leer_rango(ss_id_bases, hojas_b[0]["id"], "E2:E50")
 
         def construir_pares(parent_id, patron, prefijo):
             """Filtra subhojas del parent dado, ordena y mapea con bases."""

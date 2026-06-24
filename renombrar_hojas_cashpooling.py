@@ -172,7 +172,7 @@ def obtener_bases(mes, anio):
 
     # Buscar primera hoja visible (no la Summary/Cover si hubiese)
     hoja_id = hojas[0]["id"]
-    valores = leer_rango(ss_id, hoja_id, "E2:E23")
+    valores = leer_rango(ss_id, hoja_id, "E2:E50")
     bases = [v for v in valores if v]  # filtrar vacíos
     return bases, ss_nom
 
