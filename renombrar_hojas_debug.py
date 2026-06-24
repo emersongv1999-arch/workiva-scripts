@@ -175,6 +175,11 @@ def main():
     print("PASO 3: Construir preview de renombrado")
     print("="*60)
 
+    pares_fr    = []
+    fundreq_id  = None
+    patron_fundreq = None
+    hojas_cash  = []
+
     if ss_id_cash:
         hojas_cash = listar_hojas(ss_id_cash)
 
@@ -316,6 +321,97 @@ def main():
             print("  Cancelado.")
     else:
         print("  No hay subhojas cargadas para limpiar.")
+
+    print("\n" + "="*60)
+    print("PASO 5: Limpiar rangos Fund Request (respetando formulas)")
+    print("="*60)
+
+    RANGOS_FUNDREQ = [
+        "F4:L58",
+        "P4:Q15",
+        "V4:V14",
+    ]
+
+    def leer_formulas(ss_id, sheet_id, rango):
+        """Devuelve matriz de formulas del rango. Celdas sin formula vienen como '' o None."""
+        try:
+            data = api_get(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}/formulas/{rango}")
+            raw = data.get("data")
+            if isinstance(raw, list) and raw and isinstance(raw[0], dict):
+                return raw[0].get("values", [])
+            elif isinstance(raw, list):
+                return raw
+            return data.get("values") or []
+        except Exception as e:
+            print(f"      WARN leer_formulas {rango}: {e}")
+            return []
+
+    def col_letra_a_num(letra):
+        num = 0
+        for c in letra.upper():
+            num = num * 26 + (ord(c) - 64)
+        return num
+
+    def rango_dims(rango):
+        ini, fin = rango.split(":")
+        # Separar letras y numero
+        import re as _re
+        m_ini = _re.match(r"([A-Z]+)(\d+)", ini)
+        m_fin = _re.match(r"([A-Z]+)(\d+)", fin)
+        col_i = col_letra_a_num(m_ini.group(1))
+        col_f = col_letra_a_num(m_fin.group(1))
+        fil_i = int(m_ini.group(2))
+        fil_f = int(m_fin.group(2))
+        return col_f - col_i + 1, fil_f - fil_i + 1
+
+    def matriz_sin_formulas(formulas_matrix, ncols, nfilas):
+        """Construye matriz: '' donde no hay formula, formula original donde si hay."""
+        resultado = []
+        for r in range(nfilas):
+            fila_out = []
+            for c in range(ncols):
+                try:
+                    celda = formulas_matrix[r][c] if r < len(formulas_matrix) else None
+                except (IndexError, TypeError):
+                    celda = None
+                formula = str(celda).strip() if celda is not None else ""
+                fila_out.append(formula if formula.startswith("=") else "")
+            resultado.append(fila_out)
+        return resultado
+
+    if ss_id_cash and pares_fr:
+        hojas_fr = [h for h in hojas_cash
+                    if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == fundreq_id
+                    and patron_fundreq.match(h.get("name",""))]
+        hojas_fr.sort(key=lambda h: h.get("name",""))
+
+        print(f"\n  Rangos a limpiar: {RANGOS_FUNDREQ}")
+        print(f"  Subhojas Fund Request: {len(hojas_fr)}")
+        resp3 = input("\n  ¿Limpiar rangos Fund Request (preservando formulas)? (s/n): ").strip().lower()
+        if resp3 == "s":
+            for h in hojas_fr:
+                sheet_id = h["id"]
+                nombre   = h.get("name", sheet_id)
+                print(f"\n  Limpiando: {nombre}")
+                for rango in RANGOS_FUNDREQ:
+                    ncols, nfilas = rango_dims(rango)
+                    print(f"    {rango} ({nfilas}f x {ncols}c): leyendo formulas...", end=" ", flush=True)
+                    formulas = leer_formulas(ss_id_cash, sheet_id, rango)
+                    matriz = matriz_sin_formulas(formulas, ncols, nfilas)
+                    n_formulas = sum(1 for fila in matriz for c in fila if c.startswith("="))
+                    print(f"{n_formulas} formulas preservadas. Escribiendo...", end=" ", flush=True)
+                    st, resp_data = api_put(
+                        f"/platform/v1/spreadsheets/{ss_id_cash}/sheets/{sheet_id}/values/{rango}",
+                        {"values": matriz}
+                    )
+                    estado = "OK" if st in (200, 202, 204) else f"ERR {st} {resp_data}"
+                    print(estado)
+                    time.sleep(0.15)
+            print("\n  Limpieza Fund Request terminada.")
+        else:
+            print("  Cancelado.")
+    else:
+        print("  No hay subhojas Fund Request cargadas para limpiar.")
 
     print("\n" + "="*60)
     print("FIN")
