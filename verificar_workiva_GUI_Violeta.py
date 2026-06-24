@@ -844,13 +844,14 @@ class App(tk.Tk):
         self.resizable(True, True)
         self.minsize(860, 620)
 
-        self._docs     = []
-        self._doc_vars = []
-        self._running  = False
-        self._ss_id    = None
-        self._ss_name  = None
-        self._ss_cache = None
-        self._docx_dir = None
+        self._docs      = []
+        self._doc_vars  = []
+        self._running   = False
+        self._stop_flag = False
+        self._ss_id     = None
+        self._ss_name   = None
+        self._ss_cache  = None
+        self._docx_dir  = None
 
         self._build_ui()
         self._center(980, 700)
@@ -1035,6 +1036,11 @@ class App(tk.Tk):
                   bg=CGE_BORDER, fg=CGE_TEXT, relief="flat", bd=0,
                   padx=8, pady=2, cursor="hand2",
                   command=self._clear_log).pack(side="right")
+        self._btn_detener = tk.Button(act_header, text="Detener", font=FONT_SMALL,
+                  bg=CGE_RED, fg=CGE_WHITE, relief="flat", bd=0,
+                  padx=8, pady=2, cursor="hand2",
+                  command=self._detener, state="disabled")
+        self._btn_detener.pack(side="right", padx=(0, 4))
 
         log_box = tk.Frame(parent, bg=CGE_CARD,
                            highlightbackground=CGE_BORDER, highlightthickness=1)
@@ -1066,6 +1072,11 @@ class App(tk.Tk):
         self._log.configure(state="normal")
         self._log.delete("1.0", "end")
         self._log.configure(state="disabled")
+
+    def _detener(self):
+        self._stop_flag = True
+        self._btn_detener.configure(state="disabled")
+        self.log("⏹ Deteniendo...", "warn")
 
     # ── DOCS LIST ─────────────────────────────────────────────────────────────
     def _render_docs(self, docs):
@@ -1101,14 +1112,17 @@ class App(tk.Tk):
 
     # ── ACCIONES ──────────────────────────────────────────────────────────────
     def _lock(self):
-        self._running = True
+        self._running   = True
+        self._stop_flag = False
         self._btn_buscar.configure(state="disabled")
         self._btn_verificar.configure(state="disabled")
+        self._btn_detener.configure(state="normal")
         self._progress.start(10)
 
     def _unlock(self):
         self._running = False
         self._btn_buscar.configure(state="normal")
+        self._btn_detener.configure(state="disabled")
         if self._docs:
             self._btn_verificar.configure(state="normal")
         self._progress.stop()
@@ -1170,6 +1184,9 @@ class App(tk.Tk):
 
             total_hall = 0
             for i, doc in enumerate(seleccionados, 1):
+                if self._stop_flag:
+                    self.log("\nProceso detenido por el usuario.", "warn")
+                    break
                 m = re.match(r"^([A-Z]\d+)", doc["nombre"].strip())
                 codigo = m.group(1) if m else doc["nombre"][:20]
 
