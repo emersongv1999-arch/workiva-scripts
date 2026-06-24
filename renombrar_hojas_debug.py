@@ -110,10 +110,18 @@ def leer_rango(ss_id, sheet_id, rango):
     print(f"\nLeyendo rango {rango} de hoja {sheet_id}")
     data = api_get(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}/values/{rango}")
     print(f"  Respuesta raw (primeras claves): {list(data.keys())}")
-    vals = (data.get("values")
-            or data.get("data", {}).get("values")
-            or data.get("body", {}).get("values")
-            or [])
+    # Imprimir estructura completa de 'data' para diagnostico
+    raw_data = data.get("data")
+    print(f"  Tipo de data['data']: {type(raw_data).__name__}")
+    print(f"  Primeros 3 elementos de data['data']: {str(raw_data)[:300]}")
+
+    # data["data"] puede ser lista directa de filas O un dict con "values"
+    if isinstance(raw_data, list):
+        vals = raw_data
+    elif isinstance(raw_data, dict):
+        vals = raw_data.get("values", [])
+    else:
+        vals = data.get("values") or data.get("body", {}).get("values") or []
     print(f"  Filas obtenidas: {len(vals)}")
     resultado = []
     for i, fila in enumerate(vals):
