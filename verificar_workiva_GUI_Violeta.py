@@ -875,18 +875,22 @@ class App(tk.Tk):
     def _build_ui(self):
         self._build_header()
 
-        # Footer anclado ANTES del contenido para que siempre quede visible
-        self._build_footer()
-
         # Contenedor principal bajo el header
         main = tk.Frame(self, bg=CGE_LIGHT)
         main.pack(fill="both", expand=True)
 
         self._build_sidebar(main)
 
-        # Área de contenido a la derecha del sidebar
-        self._content = tk.Frame(main, bg=CGE_LIGHT)
-        self._content.pack(side="left", fill="both", expand=True)
+        # Columna derecha: contenido + footer
+        right_col = tk.Frame(main, bg=CGE_LIGHT)
+        right_col.pack(side="left", fill="both", expand=True)
+
+        # Footer anclado al fondo de la columna derecha
+        self._build_footer(right_col)
+
+        # Área de contenido (sobre el footer)
+        self._content = tk.Frame(right_col, bg=CGE_LIGHT)
+        self._content.pack(side="top", fill="both", expand=True)
 
         # Construir vistas
         self._views = {}
@@ -938,8 +942,8 @@ class App(tk.Tk):
         label = next(l for l, k in NAV_ITEMS if k == key)
         self._header_subtitle.configure(text=label)
 
-    def _build_footer(self):
-        footer = tk.Frame(self, bg=CGE_BORDER, pady=6)
+    def _build_footer(self, parent):
+        footer = tk.Frame(parent, bg=CGE_BORDER, pady=6)
         footer.pack(fill="x", side="bottom")
         tk.Label(footer,
                  text="© Programado por Emerson Garrido — Todos los derechos reservados.",
