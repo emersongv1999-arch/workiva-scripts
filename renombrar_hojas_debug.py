@@ -123,18 +123,25 @@ def leer_rango(ss_id, sheet_id, rango):
     print(f"  Tipo de data['data']: {type(raw_data).__name__}")
     print(f"  Primeros 3 elementos de data['data']: {str(raw_data)[:300]}")
 
-    # data["data"] puede ser lista directa de filas O un dict con "values"
-    if isinstance(raw_data, list):
+    # data["data"] es lista de objetos: [{"range": "E2:E23", "values": [[v1],[v2],...]}]
+    if isinstance(raw_data, list) and raw_data and isinstance(raw_data[0], dict):
+        vals = raw_data[0].get("values", [])
+    elif isinstance(raw_data, list):
         vals = raw_data
-    elif isinstance(raw_data, dict):
-        vals = raw_data.get("values", [])
     else:
-        vals = data.get("values") or data.get("body", {}).get("values") or []
+        vals = data.get("values") or []
     print(f"  Filas obtenidas: {len(vals)}")
     resultado = []
+    import datetime as _dt
     for i, fila in enumerate(vals):
         celda = fila[0] if isinstance(fila, list) and fila else fila
         texto = str(celda).strip() if celda is not None else ""
+        # Convertir "2026-07-01" → "01.07"
+        try:
+            dt = _dt.date.fromisoformat(texto)
+            texto = f"{dt.day:02d}.{dt.month:02d}"
+        except Exception:
+            pass
         print(f"    E{i+2}: '{texto}'")
         resultado.append(texto)
     return resultado
