@@ -227,12 +227,10 @@ def main():
                 for sheet_id, actual, nuevo, pid, idx in pares:
                     if actual == nuevo:
                         continue
-                    # Incluir parentId e index para no perder la subhoja ni el orden
-                    body = {"name": nuevo}
+                    # Incluir parent e index para no perder la subhoja ni el orden
+                    body = {"name": nuevo, "index": idx}
                     if pid:
-                        body["parentId"] = pid
-                    if idx is not None:
-                        body["index"] = idx
+                        body["parent"] = {"id": pid}
                     st, data = api_patch(
                         f"/platform/v1/spreadsheets/{ss_id_cash}/sheets/{sheet_id}",
                         body
