@@ -1329,65 +1329,6 @@ class App(tk.Tk):
         left.pack(side="left", fill="y", padx=(0, 14))
         left.pack_propagate(False)
 
-        # ── Sociedad ──────────────────────────────────────────────────────────
-        tk.Label(left, text="SOCIEDAD", font=("Segoe UI", 8, "bold"),
-                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(6, 2))
-        pf = tk.Frame(left, bg=CGE_CARD,
-                      highlightbackground=CGE_BORDER, highlightthickness=1)
-        pf.pack(fill="x", pady=(0, 10))
-        inner = tk.Frame(pf, bg=CGE_CARD, padx=12, pady=10)
-        inner.pack(fill="x")
-
-        tk.Label(inner, text="Código", font=FONT_SMALL,
-                 bg=CGE_CARD, fg=CGE_MUTED).grid(row=0, column=0, sticky="w", pady=4)
-        self._eeff_codigo = tk.StringVar(value="E200")
-        tk.Entry(inner, textvariable=self._eeff_codigo, font=FONT_LABEL,
-                 bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=10,
-                 highlightbackground=CGE_BORDER, highlightthickness=1
-                 ).grid(row=0, column=1, sticky="ew", padx=(8,0), pady=4)
-        inner.columnconfigure(1, weight=1)
-
-        # ── Tipo ──────────────────────────────────────────────────────────────
-        tk.Label(left, text="TIPO", font=("Segoe UI", 8, "bold"),
-                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(4, 2))
-        tf = tk.Frame(left, bg=CGE_CARD,
-                      highlightbackground=CGE_BORDER, highlightthickness=1)
-        tf.pack(fill="x", pady=(0, 10))
-        tipo_inner = tk.Frame(tf, bg=CGE_CARD, padx=12, pady=8)
-        tipo_inner.pack(fill="x")
-        self._eeff_tipo = tk.StringVar(value="CONSO")
-        for txt, val in [("Consolidado (CONSO)", "CONSO"), ("Individual (IND)", "IND")]:
-            tk.Radiobutton(tipo_inner, text=txt, variable=self._eeff_tipo, value=val,
-                           font=FONT_SMALL, bg=CGE_CARD, fg=CGE_TEXT,
-                           selectcolor=CGE_LIGHT, activebackground=CGE_CARD,
-                           cursor="hand2").pack(anchor="w", pady=2)
-
-        # ── Período ───────────────────────────────────────────────────────────
-        tk.Label(left, text="PERÍODO", font=("Segoe UI", 8, "bold"),
-                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(4, 2))
-        ppf = tk.Frame(left, bg=CGE_CARD,
-                       highlightbackground=CGE_BORDER, highlightthickness=1)
-        ppf.pack(fill="x", pady=(0, 10))
-        p_inner = tk.Frame(ppf, bg=CGE_CARD, padx=12, pady=10)
-        p_inner.pack(fill="x")
-
-        tk.Label(p_inner, text="Mes", font=FONT_SMALL,
-                 bg=CGE_CARD, fg=CGE_MUTED).grid(row=0, column=0, sticky="w", pady=4)
-        self._eeff_mes = tk.StringVar()
-        tk.Entry(p_inner, textvariable=self._eeff_mes, font=FONT_LABEL,
-                 bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=10,
-                 highlightbackground=CGE_BORDER, highlightthickness=1
-                 ).grid(row=0, column=1, sticky="ew", padx=(8,0), pady=4)
-
-        tk.Label(p_inner, text="Año", font=FONT_SMALL,
-                 bg=CGE_CARD, fg=CGE_MUTED).grid(row=1, column=0, sticky="w", pady=4)
-        self._eeff_anio = tk.StringVar()
-        tk.Entry(p_inner, textvariable=self._eeff_anio, font=FONT_LABEL,
-                 bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=10,
-                 highlightbackground=CGE_BORDER, highlightthickness=1
-                 ).grid(row=1, column=1, sticky="ew", padx=(8,0), pady=4)
-        p_inner.columnconfigure(1, weight=1)
-
         # ── Hojas ─────────────────────────────────────────────────────────────
         tk.Label(left, text="HOJAS DEL SPREADSHEET", font=("Segoe UI", 8, "bold"),
                  bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(4, 2))
@@ -1473,17 +1414,7 @@ class App(tk.Tk):
         self._eeff_running = False
 
     def _eeff_on_extraer(self):
-        codigo = self._eeff_codigo.get().strip().upper()
-        tipo   = self._eeff_tipo.get().strip()
-        mes    = self._eeff_mes.get().strip().zfill(2)
-        anio   = self._eeff_anio.get().strip()
-        if not codigo:
-            messagebox.showerror("Error", "Ingresa el código de sociedad (ej: E200).")
-            return
-        if not re.fullmatch(r"\d{2}", mes) or not re.fullmatch(r"\d{4}", anio):
-            messagebox.showerror("Error", "Ingresa mes (01-12) y año válidos.")
-            return
-        ss_name = f"{codigo}_{tipo}_{mes}-{anio}"
+        ss_name = "E200_CONSO_12-2025"
         self._eeff_clear_log()
         self._eeff_running = True
         self._eeff_btn.pack_forget()
