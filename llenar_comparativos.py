@@ -34,8 +34,35 @@ def get_session():
     s.verify = False
     return s
 
+def _unlock_sheet(ss_id, sid, sname):
+    """Elimina todos los locks de una hoja via DELETE /locks/{lockId}."""
+    url = WDESK_BASE + "/platform/v1/spreadsheets/" + ss_id + "/sheets/" + sid + "/locks"
+    try:
+        r    = session.get(url, timeout=30)
+        data = r.json()
+        locks = data.get("data", [])
+        if not locks:
+            return
+        for lk in locks:
+            lid = lk.get("id") or lk.get("lockId")
+            if not lid:
+                continue
+            dr = session.delete(WDESK_BASE + "/platform/v1/spreadsheets/" + ss_id
+                                + "/sheets/" + sid + "/locks/" + lid, timeout=30)
+            if dr.status_code == 202:
+                poll(dr.headers.get("Location", ""))
+        print(f"    [unlock] {sname}: {len(locks)} lock(s) eliminado(s)")
+    except Exception as e:
+        print(f"    [unlock] {sname}: error {e}")
+
 def clean_file(fid, name):
-    pass  # limpieza no disponible en modo integrado
+    """Elimina locks de todas las hojas comparativas del archivo."""
+    sheets = get_sheets(fid)
+    skip   = SKIP_SHEETS | {"Bases"}
+    for sname, sid in sheets.items():
+        if sname in skip:
+            continue
+        _unlock_sheet(fid, sid, sname)
 
 # ─── CONFIGURACIÓN ────────────────────────────────────────────────────────────
 WORKSPACE_ID = "w_34913aadaa38420eabd7e4d341b78a1a"
@@ -598,7 +625,7 @@ def build_write_values(tgt_cells, src_cells, dest_col, src_col):
                 unmapped.append(f"fila {i+1}:{tag}")
             vals.append(None); continue
         sv = get_cv(src_cells[src_row], src_col)
-        vals.append(sv if isinstance(sv, (int, float)) else None)
+        vals.append(sv if isinstance(sv, (int, float)) else 0)
     if unmapped:
         print(f"      [sin mapeo] {', '.join(unmapped[:8])}"
               + (" ..." if len(unmapped) > 8 else ""))
