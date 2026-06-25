@@ -265,7 +265,7 @@ class App(tk.Tk):
         tk.Label(lf, text="Log", font=("Segoe UI", 9, "bold"),
                  bg=BG, fg=FG_DIM).pack(anchor="w")
 
-        self.log_txt = tk.Text(lf, height=9, bg="#0d0d1a", fg=FG,
+        self.log_txt = tk.Text(lf, height=9, bg=BG2, fg=FG,
                                font=("Consolas", 8), relief="flat",
                                insertbackground=FG, state="disabled",
                                wrap="word")
