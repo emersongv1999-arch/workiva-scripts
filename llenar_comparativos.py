@@ -34,13 +34,8 @@ def get_session():
     s.verify = False
     return s
 
-# Importar función de limpieza si está disponible
 def clean_file(fid, name):
-    pass  # no-op si limpiar_comparativos.py no está disponible
-try:
-    exec(open("limpiar_comparativos.py", encoding="utf-8").read().split("# ── MAIN")[0])
-except FileNotFoundError:
-    print("  [INFO] limpiar_comparativos.py no encontrado — se omite limpieza")
+    pass  # limpieza no disponible en modo integrado
 
 # ─── CONFIGURACIÓN ────────────────────────────────────────────────────────────
 WORKSPACE_ID = "w_34913aadaa38420eabd7e4d341b78a1a"
