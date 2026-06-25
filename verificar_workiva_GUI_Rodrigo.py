@@ -970,7 +970,7 @@ class App(tk.Tk):
 
         # Centrar popup
         popup.update_idletasks()
-        pw, ph = 320, 160
+        pw, ph = 340, 200
         x = self.winfo_x() + (self.winfo_width()  - pw) // 2
         y = self.winfo_y() + (self.winfo_height() - ph) // 2
         popup.geometry(f"{pw}x{ph}+{x}+{y}")
