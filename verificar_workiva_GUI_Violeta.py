@@ -1277,102 +1277,82 @@ class App(tk.Tk):
         frame = tk.Frame(self._content, bg=CGE_LIGHT)
         self._views["mod3"] = frame
 
-        tk.Label(frame, text="Cruce de Notas", font=("Segoe UI", 13, "bold"),
-                 bg=CGE_LIGHT, fg=CGE_BLUE).pack(anchor="w", pady=(0, 10))
-
-        # Barra de herramientas
-        toolbar = tk.Frame(frame, bg=CGE_LIGHT)
-        toolbar.pack(fill="x", pady=(0, 6))
-        tk.Button(toolbar, text="+ Agregar fila", font=FONT_SMALL,
-                  bg=CGE_BLUE, fg=CGE_WHITE, relief="flat", bd=0,
-                  padx=10, pady=4, cursor="hand2",
-                  command=self._cruce_agregar_fila).pack(side="left")
-        tk.Button(toolbar, text="Eliminar fila", font=FONT_SMALL,
+        # Encabezado + botón limpiar
+        top = tk.Frame(frame, bg=CGE_LIGHT)
+        top.pack(fill="x", pady=(0, 8))
+        tk.Label(top, text="Cruce de Notas", font=("Segoe UI", 13, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_BLUE).pack(side="left")
+        tk.Button(top, text="Limpiar todo", font=FONT_SMALL,
                   bg=CGE_RED, fg=CGE_WHITE, relief="flat", bd=0,
                   padx=10, pady=4, cursor="hand2",
-                  command=self._cruce_eliminar_fila).pack(side="left", padx=(6,0))
-        tk.Button(toolbar, text="Limpiar todo", font=FONT_SMALL,
-                  bg=CGE_BORDER, fg=CGE_TEXT, relief="flat", bd=0,
-                  padx=10, pady=4, cursor="hand2",
-                  command=self._cruce_limpiar).pack(side="left", padx=(6,0))
+                  command=self._cruce_limpiar).pack(side="right")
 
-        # Tabla con ttk.Treeview
-        cols = ("Nota", "Descripción", "Valor período", "Valor comparativo")
-        tree_frame = tk.Frame(frame, bg=CGE_CARD,
-                              highlightbackground=CGE_BORDER, highlightthickness=1)
-        tree_frame.pack(fill="both", expand=True)
+        COLS   = ["Nota", "Descripción", "Valor período", "Valor comparativo"]
+        NROWS  = 50
+        COL_W  = [120, 300, 160, 160]
+        BORDER = CGE_BORDER
+        HDR_BG = CGE_BLUE
+        HDR_FG = CGE_WHITE
+        CELL_H = 26
 
-        style = ttk.Style()
-        style.configure("Cruce.Treeview",
-                         background=CGE_CARD, foreground=CGE_TEXT,
-                         fieldbackground=CGE_CARD, rowheight=28,
-                         font=FONT_SMALL)
-        style.configure("Cruce.Treeview.Heading",
-                         background=CGE_BLUE, foreground=CGE_WHITE,
-                         font=("Segoe UI", 9, "bold"), relief="flat")
-        style.map("Cruce.Treeview", background=[("selected", CGE_BLUE2)])
+        # Contenedor con scrollbar vertical
+        outer = tk.Frame(frame, bg=BORDER, bd=0)
+        outer.pack(fill="both", expand=True)
 
-        self._cruce_tree = ttk.Treeview(tree_frame, columns=cols,
-                                         show="headings", style="Cruce.Treeview",
-                                         selectmode="browse")
-        for col in cols:
-            self._cruce_tree.heading(col, text=col)
-            self._cruce_tree.column(col, width=200, anchor="w", stretch=True)
-
-        vsb = ttk.Scrollbar(tree_frame, orient="vertical",
-                             command=self._cruce_tree.yview)
-        self._cruce_tree.configure(yscrollcommand=vsb.set)
+        canvas = tk.Canvas(outer, bg=BORDER, highlightthickness=0)
+        vsb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vsb.set)
         vsb.pack(side="right", fill="y")
-        self._cruce_tree.pack(fill="both", expand=True)
-        self._cruce_tree.bind("<Double-1>", self._cruce_editar_celda)
+        canvas.pack(side="left", fill="both", expand=True)
 
-        tk.Label(frame, text="Doble clic en una celda para editarla.",
-                 font=("Segoe UI", 8), bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(6,0))
+        inner = tk.Frame(canvas, bg=BORDER)
+        win_id = canvas.create_window((0, 0), window=inner, anchor="nw")
 
-    def _cruce_agregar_fila(self):
-        self._cruce_tree.insert("", "end", values=("", "", "", ""))
+        def _on_resize(e):
+            canvas.itemconfig(win_id, width=e.width)
+        canvas.bind("<Configure>", _on_resize)
 
-    def _cruce_eliminar_fila(self):
-        sel = self._cruce_tree.selection()
-        if sel:
-            self._cruce_tree.delete(sel[0])
+        def _on_frame_configure(e):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        inner.bind("<Configure>", _on_frame_configure)
+
+        def _mousewheel(e):
+            canvas.yview_scroll(int(-1*(e.delta/120)), "units")
+        canvas.bind_all("<MouseWheel>", _mousewheel)
+
+        # Encabezados
+        for c, (col_name, w) in enumerate(zip(COLS, COL_W)):
+            tk.Label(inner, text=col_name, font=("Segoe UI", 9, "bold"),
+                     bg=HDR_BG, fg=HDR_FG, width=w//8, anchor="center",
+                     relief="flat", bd=0, pady=6,
+                     highlightbackground=BORDER, highlightthickness=1
+                     ).grid(row=0, column=c, sticky="nsew", padx=(0,1), pady=(0,1))
+        for c in range(len(COLS)):
+            inner.grid_columnconfigure(c, weight=1, minsize=COL_W[c])
+
+        # Celdas
+        self._cruce_vars = []
+        for r in range(NROWS):
+            row_vars = []
+            bg = CGE_CARD if r % 2 == 0 else CGE_ROWALT
+            for c in range(len(COLS)):
+                var = tk.StringVar()
+                ent = tk.Entry(inner, textvariable=var, font=FONT_SMALL,
+                               bg=bg, fg=CGE_TEXT, relief="flat", bd=0,
+                               insertbackground=CGE_BLUE,
+                               highlightbackground=BORDER,
+                               highlightthickness=1)
+                ent.grid(row=r+1, column=c, sticky="nsew",
+                         padx=(0,1), pady=(0,1), ipady=4)
+                ent.bind("<MouseWheel>", _mousewheel)
+                row_vars.append(var)
+            self._cruce_vars.append(row_vars)
 
     def _cruce_limpiar(self):
-        if messagebox.askyesno("Confirmar", "¿Eliminar todas las filas?"):
-            for item in self._cruce_tree.get_children():
-                self._cruce_tree.delete(item)
-
-    def _cruce_editar_celda(self, event):
-        tree = self._cruce_tree
-        region = tree.identify_region(event.x, event.y)
-        if region != "cell":
-            return
-        row_id = tree.identify_row(event.y)
-        col_id = tree.identify_column(event.x)
-        col_idx = int(col_id[1:]) - 1
-        cols = ("Nota", "Descripción", "Valor período", "Valor comparativo")
-
-        x, y, w, h = tree.bbox(row_id, col_id)
-        val = tree.item(row_id, "values")[col_idx]
-
-        entry_var = tk.StringVar(value=val)
-        entry = tk.Entry(tree, textvariable=entry_var, font=FONT_SMALL,
-                         bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=2,
-                         highlightbackground=CGE_BLUE, highlightthickness=1)
-        entry.place(x=x, y=y, width=w, height=h)
-        entry.focus_set()
-        entry.select_range(0, "end")
-
-        def guardar(e=None):
-            vals = list(tree.item(row_id, "values"))
-            vals[col_idx] = entry_var.get()
-            tree.item(row_id, values=vals)
-            entry.destroy()
-
-        entry.bind("<Return>", guardar)
-        entry.bind("<Tab>", guardar)
-        entry.bind("<FocusOut>", guardar)
-        entry.bind("<Escape>", lambda e: entry.destroy())
+        if messagebox.askyesno("Confirmar", "¿Limpiar todas las celdas?"):
+            for row in self._cruce_vars:
+                for var in row:
+                    var.set("")
 
     def _build_view_placeholder(self, key, name):
         frame = tk.Frame(self._content, bg=CGE_LIGHT)
