@@ -286,11 +286,11 @@ class App(tk.Tk):
         sb.pack(fill="x", side="bottom")
 
     def _btn(self, parent, text, color, cmd, state="normal"):
-        b = tk.Button(parent, text=text, bg=color, fg=FG,
-                      font=("Segoe UI", 9, "bold"), relief="flat",
-                      activebackground=color, activeforeground=FG,
+        b = tk.Button(parent, text=text, bg=color, fg="white",
+                      font=("Segoe UI", 10, "bold"), relief="flat",
+                      activebackground=color, activeforeground="white",
                       cursor="hand2", command=cmd, state=state,
-                      disabledforeground="#666")
+                      disabledforeground="#aaaaaa")
         return b
 
     # ── LOG ───────────────────────────────────────────────────────────────────
