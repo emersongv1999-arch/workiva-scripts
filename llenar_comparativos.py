@@ -145,18 +145,43 @@ def poll(location):
 
 def put_col(ss_id, sid, col_idx, values, label=""):
     refresh_token()
-    cl  = col_letter(col_idx)
-    rng = f"{cl}1:{cl}{len(values)}"
-    rp  = session.put(WDESK_BASE+"/platform/v1/spreadsheets/"+ss_id+"/sheets/"+sid
-                      +"/values/"+rng,
-                      json={"values":[[v] for v in values]}, timeout=120)
-    if rp.status_code == 202:
-        ok = poll(rp.headers.get("Location",""))
-        n  = sum(1 for v in values if v is not None)
-        print(f"    {'OK' if ok else 'ERR'} col {cl}: {n} vals [{label}]")
-        return ok
-    print(f"    ERR HTTP {rp.status_code}: {rp.text[:60]}")
-    return False
+    cl = col_letter(col_idx)
+
+    # Construir chunks contiguos de valores no-None para evitar enviar None a la API
+    chunks = []
+    i = 0
+    while i < len(values):
+        if values[i] is not None:
+            j = i
+            while j < len(values) and values[j] is not None:
+                j += 1
+            chunks.append((i, values[i:j]))
+            i = j
+        else:
+            i += 1
+
+    n = sum(1 for v in values if v is not None)
+    if not chunks:
+        return True
+
+    ok_all = True
+    for start, chunk in chunks:
+        r1  = start + 1
+        r2  = r1 + len(chunk) - 1
+        rng = f"{cl}{r1}:{cl}{r2}"
+        rp  = session.put(WDESK_BASE+"/platform/v1/spreadsheets/"+ss_id+"/sheets/"+sid
+                          +"/values/"+rng,
+                          json={"values": [[v] for v in chunk]}, timeout=120)
+        if rp.status_code == 202:
+            ok = poll(rp.headers.get("Location", ""))
+            if not ok:
+                ok_all = False
+        else:
+            print(f"    ERR HTTP {rp.status_code}: {rp.text[:60]}")
+            ok_all = False
+
+    print(f"    {'OK' if ok_all else 'ERR'} col {cl}: {n} vals [{label}]")
+    return ok_all
 
 def put_col_range(ss_id, sid, col_idx, start_row, values, label=""):
     """Escribe un slice de columna comenzando en start_row (base-0)."""
