@@ -1329,7 +1329,8 @@ class App(tk.Tk):
         left.pack(side="left", fill="y", padx=(0, 14))
         left.pack_propagate(False)
 
-        tk.Label(left, text="SPREADSHEET E200", font=("Segoe UI", 8, "bold"),
+        # ── Sociedad ──────────────────────────────────────────────────────────
+        tk.Label(left, text="SOCIEDAD", font=("Segoe UI", 8, "bold"),
                  bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(6, 2))
         pf = tk.Frame(left, bg=CGE_CARD,
                       highlightbackground=CGE_BORDER, highlightthickness=1)
@@ -1337,30 +1338,55 @@ class App(tk.Tk):
         inner = tk.Frame(pf, bg=CGE_CARD, padx=12, pady=10)
         inner.pack(fill="x")
 
-        tk.Label(inner, text="ID Spreadsheet", font=FONT_SMALL,
+        tk.Label(inner, text="Código", font=FONT_SMALL,
                  bg=CGE_CARD, fg=CGE_MUTED).grid(row=0, column=0, sticky="w", pady=4)
-        self._eeff_ss_id = tk.StringVar(value="1a198bca66b144218e3c70325d39a1c5")
-        tk.Entry(inner, textvariable=self._eeff_ss_id, font=FONT_SMALL,
-                 bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=18,
+        self._eeff_codigo = tk.StringVar(value="E200")
+        tk.Entry(inner, textvariable=self._eeff_codigo, font=FONT_LABEL,
+                 bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=10,
+                 highlightbackground=CGE_BORDER, highlightthickness=1
+                 ).grid(row=0, column=1, sticky="ew", padx=(8,0), pady=4)
+        inner.columnconfigure(1, weight=1)
+
+        # ── Tipo ──────────────────────────────────────────────────────────────
+        tk.Label(left, text="TIPO", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(4, 2))
+        tf = tk.Frame(left, bg=CGE_CARD,
+                      highlightbackground=CGE_BORDER, highlightthickness=1)
+        tf.pack(fill="x", pady=(0, 10))
+        tipo_inner = tk.Frame(tf, bg=CGE_CARD, padx=12, pady=8)
+        tipo_inner.pack(fill="x")
+        self._eeff_tipo = tk.StringVar(value="CONSO")
+        for txt, val in [("Consolidado (CONSO)", "CONSO"), ("Individual (IND)", "IND")]:
+            tk.Radiobutton(tipo_inner, text=txt, variable=self._eeff_tipo, value=val,
+                           font=FONT_SMALL, bg=CGE_CARD, fg=CGE_TEXT,
+                           selectcolor=CGE_LIGHT, activebackground=CGE_CARD,
+                           cursor="hand2").pack(anchor="w", pady=2)
+
+        # ── Período ───────────────────────────────────────────────────────────
+        tk.Label(left, text="PERÍODO", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(4, 2))
+        ppf = tk.Frame(left, bg=CGE_CARD,
+                       highlightbackground=CGE_BORDER, highlightthickness=1)
+        ppf.pack(fill="x", pady=(0, 10))
+        p_inner = tk.Frame(ppf, bg=CGE_CARD, padx=12, pady=10)
+        p_inner.pack(fill="x")
+
+        tk.Label(p_inner, text="Mes", font=FONT_SMALL,
+                 bg=CGE_CARD, fg=CGE_MUTED).grid(row=0, column=0, sticky="w", pady=4)
+        self._eeff_mes = tk.StringVar()
+        tk.Entry(p_inner, textvariable=self._eeff_mes, font=FONT_LABEL,
+                 bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=10,
                  highlightbackground=CGE_BORDER, highlightthickness=1
                  ).grid(row=0, column=1, sticky="ew", padx=(8,0), pady=4)
 
-        tk.Label(inner, text="Col. actual (0-base)", font=FONT_SMALL,
+        tk.Label(p_inner, text="Año", font=FONT_SMALL,
                  bg=CGE_CARD, fg=CGE_MUTED).grid(row=1, column=0, sticky="w", pady=4)
-        self._eeff_col_act = tk.StringVar(value="5")
-        tk.Entry(inner, textvariable=self._eeff_col_act, font=FONT_SMALL,
-                 bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=18,
+        self._eeff_anio = tk.StringVar()
+        tk.Entry(p_inner, textvariable=self._eeff_anio, font=FONT_LABEL,
+                 bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=10,
                  highlightbackground=CGE_BORDER, highlightthickness=1
                  ).grid(row=1, column=1, sticky="ew", padx=(8,0), pady=4)
-
-        tk.Label(inner, text="Col. comparativo (0-base)", font=FONT_SMALL,
-                 bg=CGE_CARD, fg=CGE_MUTED).grid(row=2, column=0, sticky="w", pady=4)
-        self._eeff_col_cmp = tk.StringVar(value="7")
-        tk.Entry(inner, textvariable=self._eeff_col_cmp, font=FONT_SMALL,
-                 bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=18,
-                 highlightbackground=CGE_BORDER, highlightthickness=1
-                 ).grid(row=2, column=1, sticky="ew", padx=(8,0), pady=4)
-        inner.columnconfigure(1, weight=1)
+        p_inner.columnconfigure(1, weight=1)
 
         tk.Frame(left, bg=CGE_LIGHT, height=6).pack()
         self._eeff_btn = tk.Button(left, text="Extraer EEFF",
@@ -1420,25 +1446,26 @@ class App(tk.Tk):
         self._eeff_running = False
 
     def _eeff_on_extraer(self):
-        ss_id = self._eeff_ss_id.get().strip()
-        try:
-            col_act = int(self._eeff_col_act.get().strip())
-            col_cmp = int(self._eeff_col_cmp.get().strip())
-        except ValueError:
-            messagebox.showerror("Error", "Las columnas deben ser números enteros.")
+        codigo = self._eeff_codigo.get().strip().upper()
+        tipo   = self._eeff_tipo.get().strip()
+        mes    = self._eeff_mes.get().strip().zfill(2)
+        anio   = self._eeff_anio.get().strip()
+        if not codigo:
+            messagebox.showerror("Error", "Ingresa el código de sociedad (ej: E200).")
             return
-        if not ss_id:
-            messagebox.showerror("Error", "Ingresa el ID del spreadsheet.")
+        if not re.fullmatch(r"\d{2}", mes) or not re.fullmatch(r"\d{4}", anio):
+            messagebox.showerror("Error", "Ingresa mes (01-12) y año válidos.")
             return
+        ss_name = f"{codigo}_{tipo}_{mes}-{anio}"
         self._eeff_clear_log()
         self._eeff_running = True
         self._eeff_btn.pack_forget()
         self._eeff_btn_stop.pack(fill="x")
-        self._eeff_log_write("Conectando a Workiva...", "blue")
+        self._eeff_log_write(f"Buscando spreadsheet '{ss_name}' en Workiva...", "blue")
         threading.Thread(target=self._eeff_thread,
-                         args=(ss_id, col_act, col_cmp), daemon=True).start()
+                         args=(ss_name, 5, 7), daemon=True).start()
 
-    def _eeff_thread(self, ss_id, col_act, col_cmp):
+    def _eeff_thread(self, ss_name, col_act, col_cmp):
         import builtins
         _orig_print = builtins.print
         def _gui_print(*args, **kwargs):
@@ -1465,6 +1492,22 @@ class App(tk.Tk):
             token = resp.json()["access_token"]
             s.headers.update({"Authorization": f"Bearer {token}",
                                "X-Version": "2022-01-01"})
+
+            # Buscar el spreadsheet por nombre
+            ss_id = None
+            url = f"{WDESK_BASE}/platform/v1/spreadsheets?workspaceId={WORKSPACE_ID}&limit=100"
+            while url and not ss_id:
+                r    = s.get(url, verify=False, timeout=60)
+                data = r.json()
+                for item in data.get("data", []):
+                    if item.get("name", "").lower() == ss_name.lower():
+                        ss_id = item["id"]
+                        break
+                url = data.get("@nextLink")
+            if not ss_id:
+                self._eeff_log_write(f"✗ No se encontró el spreadsheet '{ss_name}'.", "err")
+                return
+            self._eeff_log_write(f"✓ Encontrado: {ss_name}", "ok")
 
             def _get_sheets(sid):
                 url = f"{WDESK_BASE}/platform/v1/spreadsheets/{sid}/sheets"
