@@ -900,9 +900,6 @@ class App(tk.Tk):
         # Footer — siempre en fila 2, ancho completo
         footer = tk.Frame(self, bg=CGE_BLUE, pady=6)
         footer.grid(row=2, column=0, sticky="ew")
-        tk.Label(footer,
-                 text="© Programado por Emerson Garrido — Todos los derechos reservados.",
-                 font=("Segoe UI", 8), bg=CGE_BLUE, fg="#8aaaf5").pack(side="left", padx=14)
 
         # Construir vistas
         self._views = {}
