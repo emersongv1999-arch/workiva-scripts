@@ -1466,10 +1466,11 @@ class App(tk.Tk):
                 r    = s.get(url, verify=False, timeout=60)
                 data = r.json()
                 for item in data.get("data", []):
-                    name_l = item.get("name", "").lower()
-                    if all(t in name_l for t in tokens):
+                    name   = item.get("name", "")
+                    name_l = name.lower()
+                    if all(t in name_l for t in tokens) and name_l.startswith(tokens[0]):
                         ss_id = item["id"]
-                        ss_found_name = item["name"]
+                        ss_found_name = name
                         break
                 url = data.get("@nextLink")
             if not ss_id:
