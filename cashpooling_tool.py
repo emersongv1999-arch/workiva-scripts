@@ -265,7 +265,7 @@ class App(tk.Tk):
         self.btn_limpiar_fr.pack(side="left", padx=(0,8), ipady=5, ipadx=8)
 
         # ── Log ───────────────────────────────────────────────────────────────
-        lf = tk.Frame(self, bg=BG, padx=16, pady=(0,14))
+        lf = tk.Frame(self, bg=BG, padx=16, pady=7)
         lf.pack(fill="both", expand=True)
 
         tk.Label(lf, text="Log", font=("Segoe UI", 9, "bold"),
