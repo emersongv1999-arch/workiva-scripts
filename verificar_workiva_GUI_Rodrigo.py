@@ -991,12 +991,17 @@ class App(tk.Tk):
 
         result = [False]
 
+        error_lbl = tk.Label(popup, text="", font=FONT_SMALL,
+                             bg=CGE_CARD, fg=CGE_RED)
+        error_lbl.pack()
+
         def confirmar(e=None):
             if var.get() == RESTRICTED_MODULES[key]:
                 result[0] = True
                 popup.destroy()
             else:
                 entry.configure(highlightbackground=CGE_RED, highlightthickness=2)
+                error_lbl.configure(text="Contraseña incorrecta.")
                 var.set("")
                 entry.focus_set()
 
