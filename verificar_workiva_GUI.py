@@ -850,7 +850,7 @@ NAV_ITEMS = [
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("NOMBRE PENDIENTE — CGE Workiva")
+        self.title("Workiva Tool — CGE Workiva")
         self.configure(bg=CGE_LIGHT)
         self.resizable(True, True)
         self.minsize(980, 680)
@@ -1714,7 +1714,7 @@ class App(tk.Tk):
 
         title_frame = tk.Frame(logo_frame, bg=CGE_BLUE)
         title_frame.pack(side="left")
-        tk.Label(title_frame, text="NOMBRE PENDIENTE",
+        tk.Label(title_frame, text="Workiva Tool",
                  font=("Segoe UI", 15, "bold"),
                  bg=CGE_BLUE, fg=CGE_WHITE).pack(anchor="w")
         self._header_subtitle = tk.Label(title_frame, text="",
