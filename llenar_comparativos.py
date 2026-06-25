@@ -625,7 +625,7 @@ def build_write_values(tgt_cells, src_cells, dest_col, src_col):
                 unmapped.append(f"fila {i+1}:{tag}")
             vals.append(None); continue
         sv = get_cv(src_cells[src_row], src_col)
-        vals.append(sv if isinstance(sv, (int, float)) else 0)
+        vals.append(sv if isinstance(sv, (int, float)) else None)
     if unmapped:
         print(f"      [sin mapeo] {', '.join(unmapped[:8])}"
               + (" ..." if len(unmapped) > 8 else ""))
