@@ -844,7 +844,7 @@ NAV_ITEMS = [
     ("Verificador de Sumas",   "verif"),
     ("Llenar Comparativos",    "mod2"),
     ("Cruce de Notas",         "mod3"),
-    ("Módulo 4",               "mod4"),
+    ("Extraer EEFF",           "mod4"),
 ]
 
 class App(tk.Tk):
@@ -909,7 +909,7 @@ class App(tk.Tk):
         self._build_view_verif()
         self._build_view_comparativos()
         self._build_view_cruce_notas()
-        self._build_view_placeholder("mod4", "Módulo 4")
+        self._build_view_extraer_eeff()
 
         # Mostrar primera vista
         self._show_view("verif")
@@ -1314,6 +1314,314 @@ class App(tk.Tk):
     def _cruce_limpiar(self):
         if messagebox.askyesno("Confirmar", "¿Limpiar el texto?"):
             self._cruce_text.delete("1.0", "end")
+
+    # ── Módulo 4: Extraer EEFF ────────────────────────────────────────────────
+
+    def _build_view_extraer_eeff(self):
+        frame = tk.Frame(self._content, bg=CGE_LIGHT)
+        self._views["mod4"] = frame
+
+        body = tk.Frame(frame, bg=CGE_LIGHT)
+        body.pack(fill="both", expand=True)
+
+        # Panel izquierdo
+        left = tk.Frame(body, bg=CGE_LIGHT, width=230)
+        left.pack(side="left", fill="y", padx=(0, 14))
+        left.pack_propagate(False)
+
+        tk.Label(left, text="SPREADSHEET E200", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(6, 2))
+        pf = tk.Frame(left, bg=CGE_CARD,
+                      highlightbackground=CGE_BORDER, highlightthickness=1)
+        pf.pack(fill="x", pady=(0, 10))
+        inner = tk.Frame(pf, bg=CGE_CARD, padx=12, pady=10)
+        inner.pack(fill="x")
+
+        tk.Label(inner, text="ID Spreadsheet", font=FONT_SMALL,
+                 bg=CGE_CARD, fg=CGE_MUTED).grid(row=0, column=0, sticky="w", pady=4)
+        self._eeff_ss_id = tk.StringVar(value="1a198bca66b144218e3c70325d39a1c5")
+        tk.Entry(inner, textvariable=self._eeff_ss_id, font=FONT_SMALL,
+                 bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=18,
+                 highlightbackground=CGE_BORDER, highlightthickness=1
+                 ).grid(row=0, column=1, sticky="ew", padx=(8,0), pady=4)
+
+        tk.Label(inner, text="Col. actual (0-base)", font=FONT_SMALL,
+                 bg=CGE_CARD, fg=CGE_MUTED).grid(row=1, column=0, sticky="w", pady=4)
+        self._eeff_col_act = tk.StringVar(value="5")
+        tk.Entry(inner, textvariable=self._eeff_col_act, font=FONT_SMALL,
+                 bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=18,
+                 highlightbackground=CGE_BORDER, highlightthickness=1
+                 ).grid(row=1, column=1, sticky="ew", padx=(8,0), pady=4)
+
+        tk.Label(inner, text="Col. comparativo (0-base)", font=FONT_SMALL,
+                 bg=CGE_CARD, fg=CGE_MUTED).grid(row=2, column=0, sticky="w", pady=4)
+        self._eeff_col_cmp = tk.StringVar(value="7")
+        tk.Entry(inner, textvariable=self._eeff_col_cmp, font=FONT_SMALL,
+                 bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=18,
+                 highlightbackground=CGE_BORDER, highlightthickness=1
+                 ).grid(row=2, column=1, sticky="ew", padx=(8,0), pady=4)
+        inner.columnconfigure(1, weight=1)
+
+        tk.Frame(left, bg=CGE_LIGHT, height=6).pack()
+        self._eeff_btn = tk.Button(left, text="Extraer EEFF",
+                  font=FONT_BOLD, bg=CGE_BLUE, fg=CGE_WHITE,
+                  activebackground=CGE_BLUE2, activeforeground=CGE_WHITE,
+                  relief="flat", bd=0, padx=10, pady=9,
+                  cursor="hand2", command=self._eeff_on_extraer)
+        self._eeff_btn.pack(fill="x")
+        self._eeff_btn_stop = tk.Button(left, text="Detener",
+                  font=FONT_BOLD, bg=CGE_RED, fg=CGE_WHITE,
+                  relief="flat", bd=0, padx=10, pady=9,
+                  cursor="hand2", command=self._eeff_on_stop)
+        # oculto hasta que corra
+        self._eeff_running = False
+
+        # Panel derecho: log
+        right = tk.Frame(body, bg=CGE_LIGHT)
+        right.pack(side="left", fill="both", expand=True)
+
+        act_hdr = tk.Frame(right, bg=CGE_LIGHT)
+        act_hdr.pack(fill="x", pady=(0, 4))
+        tk.Label(act_hdr, text="RESULTADO", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(side="left")
+        tk.Button(act_hdr, text="Limpiar", font=FONT_SMALL,
+                  bg=CGE_BORDER, fg=CGE_TEXT, relief="flat", bd=0,
+                  padx=8, pady=2, cursor="hand2",
+                  command=self._eeff_clear_log).pack(side="right")
+
+        log_box = tk.Frame(right, bg=CGE_CARD,
+                           highlightbackground=CGE_BORDER, highlightthickness=1)
+        log_box.pack(fill="both", expand=True)
+        self._eeff_log = scrolledtext.ScrolledText(
+            log_box, font=FONT_MONO, bg=CGE_CARD, fg=CGE_TEXT,
+            relief="flat", bd=8, state="disabled", wrap="word")
+        self._eeff_log.pack(fill="both", expand=True)
+        self._eeff_log.tag_config("ok",   foreground=CGE_GREEN)
+        self._eeff_log.tag_config("err",  foreground=CGE_RED)
+        self._eeff_log.tag_config("warn", foreground=CGE_YELLOW)
+        self._eeff_log.tag_config("blue", foreground=CGE_BLUE)
+        self._eeff_log.tag_config("bold", font=("Consolas", 9, "bold"))
+        self._eeff_log.tag_config("muted",foreground=CGE_MUTED)
+
+    def _eeff_log_write(self, msg, tag=None):
+        def _do():
+            self._eeff_log.configure(state="normal")
+            self._eeff_log.insert("end", msg + "\n", tag or "")
+            self._eeff_log.see("end")
+            self._eeff_log.configure(state="disabled")
+        self.after(0, _do)
+
+    def _eeff_clear_log(self):
+        self._eeff_log.configure(state="normal")
+        self._eeff_log.delete("1.0", "end")
+        self._eeff_log.configure(state="disabled")
+
+    def _eeff_on_stop(self):
+        self._eeff_running = False
+
+    def _eeff_on_extraer(self):
+        ss_id = self._eeff_ss_id.get().strip()
+        try:
+            col_act = int(self._eeff_col_act.get().strip())
+            col_cmp = int(self._eeff_col_cmp.get().strip())
+        except ValueError:
+            messagebox.showerror("Error", "Las columnas deben ser números enteros.")
+            return
+        if not ss_id:
+            messagebox.showerror("Error", "Ingresa el ID del spreadsheet.")
+            return
+        self._eeff_clear_log()
+        self._eeff_running = True
+        self._eeff_btn.pack_forget()
+        self._eeff_btn_stop.pack(fill="x")
+        self._eeff_log_write("Conectando a Workiva...", "blue")
+        threading.Thread(target=self._eeff_thread,
+                         args=(ss_id, col_act, col_cmp), daemon=True).start()
+
+    def _eeff_thread(self, ss_id, col_act, col_cmp):
+        import builtins
+        _orig_print = builtins.print
+        def _gui_print(*args, **kwargs):
+            if not self._eeff_running:
+                return
+            msg = " ".join(str(a) for a in args)
+            tag = "err"  if ("ERROR" in msg or "✗" in msg) else \
+                  "ok"   if ("OK" in msg or "✓" in msg) else \
+                  "bold" if (msg.startswith("===") or msg.startswith("───")) else \
+                  "muted" if msg.startswith("  ") else None
+            self._eeff_log_write(msg, tag)
+        builtins.print = _gui_print
+        try:
+            import requests as _req, warnings as _w
+            from urllib3.exceptions import InsecureRequestWarning as _IW
+            _w.filterwarnings("ignore", category=_IW)
+
+            s = _req.Session()
+            resp = s.post(TOKEN_URL, data={
+                "grant_type": "client_credentials",
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+            }, verify=False, timeout=30)
+            token = resp.json()["access_token"]
+            s.headers.update({"Authorization": f"Bearer {token}",
+                               "X-Version": "2022-01-01"})
+
+            def _get_sheets(sid):
+                url = f"{WDESK_BASE}/platform/v1/spreadsheets/{sid}/sheets"
+                r = s.get(url, verify=False, timeout=60)
+                return {sh["name"]: sh["id"] for sh in r.json().get("data", [])}
+
+            def _read_cells(sid, sheet_id):
+                url = (f"{WDESK_BASE}/platform/v1/spreadsheets/{sid}/sheets/{sheet_id}"
+                       "/sheetdata?$fields=cells.calculatedValue&$maxcellsperpage=50000")
+                r = s.get(url, verify=False, timeout=120)
+                return r.json().get("data", {}).get("cells", [])
+
+            def _cell(cells, row0, col0):
+                try:
+                    v = cells[row0][col0]
+                    raw = v.get("calculatedValue") if isinstance(v, dict) else None
+                    if raw is None or raw == "":
+                        return None
+                    return float(str(raw).replace(",", "").replace(" ", ""))
+                except (IndexError, TypeError, ValueError):
+                    return None
+
+            def _find_sheet(sheets, *kws):
+                for name, sid in sheets.items():
+                    if all(k.lower() in name.lower() for k in kws):
+                        return sid
+                return None
+
+            def _neg(v):
+                return abs(v) if v is not None else None
+
+            def _extraer(col_v):
+                if not self._eeff_running:
+                    return {}
+                sheets = _get_sheets(ss_id)
+                if not sheets:
+                    self._eeff_log_write("ERROR: no se obtuvieron hojas.", "err")
+                    return {}
+
+                sid_a = _find_sheet(sheets, "a.-")
+                a = _read_cells(ss_id, sid_a) if sid_a else []
+                esf = {
+                    "efectivo_equivalentes": _cell(a,  8, col_v),
+                    "cuentas_por_cobrar":    _cell(a, 11, col_v),
+                    "inventarios":           _cell(a, 13, col_v),
+                    "activo_corriente":      _cell(a, 21, col_v),
+                    "ppe_neto":              _cell(a, 33, col_v),
+                    "activos_ddu":           _cell(a, 36, col_v),
+                    "activo_imp_diferido":   _cell(a, 38, col_v),
+                    "activo_no_corriente":   _cell(a, 40, col_v),
+                    "activo_total":          _cell(a, 42, col_v),
+                }
+                if not self._eeff_running:
+                    return {}
+
+                sid_b = _find_sheet(sheets, "b.-")
+                b = _read_cells(ss_id, sid_b) if sid_b else []
+                esf.update({
+                    "deuda_financiera_corriente":        _cell(b,  8, col_v),
+                    "pasivo_arrendamiento_corriente":    _cell(b,  9, col_v),
+                    "cuentas_por_pagar":                 _cell(b, 10, col_v),
+                    "pasivo_corriente":                  _cell(b, 21, col_v),
+                    "deuda_financiera_no_corriente":     _cell(b, 25, col_v),
+                    "pasivo_arrendamiento_no_corriente": _cell(b, 26, col_v),
+                    "pasivo_imp_diferido":               _cell(b, 30, col_v),
+                    "pasivo_no_corriente":               _cell(b, 35, col_v),
+                    "pasivo_total":                      _cell(b, 37, col_v),
+                    "patrimonio_total":                  _cell(b, 52, col_v),
+                })
+                if not self._eeff_running:
+                    return {}
+
+                sid_c = _find_sheet(sheets, "c.-")
+                c = _read_cells(ss_id, sid_c) if sid_c else []
+                ga = _cell(c, 14, col_v)
+                gd = _cell(c, 15, col_v)
+                go = _cell(c, 17, col_v)
+                er = {
+                    "ingresos":                  _cell(c,  7, col_v),
+                    "costo_ventas":              _neg(_cell(c,  8, col_v)),
+                    "ganancia_bruta":            _cell(c, 10, col_v),
+                    "otros_ingresos_operacion":  _cell(c, 12, col_v),
+                    "gastos_operacionales":      (-sum(x for x in [ga, gd, go] if x is not None)
+                                                  if any(x is not None for x in [ga, gd, go]) else None),
+                    "resultado_operacional":     _cell(c, 19, col_v),
+                    "gastos_financieros":        _neg(_cell(c, 23, col_v)),
+                    "ganancia_antes_impuesto":   _cell(c, 29, col_v),
+                    "gasto_impuesto":            _cell(c, 31, col_v),
+                    "ganancia_neta":             _cell(c, 37, col_v),
+                }
+                if not self._eeff_running:
+                    return {}
+
+                sid_d = _find_sheet(sheets, "d.-")
+                d = _read_cells(ss_id, sid_d) if sid_d else []
+                ori_nc = _cell(d, 18, col_v)
+                ori_rc = _cell(d, 53, col_v)
+                ori_total = ((ori_nc or 0) + (ori_rc or 0)
+                             if (ori_nc is not None or ori_rc is not None) else None)
+                er["ori"] = ori_total
+                if er.get("ganancia_neta") is not None and ori_total is not None:
+                    er["resultado_integral_total"] = er["ganancia_neta"] + ori_total
+                if not self._eeff_running:
+                    return {}
+
+                sid_f = _find_sheet(sheets, "f.-") or _find_sheet(sheets, "flujo")
+                f = _read_cells(ss_id, sid_f) if sid_f else []
+                efe = {
+                    "flujo_operacional":       _cell(f, 35, col_v),
+                    "flujo_inversion":         _cell(f, 65, col_v),
+                    "flujo_financiamiento":    _cell(f, 91, col_v),
+                    "efecto_tipo_cambio":      _cell(f, 95, col_v),
+                    "variacion_neta_efectivo": _cell(f, 97, col_v),
+                    "efectivo_inicio":         _cell(f, 99, col_v),
+                    "efectivo_cierre":         _cell(f, 101, col_v),
+                    "dividendos_pagados":      _neg(_cell(f, 84, col_v)),
+                }
+                return {"esf": esf, "er": er, "efe": efe}
+
+            print("  Leyendo columna actual...")
+            actual = _extraer(col_act)
+            if not self._eeff_running:
+                self._eeff_log_write("Detenido por usuario.", "warn")
+                return
+            print("  Leyendo columna comparativa...")
+            comp = _extraer(col_cmp)
+            if not self._eeff_running:
+                self._eeff_log_write("Detenido por usuario.", "warn")
+                return
+
+            def _fmt(v):
+                return f"{v:>22,.0f}" if v is not None else f"{'None':>22}"
+
+            print("\n=== ESF ACTUAL ===", )
+            for k, v in actual.get("esf", {}).items():
+                print(f"  {k:<42} {_fmt(v)}")
+            print("\n=== ESF COMPARATIVO ===")
+            for k, v in comp.get("esf", {}).items():
+                print(f"  {k:<42} {_fmt(v)}")
+            print("\n=== ER ACTUAL ===")
+            for k, v in actual.get("er", {}).items():
+                print(f"  {k:<42} {_fmt(v)}")
+            print("\n=== EFE ACTUAL ===")
+            for k, v in actual.get("efe", {}).items():
+                print(f"  {k:<42} {_fmt(v)}")
+            print("\n✓ Extracción completada.", )
+            self._eeff_log_write("", "ok")
+
+        except Exception as e:
+            self._eeff_log_write(f"ERROR: {e}", "err")
+        finally:
+            builtins.print = _orig_print
+            self._eeff_running = False
+            def _restore():
+                self._eeff_btn_stop.pack_forget()
+                self._eeff_btn.pack(fill="x")
+            self.after(0, _restore)
 
     def _build_view_placeholder(self, key, name):
         frame = tk.Frame(self._content, bg=CGE_LIGHT)
