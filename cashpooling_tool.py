@@ -163,18 +163,12 @@ class App(tk.Tk):
         super().__init__()
         self.title("CGE Cash Management Tool")
         self.configure(bg=BG)
-        self.resizable(False, False)
+        self.resizable(True, True)
+        self.minsize(760, 600)
         self._datos = {}   # resultado del paso "Buscar"
 
         self._build_ui()
-        self._center()
-
-    def _center(self):
-        self.update_idletasks()
-        w, h = self.winfo_width(), self.winfo_height()
-        x = (self.winfo_screenwidth()  - w) // 2
-        y = (self.winfo_screenheight() - h) // 2
-        self.geometry(f"{w}x{h}+{x}+{y}")
+        self.after(0, lambda: self.state("zoomed"))
 
     # ── UI ────────────────────────────────────────────────────────────────────
     def _build_ui(self):
