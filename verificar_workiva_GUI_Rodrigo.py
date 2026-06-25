@@ -1335,8 +1335,12 @@ class App(tk.Tk):
         sf = tk.Frame(left, bg=CGE_CARD,
                       highlightbackground=CGE_BORDER, highlightthickness=1)
         sf.pack(fill="x", pady=(0, 10))
-        tk.Label(sf, text="E200_CONSO_12-2025", font=FONT_BOLD,
-                 bg=CGE_CARD, fg=CGE_BLUE, pady=10, padx=12, anchor="w").pack(fill="x")
+        self._eeff_ss_name = tk.StringVar(value="E200_CONSO_12-2025")
+        tk.Entry(sf, textvariable=self._eeff_ss_name, font=FONT_BOLD,
+                 bg=CGE_CARD, fg=CGE_BLUE, relief="flat", bd=0,
+                 insertbackground=CGE_BLUE,
+                 highlightbackground=CGE_BORDER, highlightthickness=0
+                 ).pack(fill="x", padx=12, pady=10)
 
         # ── Hojas (checklist) ─────────────────────────────────────────────────
         tk.Label(left, text="HOJAS A EXTRAER", font=("Segoe UI", 8, "bold"),
@@ -1420,7 +1424,10 @@ class App(tk.Tk):
         self._eeff_running = False
 
     def _eeff_on_extraer(self):
-        ss_name = "E200_CONSO_12-2025"
+        ss_name = self._eeff_ss_name.get().strip()
+        if not ss_name:
+            messagebox.showerror("Error", "Ingresa el nombre del spreadsheet.")
+            return
         self._eeff_clear_log()
         self._eeff_running = True
         self._eeff_btn.pack_forget()
@@ -1615,22 +1622,54 @@ class App(tk.Tk):
                 return
 
             def _fmt(v):
-                return f"{v:>22,.0f}" if v is not None else f"{'None':>22}"
+                return f"{v:>25,.0f}"
 
-            print("\n=== ESF ACTUAL ===", )
-            for k, v in actual.get("esf", {}).items():
-                print(f"  {k:<42} {_fmt(v)}")
-            print("\n=== ESF COMPARATIVO ===")
-            for k, v in comp.get("esf", {}).items():
-                print(f"  {k:<42} {_fmt(v)}")
-            print("\n=== ER ACTUAL ===")
-            for k, v in actual.get("er", {}).items():
-                print(f"  {k:<42} {_fmt(v)}")
-            print("\n=== EFE ACTUAL ===")
-            for k, v in actual.get("efe", {}).items():
-                print(f"  {k:<42} {_fmt(v)}")
-            print("\n✓ Extracción completada.", )
-            self._eeff_log_write("", "ok")
+            if do_a or do_b:
+                esf_a = actual.get("esf", {})
+                esf_c = comp.get("esf", {})
+                items = [(k, esf_a[k], esf_c.get(k))
+                         for k in esf_a
+                         if esf_a[k] is not None and esf_a[k] != 0]
+                if items:
+                    self._eeff_log_write("\n── A / B  ·  Estado de Situación Financiera ──────────", "bold")
+                    self._eeff_log_write(f"  {'Campo':<42} {'Actual':>25} {'Comparativo':>25}", "muted")
+                    for k, va, vc in items:
+                        vc_str = _fmt(vc) if (vc is not None and vc != 0) else f"{'—':>25}"
+                        self._eeff_log_write(f"  {k:<42} {_fmt(va)} {vc_str}", "muted")
+
+            if do_c:
+                items = [(k, actual.get("er", {}).get(k), comp.get("er", {}).get(k))
+                         for k in actual.get("er", {})
+                         if actual.get("er", {}).get(k) is not None and actual.get("er", {}).get(k) != 0]
+                if items:
+                    self._eeff_log_write("\n── C  ·  Estado de Resultados ────────────────────────", "bold")
+                    self._eeff_log_write(f"  {'Campo':<42} {'Actual':>25} {'Comparativo':>25}", "muted")
+                    for k, va, vc in items:
+                        vc_str = _fmt(vc) if (vc is not None and vc != 0) else f"{'—':>25}"
+                        self._eeff_log_write(f"  {k:<42} {_fmt(va)} {vc_str}", "muted")
+
+            if do_d:
+                er_a = actual.get("er", {})
+                ori = er_a.get("ori")
+                rit = er_a.get("resultado_integral_total")
+                if ori is not None and ori != 0:
+                    self._eeff_log_write("\n── D  ·  Resultado Integral ──────────────────────────", "bold")
+                    self._eeff_log_write(f"  {'ori':<42} {_fmt(ori)}", "muted")
+                if rit is not None and rit != 0:
+                    self._eeff_log_write(f"  {'resultado_integral_total':<42} {_fmt(rit)}", "muted")
+
+            if do_f:
+                items = [(k, actual.get("efe", {}).get(k), comp.get("efe", {}).get(k))
+                         for k in actual.get("efe", {})
+                         if actual.get("efe", {}).get(k) is not None and actual.get("efe", {}).get(k) != 0]
+                if items:
+                    self._eeff_log_write("\n── F  ·  Flujo de Efectivo ───────────────────────────", "bold")
+                    self._eeff_log_write(f"  {'Campo':<42} {'Actual':>25} {'Comparativo':>25}", "muted")
+                    for k, va, vc in items:
+                        vc_str = _fmt(vc) if (vc is not None and vc != 0) else f"{'—':>25}"
+                        self._eeff_log_write(f"  {k:<42} {_fmt(va)} {vc_str}", "muted")
+
+            self._eeff_log_write("\n✓ Extracción completada.", "ok")
 
         except Exception as e:
             self._eeff_log_write(f"ERROR: {e}", "err")
