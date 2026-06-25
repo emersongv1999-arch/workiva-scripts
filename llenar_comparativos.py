@@ -613,6 +613,10 @@ def build_write_values(tgt_cells, src_cells, dest_col, src_col):
         row_t = tgt_cells[i] if i < len(tgt_cells) else []
         if is_formula(row_t, dest_col):
             vals.append(None); continue
+        # Si la celda destino ya contiene texto (encabezado, unidad, etc.) no tocar
+        existing = get_cv(row_t, dest_col)
+        if isinstance(existing, str) and existing.strip():
+            vals.append(None); continue
         if not is_data_row(row_t):
             vals.append(None); continue
         src_row = row_map[i]
