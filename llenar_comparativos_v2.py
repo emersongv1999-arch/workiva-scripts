@@ -524,7 +524,10 @@ def build_write_values(tgt_cells, src_cells, dest_col, src_col):
         src_row = row_map[i]
         if src_row is None: vals.append(None); continue
         sv = get_cv(src_cells[src_row], src_col)
-        vals.append(sv if isinstance(sv,(int,float)) else None)
+        if isinstance(sv, (int, float)):
+            vals.append(sv)
+        else:
+            vals.append(0)  # limpia celdas que en la fuente están vacías
     return vals
 
 # ─── PASO 8: Copia de hoja tipo 79 ───────────────────────────────────────────
