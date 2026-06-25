@@ -33,7 +33,7 @@ TARGET_YYYY   = "2026"
 SOURCE_MM     = "12"
 SOURCE_YYYY   = "2025"
 TIPO          = "IND"
-SHEET_NAME    = "E1 Res Acumulado"
+SHEET_NAME    = "K.- Tipos de deuda"
 # ──────────────────────────────────────────────────────────────────────────────
 
 session = get_session()
@@ -297,7 +297,10 @@ def build_write_values(tgt_cells, src_cells, dest_col, src_col):
         src_row = row_map[i]
         if src_row is None: vals.append(None); continue
         sv = get_cv(src_cells[src_row], src_col)
-        vals.append(sv if isinstance(sv, (int, float)) else None)
+        if isinstance(sv, (int, float)):
+            vals.append(sv)
+        else:
+            vals.append(0)  # limpia celdas que en la fuente están vacías
     return vals
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
