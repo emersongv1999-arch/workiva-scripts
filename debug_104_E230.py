@@ -98,6 +98,26 @@ def poll(location):
                 print(f"      [poll exception] {e}")
     return False
 
+def unlock_sheet(ss_id, sid, sname):
+    url = WDESK_BASE + "/platform/v1/spreadsheets/" + ss_id + "/sheets/" + sid + "/locks"
+    try:
+        r     = session.get(url, timeout=30)
+        locks = r.json().get("data", [])
+        if not locks:
+            print(f"    [unlock] {sname}: sin locks")
+            return
+        for lk in locks:
+            lid = lk.get("id") or lk.get("lockId")
+            if not lid:
+                continue
+            dr = session.delete(WDESK_BASE + "/platform/v1/spreadsheets/" + ss_id
+                                + "/sheets/" + sid + "/locks/" + lid, timeout=30)
+            if dr.status_code == 202:
+                poll(dr.headers.get("Location", ""))
+        print(f"    [unlock] {sname}: {len(locks)} lock(s) eliminado(s)")
+    except Exception as e:
+        print(f"    [unlock] {sname}: error {e}")
+
 def put_chunk(ss_id, sid, col_idx, row_start, values, label=""):
     cl  = col_letter(col_idx)
     r1  = row_start + 1
@@ -451,10 +471,15 @@ def main():
             print(f"  ✗ '{TARGET_SHEET}' no encontrada en fuente [{key}]")
             src_cells[key] = []
 
+    # Desbloquear la hoja antes de escribir
+    print(f"\n{'─'*60}")
+    print("DESBLOQUEANDO HOJA:")
+    sid_t = tgt_sheets[TARGET_SHEET]
+    unlock_sheet(target["id"], sid_t, TARGET_SHEET)
+
     # Procesar cada columna comparativa
     print(f"\n{'─'*60}")
     print("PROCESANDO COLUMNAS:")
-    sid_t = tgt_sheets[TARGET_SHEET]
 
     for dest_col, period_key in comp_cols.items():
         cl = col_letter(dest_col)
