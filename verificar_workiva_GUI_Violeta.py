@@ -838,15 +838,13 @@ FONT_MONO   = ("Consolas", 9)
 
 
 # Módulos con acceso restringido: key → contraseña
-RESTRICTED_MODULES = {
-    "mod2": "12345",
-}
+RESTRICTED_MODULES = {}
 
 NAV_ITEMS = [
-    ("Verificador de Sumas",  "verif"),
-    ("Módulo 2",              "mod2"),
-    ("Módulo 3",              "mod3"),
-    ("Módulo 4",              "mod4"),
+    ("Verificador de Sumas",   "verif"),
+    ("Llenar Comparativos",    "mod2"),
+    ("Cruce de Notas",         "mod3"),
+    ("Módulo 4",               "mod4"),
 ]
 
 class App(tk.Tk):
@@ -909,8 +907,8 @@ class App(tk.Tk):
         # Construir vistas
         self._views = {}
         self._build_view_verif()
-        self._build_view_placeholder("mod2", "Módulo 2")
-        self._build_view_placeholder("mod3", "Módulo 3")
+        self._build_view_comparativos()
+        self._build_view_cruce_notas()
         self._build_view_placeholder("mod4", "Módulo 4")
 
         # Mostrar primera vista
@@ -1020,6 +1018,361 @@ class App(tk.Tk):
         popup.wait_window()
         return result[0]
 
+
+    # ── LLENAR COMPARATIVOS ───────────────────────────────────────────────────
+    def _build_view_comparativos(self):
+        frame = tk.Frame(self._content, bg=CGE_LIGHT)
+        self._views["mod2"] = frame
+
+        body = tk.Frame(frame, bg=CGE_LIGHT)
+        body.pack(fill="both", expand=True)
+
+        # Panel izquierdo
+        left = tk.Frame(body, bg=CGE_LIGHT, width=230)
+        left.pack(side="left", fill="y", padx=(0, 14))
+        left.pack_propagate(False)
+
+        # Card periodo
+        tk.Label(left, text="PERIODO", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(6, 2))
+        pf = tk.Frame(left, bg=CGE_CARD,
+                      highlightbackground=CGE_BORDER, highlightthickness=1)
+        pf.pack(fill="x", pady=(0, 10))
+        inner = tk.Frame(pf, bg=CGE_CARD, padx=12, pady=10)
+        inner.pack(fill="x")
+
+        tk.Label(inner, text="Mes", font=FONT_SMALL,
+                 bg=CGE_CARD, fg=CGE_MUTED).grid(row=0, column=0, sticky="w", pady=4)
+        self._cmp_mes = tk.StringVar()
+        tk.Entry(inner, textvariable=self._cmp_mes, font=FONT_LABEL,
+                 bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=12,
+                 highlightbackground=CGE_BORDER, highlightthickness=1
+                 ).grid(row=0, column=1, sticky="ew", padx=(8,0), pady=4)
+
+        tk.Label(inner, text="Año", font=FONT_SMALL,
+                 bg=CGE_CARD, fg=CGE_MUTED).grid(row=1, column=0, sticky="w", pady=4)
+        self._cmp_anio = tk.StringVar()
+        tk.Entry(inner, textvariable=self._cmp_anio, font=FONT_LABEL,
+                 bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=12,
+                 highlightbackground=CGE_BORDER, highlightthickness=1
+                 ).grid(row=1, column=1, sticky="ew", padx=(8,0), pady=4)
+        inner.columnconfigure(1, weight=1)
+
+        # Botones
+        tk.Frame(left, bg=CGE_LIGHT, height=4).pack()
+        self._cmp_btn_buscar = tk.Button(left, text="Buscar archivos",
+                  font=FONT_BOLD, bg=CGE_BLUE, fg=CGE_WHITE,
+                  activebackground=CGE_BLUE2, activeforeground=CGE_WHITE,
+                  relief="flat", bd=0, padx=10, pady=9,
+                  cursor="hand2", command=self._cmp_on_buscar)
+        self._cmp_btn_buscar.pack(fill="x")
+        tk.Frame(left, bg=CGE_LIGHT, height=6).pack()
+        self._cmp_btn_procesar = tk.Button(left, text="Procesar seleccionados",
+                  font=FONT_BOLD, bg=CGE_GREEN, fg=CGE_WHITE,
+                  activebackground="#076b45", activeforeground=CGE_WHITE,
+                  relief="flat", bd=0, padx=10, pady=9,
+                  cursor="hand2", command=self._cmp_on_procesar, state="disabled")
+        self._cmp_btn_procesar.pack(fill="x")
+
+        # Panel derecho
+        right = tk.Frame(body, bg=CGE_LIGHT)
+        right.pack(side="left", fill="both", expand=True)
+
+        # Archivos encontrados
+        tk.Label(right, text="ARCHIVOS ENCONTRADOS", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(0, 4))
+        doc_box = tk.Frame(right, bg=CGE_CARD,
+                           highlightbackground=CGE_BORDER, highlightthickness=1)
+        doc_box.pack(fill="x", pady=(0, 12))
+        self._cmp_canvas = tk.Canvas(doc_box, bg=CGE_CARD, highlightthickness=0, height=200)
+        sb = tk.Scrollbar(doc_box, orient="vertical", command=self._cmp_canvas.yview)
+        self._cmp_canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        self._cmp_canvas.pack(side="left", fill="both", expand=True)
+        self._cmp_inner = tk.Frame(self._cmp_canvas, bg=CGE_CARD)
+        cmp_win = self._cmp_canvas.create_window((0,0), window=self._cmp_inner, anchor="nw")
+        self._cmp_inner.bind("<Configure>",
+            lambda e: self._cmp_canvas.configure(scrollregion=self._cmp_canvas.bbox("all")))
+        self._cmp_canvas.bind("<Configure>",
+            lambda e: self._cmp_canvas.itemconfig(cmp_win, width=e.width))
+        self._cmp_canvas.bind("<MouseWheel>",
+            lambda e: self._cmp_canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+        self._cmp_files  = []
+        self._cmp_vars   = []
+
+        # Log actividad
+        act_hdr = tk.Frame(right, bg=CGE_LIGHT)
+        act_hdr.pack(fill="x", pady=(0, 4))
+        tk.Label(act_hdr, text="ACTIVIDAD", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(side="left")
+        tk.Button(act_hdr, text="Limpiar", font=FONT_SMALL,
+                  bg=CGE_BORDER, fg=CGE_TEXT, relief="flat", bd=0,
+                  padx=8, pady=2, cursor="hand2",
+                  command=lambda: self._cmp_clear_log()).pack(side="right")
+        log_box = tk.Frame(right, bg=CGE_CARD,
+                           highlightbackground=CGE_BORDER, highlightthickness=1)
+        log_box.pack(fill="both", expand=True)
+        self._cmp_log = scrolledtext.ScrolledText(
+            log_box, font=FONT_MONO, bg=CGE_CARD, fg=CGE_TEXT,
+            relief="flat", bd=8, state="disabled", wrap="word", height=8)
+        self._cmp_log.pack(fill="both", expand=True)
+        self._cmp_log.tag_config("ok",   foreground=CGE_GREEN)
+        self._cmp_log.tag_config("err",  foreground=CGE_RED)
+        self._cmp_log.tag_config("warn", foreground=CGE_YELLOW)
+        self._cmp_log.tag_config("blue", foreground=CGE_BLUE)
+        self._cmp_log.tag_config("bold", font=("Consolas", 9, "bold"))
+        self._cmp_log.tag_config("muted",foreground=CGE_MUTED)
+
+    def _cmp_log_write(self, msg, tag=None):
+        def _do():
+            self._cmp_log.configure(state="normal")
+            self._cmp_log.insert("end", msg + "\n", tag or "")
+            self._cmp_log.see("end")
+            self._cmp_log.configure(state="disabled")
+        self.after(0, _do)
+
+    def _cmp_clear_log(self):
+        self._cmp_log.configure(state="normal")
+        self._cmp_log.delete("1.0", "end")
+        self._cmp_log.configure(state="disabled")
+
+    def _cmp_render_files(self, files):
+        for w in self._cmp_inner.winfo_children():
+            w.destroy()
+        self._cmp_vars = []
+        if not files:
+            tk.Label(self._cmp_inner, text="No se encontraron archivos.",
+                     font=FONT_SMALL, bg=CGE_CARD, fg=CGE_RED, pady=14).pack()
+            return
+        for i, f in enumerate(files):
+            var = tk.BooleanVar(value=True)
+            self._cmp_vars.append(var)
+            bg = CGE_ROWALT if i % 2 == 0 else CGE_CARD
+            row = tk.Frame(self._cmp_inner, bg=bg)
+            row.pack(fill="x")
+            cb = tk.Checkbutton(row, text=f["name"], variable=var,
+                                font=FONT_SMALL, bg=bg, fg=CGE_TEXT,
+                                selectcolor=CGE_LIGHT, activebackground=bg,
+                                anchor="w", padx=10, pady=5)
+            cb.pack(fill="x")
+            for w in (row, cb):
+                w.bind("<MouseWheel>",
+                    lambda e: self._cmp_canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+
+    def _cmp_on_buscar(self):
+        mes  = self._cmp_mes.get().strip().zfill(2)
+        anio = self._cmp_anio.get().strip()
+        if not re.fullmatch(r"\d{2}", mes) or not re.fullmatch(r"\d{4}", anio):
+            messagebox.showerror("Error", "Ingresa mes (01-12) y año válidos.")
+            return
+        self._cmp_clear_log()
+        self._cmp_btn_buscar.configure(state="disabled")
+        self._cmp_btn_procesar.configure(state="disabled")
+        self._cmp_log_write(f"Buscando archivos IND para {mes}-{anio}...", "blue")
+        threading.Thread(target=self._cmp_thread_buscar,
+                         args=(mes, anio), daemon=True).start()
+
+    def _cmp_thread_buscar(self, mes, anio):
+        try:
+            import requests as _req
+            s = _req.Session()
+            resp = s.post(TOKEN_URL, data={
+                "grant_type": "client_credentials",
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+            }, verify=False, timeout=30)
+            token = resp.json()["access_token"]
+            s.headers.update({"Authorization": f"Bearer {token}",
+                               "X-Version": "2022-01-01"})
+
+            # Cargar todos los archivos
+            all_files = {}
+            url = f"{WDESK_BASE}/platform/v1/files?workspaceId={WORKSPACE_ID}&limit=100"
+            while url:
+                r    = s.get(url, verify=False, timeout=90)
+                data = r.json()
+                for f in data.get("data", []):
+                    all_files[f["name"]] = f["id"]
+                url = data.get("@nextLink")
+
+            # Buscar archivos del periodo
+            import re as _re
+            pattern = _re.compile(rf"^E\d+_IND_{mes}[-_]{anio}_Base Notas .+$")
+            files = []
+            for name, fid in all_files.items():
+                if pattern.match(name):
+                    parsed = _re.match(rf"(E\d+)_(IND)_(\d{{2}})[-_](\d{{4}})_(.*)", name)
+                    if parsed:
+                        files.append({
+                            "id": fid, "name": name,
+                            "code": parsed.group(1), "tipo": "IND",
+                            "mm": parsed.group(3), "yyyy": parsed.group(4),
+                            "suffix": parsed.group(5),
+                        })
+            files.sort(key=lambda x: x["code"])
+            self._cmp_files    = files
+            self._cmp_session  = s
+            self._cmp_allfiles = all_files
+            self.after(0, lambda: self._cmp_render_files(files))
+            self._cmp_log_write(f"  {len(files)} archivo(s) encontrado(s).", "ok" if files else "err")
+            if files:
+                self.after(0, lambda: self._cmp_btn_procesar.configure(state="normal"))
+        except Exception as e:
+            self._cmp_log_write(f"ERROR: {e}", "err")
+        finally:
+            self.after(0, lambda: self._cmp_btn_buscar.configure(state="normal"))
+
+    def _cmp_on_procesar(self):
+        seleccionados = [f for f, v in zip(self._cmp_files, self._cmp_vars) if v.get()]
+        if not seleccionados:
+            messagebox.showwarning("Aviso", "Selecciona al menos un archivo.")
+            return
+        self._cmp_btn_buscar.configure(state="disabled")
+        self._cmp_btn_procesar.configure(state="disabled")
+        self._cmp_log_write(f"\nProcesando {len(seleccionados)} archivo(s)...", "blue")
+        threading.Thread(target=self._cmp_thread_procesar,
+                         args=(seleccionados,), daemon=True).start()
+
+    def _cmp_thread_procesar(self, seleccionados):
+        try:
+            import importlib.util, sys as _sys, types as _types
+            # Cargar llenar_comparativos dinámicamente redirigiendo print al log
+            import builtins
+            _orig_print = builtins.print
+            def _gui_print(*args, **kwargs):
+                msg = " ".join(str(a) for a in args)
+                tag = "err" if "ERR" in msg or "✗" in msg else \
+                      "ok"  if "OK" in msg or "✓" in msg else \
+                      "bold" if msg.startswith("===") or msg.startswith("───") else None
+                self._cmp_log_write(msg, tag)
+            builtins.print = _gui_print
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    "llenar_comp",
+                    str(Path(__file__).parent / "llenar_comparativos.py")
+                )
+                mod = importlib.util.module_from_spec(spec)
+                # Inyectar session existente
+                mod.session   = self._cmp_session
+                mod.all_files = self._cmp_allfiles
+                spec.loader.exec_module(mod)
+
+                total_ok = total_err = 0
+                for t in seleccionados:
+                    ok, err = mod.process_file(t, self._cmp_allfiles)
+                    total_ok  += ok
+                    total_err += err
+                self._cmp_log_write(f"\nRESUMEN: OK={total_ok}  ERR={total_err}",
+                                    "ok" if total_err == 0 else "warn")
+            finally:
+                builtins.print = _orig_print
+        except Exception as e:
+            self._cmp_log_write(f"ERROR inesperado: {e}", "err")
+        finally:
+            self.after(0, lambda: self._cmp_btn_buscar.configure(state="normal"))
+            self.after(0, lambda: self._cmp_btn_procesar.configure(state="normal"))
+
+    # ── CRUCE DE NOTAS ────────────────────────────────────────────────────────
+    def _build_view_cruce_notas(self):
+        frame = tk.Frame(self._content, bg=CGE_LIGHT)
+        self._views["mod3"] = frame
+
+        tk.Label(frame, text="Cruce de Notas", font=("Segoe UI", 13, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_BLUE).pack(anchor="w", pady=(0, 10))
+
+        # Barra de herramientas
+        toolbar = tk.Frame(frame, bg=CGE_LIGHT)
+        toolbar.pack(fill="x", pady=(0, 6))
+        tk.Button(toolbar, text="+ Agregar fila", font=FONT_SMALL,
+                  bg=CGE_BLUE, fg=CGE_WHITE, relief="flat", bd=0,
+                  padx=10, pady=4, cursor="hand2",
+                  command=self._cruce_agregar_fila).pack(side="left")
+        tk.Button(toolbar, text="Eliminar fila", font=FONT_SMALL,
+                  bg=CGE_RED, fg=CGE_WHITE, relief="flat", bd=0,
+                  padx=10, pady=4, cursor="hand2",
+                  command=self._cruce_eliminar_fila).pack(side="left", padx=(6,0))
+        tk.Button(toolbar, text="Limpiar todo", font=FONT_SMALL,
+                  bg=CGE_BORDER, fg=CGE_TEXT, relief="flat", bd=0,
+                  padx=10, pady=4, cursor="hand2",
+                  command=self._cruce_limpiar).pack(side="left", padx=(6,0))
+
+        # Tabla con ttk.Treeview
+        cols = ("Nota", "Descripción", "Valor período", "Valor comparativo")
+        tree_frame = tk.Frame(frame, bg=CGE_CARD,
+                              highlightbackground=CGE_BORDER, highlightthickness=1)
+        tree_frame.pack(fill="both", expand=True)
+
+        style = ttk.Style()
+        style.configure("Cruce.Treeview",
+                         background=CGE_CARD, foreground=CGE_TEXT,
+                         fieldbackground=CGE_CARD, rowheight=28,
+                         font=FONT_SMALL)
+        style.configure("Cruce.Treeview.Heading",
+                         background=CGE_BLUE, foreground=CGE_WHITE,
+                         font=("Segoe UI", 9, "bold"), relief="flat")
+        style.map("Cruce.Treeview", background=[("selected", CGE_BLUE2)])
+
+        self._cruce_tree = ttk.Treeview(tree_frame, columns=cols,
+                                         show="headings", style="Cruce.Treeview",
+                                         selectmode="browse")
+        for col in cols:
+            self._cruce_tree.heading(col, text=col)
+            self._cruce_tree.column(col, width=200, anchor="w", stretch=True)
+
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical",
+                             command=self._cruce_tree.yview)
+        self._cruce_tree.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        self._cruce_tree.pack(fill="both", expand=True)
+        self._cruce_tree.bind("<Double-1>", self._cruce_editar_celda)
+
+        tk.Label(frame, text="Doble clic en una celda para editarla.",
+                 font=("Segoe UI", 8), bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(6,0))
+
+    def _cruce_agregar_fila(self):
+        self._cruce_tree.insert("", "end", values=("", "", "", ""))
+
+    def _cruce_eliminar_fila(self):
+        sel = self._cruce_tree.selection()
+        if sel:
+            self._cruce_tree.delete(sel[0])
+
+    def _cruce_limpiar(self):
+        if messagebox.askyesno("Confirmar", "¿Eliminar todas las filas?"):
+            for item in self._cruce_tree.get_children():
+                self._cruce_tree.delete(item)
+
+    def _cruce_editar_celda(self, event):
+        tree = self._cruce_tree
+        region = tree.identify_region(event.x, event.y)
+        if region != "cell":
+            return
+        row_id = tree.identify_row(event.y)
+        col_id = tree.identify_column(event.x)
+        col_idx = int(col_id[1:]) - 1
+        cols = ("Nota", "Descripción", "Valor período", "Valor comparativo")
+
+        x, y, w, h = tree.bbox(row_id, col_id)
+        val = tree.item(row_id, "values")[col_idx]
+
+        entry_var = tk.StringVar(value=val)
+        entry = tk.Entry(tree, textvariable=entry_var, font=FONT_SMALL,
+                         bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=2,
+                         highlightbackground=CGE_BLUE, highlightthickness=1)
+        entry.place(x=x, y=y, width=w, height=h)
+        entry.focus_set()
+        entry.select_range(0, "end")
+
+        def guardar(e=None):
+            vals = list(tree.item(row_id, "values"))
+            vals[col_idx] = entry_var.get()
+            tree.item(row_id, values=vals)
+            entry.destroy()
+
+        entry.bind("<Return>", guardar)
+        entry.bind("<Tab>", guardar)
+        entry.bind("<FocusOut>", guardar)
+        entry.bind("<Escape>", lambda e: entry.destroy())
 
     def _build_view_placeholder(self, key, name):
         frame = tk.Frame(self._content, bg=CGE_LIGHT)
