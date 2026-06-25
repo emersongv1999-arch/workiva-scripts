@@ -6,22 +6,10 @@ echo   Compilando: CGE Cash Management Tool
 echo ============================================================
 echo.
 
-where python >nul 2>&1
-if errorlevel 1 (
-    where py >nul 2>&1
-    if errorlevel 1 (
-        echo ERROR: Python no encontrado en el PATH.
-        pause & exit /b 1
-    )
-    set PYTHON=py
-) else (
-    set PYTHON=python
-)
-
-%PYTHON% -m pip install pyinstaller --quiet --disable-pip-version-check
+py -m pip install pyinstaller --quiet --disable-pip-version-check
 
 echo Compilando...
-%PYTHON% -m PyInstaller ^
+py -m PyInstaller ^
     --onefile ^
     --windowed ^
     --name "CGECashManagementTool" ^
