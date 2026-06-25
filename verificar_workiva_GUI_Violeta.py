@@ -1457,21 +1457,25 @@ class App(tk.Tk):
             s.headers.update({"Authorization": f"Bearer {token}",
                                "X-Version": "2022-01-01"})
 
-            # Buscar el spreadsheet por nombre
+            # Buscar el spreadsheet: coincidencia parcial con tokens E200, CONSO, 12, 2025
+            tokens = [t.lower() for t in ss_name.replace("-", "_").split("_") if t]
             ss_id = None
+            ss_found_name = None
             url = f"{WDESK_BASE}/platform/v1/spreadsheets?workspaceId={WORKSPACE_ID}&limit=100"
             while url and not ss_id:
                 r    = s.get(url, verify=False, timeout=60)
                 data = r.json()
                 for item in data.get("data", []):
-                    if item.get("name", "").lower() == ss_name.lower():
+                    name_l = item.get("name", "").lower()
+                    if all(t in name_l for t in tokens):
                         ss_id = item["id"]
+                        ss_found_name = item["name"]
                         break
                 url = data.get("@nextLink")
             if not ss_id:
-                self._eeff_log_write(f"✗ No se encontró el spreadsheet '{ss_name}'.", "err")
+                self._eeff_log_write(f"✗ No se encontró ningún spreadsheet que contenga: {', '.join(tokens)}", "err")
                 return
-            self._eeff_log_write(f"✓ Encontrado: {ss_name}", "ok")
+            self._eeff_log_write(f"✓ Encontrado: {ss_found_name}", "ok")
 
             def _get_sheets(sid):
                 url = f"{WDESK_BASE}/platform/v1/spreadsheets/{sid}/sheets"
