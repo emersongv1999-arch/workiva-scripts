@@ -160,7 +160,7 @@ def read_sheet(ss_id, sheet_id):
 
 def poll(location):
     url = location if location.startswith("http") else WDESK_BASE+location
-    for attempt in range(40):
+    for attempt in range(120):
         time.sleep(3)
         try:
             body = session.get(url, timeout=60).json()
