@@ -837,6 +837,11 @@ FONT_SMALL  = ("Segoe UI", 9)
 FONT_MONO   = ("Consolas", 9)
 
 
+# Módulos con acceso restringido: key → contraseña
+RESTRICTED_MODULES = {
+    "mod2": "12345",
+}
+
 NAV_ITEMS = [
     ("Verificador de Sumas",  "verif"),
     ("Módulo 2",              "mod2"),
@@ -937,6 +942,11 @@ class App(tk.Tk):
             self._nav_btns[key] = btn
 
     def _show_view(self, key):
+        # Verificar acceso restringido
+        if key in RESTRICTED_MODULES:
+            if not self._pedir_clave(key):
+                return
+
         # Resaltar botón activo
         for k, btn in self._nav_btns.items():
             btn.configure(bg=CGE_BLUE if k == key else CGE_SIDEBAR)
@@ -950,6 +960,60 @@ class App(tk.Tk):
         # Actualizar subtítulo del header
         label = next(l for l, k in NAV_ITEMS if k == key)
         self._header_subtitle.configure(text=label)
+
+    def _pedir_clave(self, key):
+        popup = tk.Toplevel(self)
+        popup.title("Acceso restringido")
+        popup.resizable(False, False)
+        popup.grab_set()
+        popup.configure(bg=CGE_CARD)
+
+        # Centrar popup
+        popup.update_idletasks()
+        pw, ph = 320, 160
+        x = self.winfo_x() + (self.winfo_width()  - pw) // 2
+        y = self.winfo_y() + (self.winfo_height() - ph) // 2
+        popup.geometry(f"{pw}x{ph}+{x}+{y}")
+
+        tk.Label(popup, text="Módulo restringido",
+                 font=("Segoe UI", 11, "bold"),
+                 bg=CGE_CARD, fg=CGE_BLUE).pack(pady=(18, 4))
+        tk.Label(popup, text="Ingresa la contraseña para continuar:",
+                 font=FONT_SMALL, bg=CGE_CARD, fg=CGE_MUTED).pack()
+
+        var = tk.StringVar()
+        entry = tk.Entry(popup, textvariable=var, show="•",
+                         font=FONT_LABEL, bg=CGE_LIGHT, fg=CGE_TEXT,
+                         relief="flat", bd=4, width=20,
+                         highlightbackground=CGE_BORDER, highlightthickness=1)
+        entry.pack(pady=10)
+        entry.focus_set()
+
+        result = [False]
+
+        def confirmar(e=None):
+            if var.get() == RESTRICTED_MODULES[key]:
+                result[0] = True
+                popup.destroy()
+            else:
+                entry.configure(highlightbackground=CGE_RED, highlightthickness=2)
+                var.set("")
+                entry.focus_set()
+
+        btn_frame = tk.Frame(popup, bg=CGE_CARD)
+        btn_frame.pack()
+        tk.Button(btn_frame, text="Cancelar", font=FONT_SMALL,
+                  bg=CGE_BORDER, fg=CGE_TEXT, relief="flat", bd=0,
+                  padx=12, pady=5, cursor="hand2",
+                  command=popup.destroy).pack(side="left", padx=(0, 6))
+        tk.Button(btn_frame, text="Entrar", font=FONT_SMALL,
+                  bg=CGE_BLUE, fg=CGE_WHITE, relief="flat", bd=0,
+                  padx=12, pady=5, cursor="hand2",
+                  command=confirmar).pack(side="left")
+
+        entry.bind("<Return>", confirmar)
+        popup.wait_window()
+        return result[0]
 
 
     def _build_view_placeholder(self, key, name):
