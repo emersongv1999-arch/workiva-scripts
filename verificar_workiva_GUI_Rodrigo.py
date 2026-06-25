@@ -1339,11 +1339,11 @@ class App(tk.Tk):
         h_inner.pack(fill="x")
 
         hojas = [
-            ("Activos (A)",         "a.-",    "_eeff_hoja_a"),
-            ("Pasivos/Pat. (B)",    "b.-",    "_eeff_hoja_b"),
-            ("Est. Resultados (C)", "c.-",    "_eeff_hoja_c"),
-            ("Res. Integral (D)",   "d.-",    "_eeff_hoja_d"),
-            ("Flujo Efectivo (F)",  "f.-",    "_eeff_hoja_f"),
+            ("Activos",          "", "_eeff_hoja_a"),
+            ("Pasivos/Pat.",     "", "_eeff_hoja_b"),
+            ("Est. Resultados",  "", "_eeff_hoja_c"),
+            ("Res. Integral",    "", "_eeff_hoja_d"),
+            ("Flujo Efectivo",   "", "_eeff_hoja_f"),
         ]
         for i, (label, default, attr) in enumerate(hojas):
             tk.Label(h_inner, text=label, font=FONT_SMALL,
@@ -1498,11 +1498,11 @@ class App(tk.Tk):
                 return abs(v) if v is not None else None
 
             # Leer keywords de hojas desde la GUI
-            kw_a = self._eeff_hoja_a.get().strip() or "a.-"
-            kw_b = self._eeff_hoja_b.get().strip() or "b.-"
-            kw_c = self._eeff_hoja_c.get().strip() or "c.-"
-            kw_d = self._eeff_hoja_d.get().strip() or "d.-"
-            kw_f = self._eeff_hoja_f.get().strip() or "f.-"
+            kw_a = self._eeff_hoja_a.get().strip()
+            kw_b = self._eeff_hoja_b.get().strip()
+            kw_c = self._eeff_hoja_c.get().strip()
+            kw_d = self._eeff_hoja_d.get().strip()
+            kw_f = self._eeff_hoja_f.get().strip()
 
             def _extraer(col_v):
                 if not self._eeff_running:
@@ -1512,7 +1512,7 @@ class App(tk.Tk):
                     self._eeff_log_write("ERROR: no se obtuvieron hojas.", "err")
                     return {}
 
-                sid_a = _find_sheet(sheets, kw_a)
+                sid_a = _find_sheet(sheets, kw_a) if kw_a else None
                 a = _read_cells(ss_id, sid_a) if sid_a else []
                 esf = {
                     "efectivo_equivalentes": _cell(a,  8, col_v),
@@ -1528,7 +1528,7 @@ class App(tk.Tk):
                 if not self._eeff_running:
                     return {}
 
-                sid_b = _find_sheet(sheets, kw_b)
+                sid_b = _find_sheet(sheets, kw_b) if kw_b else None
                 b = _read_cells(ss_id, sid_b) if sid_b else []
                 esf.update({
                     "deuda_financiera_corriente":        _cell(b,  8, col_v),
@@ -1545,7 +1545,7 @@ class App(tk.Tk):
                 if not self._eeff_running:
                     return {}
 
-                sid_c = _find_sheet(sheets, kw_c)
+                sid_c = _find_sheet(sheets, kw_c) if kw_c else None
                 c = _read_cells(ss_id, sid_c) if sid_c else []
                 ga = _cell(c, 14, col_v)
                 gd = _cell(c, 15, col_v)
@@ -1566,7 +1566,7 @@ class App(tk.Tk):
                 if not self._eeff_running:
                     return {}
 
-                sid_d = _find_sheet(sheets, kw_d)
+                sid_d = _find_sheet(sheets, kw_d) if kw_d else None
                 d = _read_cells(ss_id, sid_d) if sid_d else []
                 ori_nc = _cell(d, 18, col_v)
                 ori_rc = _cell(d, 53, col_v)
@@ -1578,7 +1578,7 @@ class App(tk.Tk):
                 if not self._eeff_running:
                     return {}
 
-                sid_f = _find_sheet(sheets, kw_f) or _find_sheet(sheets, "flujo")
+                sid_f = _find_sheet(sheets, kw_f) if kw_f else None
                 f = _read_cells(ss_id, sid_f) if sid_f else []
                 efe = {
                     "flujo_operacional":       _cell(f, 35, col_v),
