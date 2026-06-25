@@ -1388,6 +1388,33 @@ class App(tk.Tk):
                  ).grid(row=1, column=1, sticky="ew", padx=(8,0), pady=4)
         p_inner.columnconfigure(1, weight=1)
 
+        # ── Hojas ─────────────────────────────────────────────────────────────
+        tk.Label(left, text="HOJAS DEL SPREADSHEET", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(4, 2))
+        hf = tk.Frame(left, bg=CGE_CARD,
+                      highlightbackground=CGE_BORDER, highlightthickness=1)
+        hf.pack(fill="x", pady=(0, 10))
+        h_inner = tk.Frame(hf, bg=CGE_CARD, padx=12, pady=10)
+        h_inner.pack(fill="x")
+
+        hojas = [
+            ("Activos (A)",         "a.-",    "_eeff_hoja_a"),
+            ("Pasivos/Pat. (B)",    "b.-",    "_eeff_hoja_b"),
+            ("Est. Resultados (C)", "c.-",    "_eeff_hoja_c"),
+            ("Res. Integral (D)",   "d.-",    "_eeff_hoja_d"),
+            ("Flujo Efectivo (F)",  "f.-",    "_eeff_hoja_f"),
+        ]
+        for i, (label, default, attr) in enumerate(hojas):
+            tk.Label(h_inner, text=label, font=FONT_SMALL,
+                     bg=CGE_CARD, fg=CGE_MUTED).grid(row=i, column=0, sticky="w", pady=3)
+            var = tk.StringVar(value=default)
+            setattr(self, attr, var)
+            tk.Entry(h_inner, textvariable=var, font=FONT_SMALL,
+                     bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=10,
+                     highlightbackground=CGE_BORDER, highlightthickness=1
+                     ).grid(row=i, column=1, sticky="ew", padx=(8,0), pady=3)
+        h_inner.columnconfigure(1, weight=1)
+
         tk.Frame(left, bg=CGE_LIGHT, height=6).pack()
         self._eeff_btn = tk.Button(left, text="Extraer EEFF",
                   font=FONT_BOLD, bg=CGE_BLUE, fg=CGE_WHITE,
@@ -1539,6 +1566,13 @@ class App(tk.Tk):
             def _neg(v):
                 return abs(v) if v is not None else None
 
+            # Leer keywords de hojas desde la GUI
+            kw_a = self._eeff_hoja_a.get().strip() or "a.-"
+            kw_b = self._eeff_hoja_b.get().strip() or "b.-"
+            kw_c = self._eeff_hoja_c.get().strip() or "c.-"
+            kw_d = self._eeff_hoja_d.get().strip() or "d.-"
+            kw_f = self._eeff_hoja_f.get().strip() or "f.-"
+
             def _extraer(col_v):
                 if not self._eeff_running:
                     return {}
@@ -1547,7 +1581,7 @@ class App(tk.Tk):
                     self._eeff_log_write("ERROR: no se obtuvieron hojas.", "err")
                     return {}
 
-                sid_a = _find_sheet(sheets, "a.-")
+                sid_a = _find_sheet(sheets, kw_a)
                 a = _read_cells(ss_id, sid_a) if sid_a else []
                 esf = {
                     "efectivo_equivalentes": _cell(a,  8, col_v),
@@ -1563,7 +1597,7 @@ class App(tk.Tk):
                 if not self._eeff_running:
                     return {}
 
-                sid_b = _find_sheet(sheets, "b.-")
+                sid_b = _find_sheet(sheets, kw_b)
                 b = _read_cells(ss_id, sid_b) if sid_b else []
                 esf.update({
                     "deuda_financiera_corriente":        _cell(b,  8, col_v),
@@ -1580,7 +1614,7 @@ class App(tk.Tk):
                 if not self._eeff_running:
                     return {}
 
-                sid_c = _find_sheet(sheets, "c.-")
+                sid_c = _find_sheet(sheets, kw_c)
                 c = _read_cells(ss_id, sid_c) if sid_c else []
                 ga = _cell(c, 14, col_v)
                 gd = _cell(c, 15, col_v)
@@ -1601,7 +1635,7 @@ class App(tk.Tk):
                 if not self._eeff_running:
                     return {}
 
-                sid_d = _find_sheet(sheets, "d.-")
+                sid_d = _find_sheet(sheets, kw_d)
                 d = _read_cells(ss_id, sid_d) if sid_d else []
                 ori_nc = _cell(d, 18, col_v)
                 ori_rc = _cell(d, 53, col_v)
@@ -1613,7 +1647,7 @@ class App(tk.Tk):
                 if not self._eeff_running:
                     return {}
 
-                sid_f = _find_sheet(sheets, "f.-") or _find_sheet(sheets, "flujo")
+                sid_f = _find_sheet(sheets, kw_f) or _find_sheet(sheets, "flujo")
                 f = _read_cells(ss_id, sid_f) if sid_f else []
                 efe = {
                     "flujo_operacional":       _cell(f, 35, col_v),
