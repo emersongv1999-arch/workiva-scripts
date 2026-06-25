@@ -1282,77 +1282,38 @@ class App(tk.Tk):
         top.pack(fill="x", pady=(0, 8))
         tk.Label(top, text="Cruce de Notas", font=("Segoe UI", 13, "bold"),
                  bg=CGE_LIGHT, fg=CGE_BLUE).pack(side="left")
-        tk.Button(top, text="Limpiar todo", font=FONT_SMALL,
+        tk.Button(top, text="Limpiar", font=FONT_SMALL,
                   bg=CGE_RED, fg=CGE_WHITE, relief="flat", bd=0,
                   padx=10, pady=4, cursor="hand2",
                   command=self._cruce_limpiar).pack(side="right")
 
-        COLS   = ["Nota", "Descripción", "Valor período", "Valor comparativo"]
-        NROWS  = 50
-        COL_W  = [120, 300, 160, 160]
-        BORDER = CGE_BORDER
-        HDR_BG = CGE_BLUE
-        HDR_FG = CGE_WHITE
-        CELL_H = 26
+        # Área de texto libre con scroll
+        txt_frame = tk.Frame(frame, bg=CGE_BORDER, bd=1, relief="flat")
+        txt_frame.pack(fill="both", expand=True)
 
-        # Contenedor con scrollbar vertical
-        outer = tk.Frame(frame, bg=BORDER, bd=0)
-        outer.pack(fill="both", expand=True)
-
-        canvas = tk.Canvas(outer, bg=BORDER, highlightthickness=0)
-        vsb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=vsb.set)
+        self._cruce_text = tk.Text(
+            txt_frame,
+            font=("Consolas", 11),
+            bg=CGE_CARD, fg=CGE_TEXT,
+            insertbackground=CGE_BLUE,
+            relief="flat", bd=0,
+            wrap="none",
+            undo=True,
+            padx=10, pady=8,
+        )
+        vsb = ttk.Scrollbar(txt_frame, orient="vertical",
+                             command=self._cruce_text.yview)
+        hsb = ttk.Scrollbar(txt_frame, orient="horizontal",
+                             command=self._cruce_text.xview)
+        self._cruce_text.configure(yscrollcommand=vsb.set,
+                                   xscrollcommand=hsb.set)
         vsb.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
-
-        inner = tk.Frame(canvas, bg=BORDER)
-        win_id = canvas.create_window((0, 0), window=inner, anchor="nw")
-
-        def _on_resize(e):
-            canvas.itemconfig(win_id, width=e.width)
-        canvas.bind("<Configure>", _on_resize)
-
-        def _on_frame_configure(e):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-        inner.bind("<Configure>", _on_frame_configure)
-
-        def _mousewheel(e):
-            canvas.yview_scroll(int(-1*(e.delta/120)), "units")
-        canvas.bind_all("<MouseWheel>", _mousewheel)
-
-        # Encabezados
-        for c, (col_name, w) in enumerate(zip(COLS, COL_W)):
-            tk.Label(inner, text=col_name, font=("Segoe UI", 9, "bold"),
-                     bg=HDR_BG, fg=HDR_FG, width=w//8, anchor="center",
-                     relief="flat", bd=0, pady=6,
-                     highlightbackground=BORDER, highlightthickness=1
-                     ).grid(row=0, column=c, sticky="nsew", padx=(0,1), pady=(0,1))
-        for c in range(len(COLS)):
-            inner.grid_columnconfigure(c, weight=1, minsize=COL_W[c])
-
-        # Celdas
-        self._cruce_vars = []
-        for r in range(NROWS):
-            row_vars = []
-            bg = CGE_CARD if r % 2 == 0 else CGE_ROWALT
-            for c in range(len(COLS)):
-                var = tk.StringVar()
-                ent = tk.Entry(inner, textvariable=var, font=FONT_SMALL,
-                               bg=bg, fg=CGE_TEXT, relief="flat", bd=0,
-                               insertbackground=CGE_BLUE,
-                               highlightbackground=BORDER,
-                               highlightthickness=1)
-                ent.grid(row=r+1, column=c, sticky="nsew",
-                         padx=(0,1), pady=(0,1), ipady=4)
-                ent.bind("<MouseWheel>", _mousewheel)
-                row_vars.append(var)
-            self._cruce_vars.append(row_vars)
+        hsb.pack(side="bottom", fill="x")
+        self._cruce_text.pack(fill="both", expand=True)
 
     def _cruce_limpiar(self):
-        if messagebox.askyesno("Confirmar", "¿Limpiar todas las celdas?"):
-            for row in self._cruce_vars:
-                for var in row:
-                    var.set("")
+        if messagebox.askyesno("Confirmar", "¿Limpiar el texto?"):
+            self._cruce_text.delete("1.0", "end")
 
     def _build_view_placeholder(self, key, name):
         frame = tk.Frame(self._content, bg=CGE_LIGHT)
