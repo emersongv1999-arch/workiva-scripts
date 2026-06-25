@@ -9,10 +9,17 @@ usando como fuente los saldos del archivo E200_IND_12-2025.
 Ejecutar: python test_E1_E300_desde_E200.py
 """
 
-import warnings, time
+import warnings, time, os, requests
 from urllib3.exceptions import InsecureRequestWarning
 
 warnings.filterwarnings("ignore", category=InsecureRequestWarning)
+
+# ─── CREDENCIALES (hardcoded para prueba) ─────────────────────────────────────
+os.environ["WORKIVA_CLIENT_ID"]     = "db2c551e-e18a-417e-8e52-d182716b8ef2"
+os.environ["WORKIVA_CLIENT_SECRET"] = "wk_secret:oa2c:DzlUCmBQDv6raPxG09me"
+os.environ["WORKIVA_WORKSPACE_ID"]  = "w_34913aadaa38420eabd7e4d341b78a1a"
+# ──────────────────────────────────────────────────────────────────────────────
+
 from workiva_client import get_session
 
 # ─── CONFIGURACIÓN ────────────────────────────────────────────────────────────
