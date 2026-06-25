@@ -133,14 +133,23 @@ def read_sheet(ss_id, sheet_id):
 
 def poll(location):
     url = location if location.startswith("http") else WDESK_BASE+location
-    for _ in range(40):
+    for attempt in range(40):
         time.sleep(3)
         try:
             body = session.get(url, timeout=60).json()
-            st   = body.get("status", body.get("data",{}).get("status",""))
-            if st == "completed": return True
-            if st in ("failed","error"): return False
-        except Exception: pass
+            data = body.get("data", body)
+            st   = data.get("status", body.get("status", ""))
+            if st == "completed":
+                return True
+            if st in ("failed", "error"):
+                msg = (data.get("error") or data.get("message") or
+                       body.get("error") or body.get("message") or "")
+                if msg:
+                    print(f"      [Workiva error] {str(msg)[:120]}")
+                return False
+        except Exception as e:
+            if attempt == 39:
+                print(f"      [poll exception] {e}")
     return False
 
 def put_col(ss_id, sid, col_idx, values, label=""):
@@ -572,16 +581,27 @@ def build_write_values(tgt_cells, src_cells, dest_col, src_col):
         return False
 
     vals = []
+    unmapped = []
     for i in range(len(tgt_cells)):
         row_t = tgt_cells[i] if i < len(tgt_cells) else []
         if is_formula(row_t, dest_col):
             vals.append(None); continue
-        if not is_data_row(row_t):          # fila vacía → nunca recibe valor
+        if not is_data_row(row_t):
             vals.append(None); continue
         src_row = row_map[i]
-        if src_row is None: vals.append(None); continue
+        if src_row is None:
+            # Loggear agrupadores/etiquetas que no mapearon
+            b = get_cv(row_t, bpc_col) if bpc_col is not None else None
+            lb = str(get_cv(row_t, 1) or "").strip()
+            tag = str(b) if b is not None else lb[:30]
+            if tag:
+                unmapped.append(f"fila {i+1}:{tag}")
+            vals.append(None); continue
         sv = get_cv(src_cells[src_row], src_col)
-        vals.append(sv if isinstance(sv,(int,float)) else None)
+        vals.append(sv if isinstance(sv, (int, float)) else None)
+    if unmapped:
+        print(f"      [sin mapeo] {', '.join(unmapped[:8])}"
+              + (" ..." if len(unmapped) > 8 else ""))
     return vals
 
 # ─── PASO 8: Copia de hoja tipo 79 ───────────────────────────────────────────
