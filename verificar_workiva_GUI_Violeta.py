@@ -1624,6 +1624,50 @@ class App(tk.Tk):
             def _fmt(v):
                 return f"{v:>25,.0f}"
 
+            _LABELS = {
+                "efectivo_equivalentes":             "Efectivo y equivalentes",
+                "cuentas_por_cobrar":                "Cuentas por cobrar",
+                "inventarios":                       "Inventarios",
+                "activo_corriente":                  "Activo corriente",
+                "ppe_neto":                          "PPE neto",
+                "activos_ddu":                       "Activos por derecho de uso",
+                "activo_imp_diferido":               "Activo por impuesto diferido",
+                "activo_no_corriente":               "Activo no corriente",
+                "activo_total":                      "Activo total",
+                "deuda_financiera_corriente":        "Deuda financiera corriente",
+                "pasivo_arrendamiento_corriente":    "Pasivo arrendamiento corriente",
+                "cuentas_por_pagar":                 "Cuentas por pagar",
+                "pasivo_corriente":                  "Pasivo corriente",
+                "deuda_financiera_no_corriente":     "Deuda financiera no corriente",
+                "pasivo_arrendamiento_no_corriente": "Pasivo arrendamiento no corriente",
+                "pasivo_imp_diferido":               "Pasivo por impuesto diferido",
+                "pasivo_no_corriente":               "Pasivo no corriente",
+                "pasivo_total":                      "Pasivo total",
+                "patrimonio_total":                  "Patrimonio total",
+                "ingresos":                          "Ingresos",
+                "costo_ventas":                      "Costo de ventas",
+                "ganancia_bruta":                    "Ganancia bruta",
+                "otros_ingresos_operacion":          "Otros ingresos de operación",
+                "gastos_operacionales":              "Gastos operacionales",
+                "resultado_operacional":             "Resultado operacional",
+                "gastos_financieros":                "Gastos financieros",
+                "ganancia_antes_impuesto":           "Ganancia antes de impuesto",
+                "gasto_impuesto":                    "Gasto por impuesto",
+                "ganancia_neta":                     "Ganancia neta",
+                "ori":                               "Otro resultado integral",
+                "resultado_integral_total":          "Resultado integral total",
+                "flujo_operacional":                 "Flujo operacional",
+                "flujo_inversion":                   "Flujo de inversión",
+                "flujo_financiamiento":              "Flujo de financiamiento",
+                "efecto_tipo_cambio":                "Efecto tipo de cambio",
+                "variacion_neta_efectivo":           "Variación neta efectivo",
+                "efectivo_inicio":                   "Efectivo inicio",
+                "efectivo_cierre":                   "Efectivo cierre",
+                "dividendos_pagados":                "Dividendos pagados",
+            }
+            def _lbl(k):
+                return _LABELS.get(k, k.replace("_", " ").capitalize())
+
             if do_a or do_b:
                 esf_a = actual.get("esf", {})
                 esf_c = comp.get("esf", {})
@@ -1632,10 +1676,10 @@ class App(tk.Tk):
                          if esf_a[k] is not None and esf_a[k] != 0]
                 if items:
                     self._eeff_log_write("\n── A / B  ·  Estado de Situación Financiera ──────────", "bold")
-                    self._eeff_log_write(f"  {'Campo':<42} {'Actual':>25} {'Comparativo':>25}", "muted")
+                    self._eeff_log_write(f"  {'Campo':<42} {'Actual':>25}  {'Comparativo':>25}", "bold")
                     for k, va, vc in items:
                         vc_str = _fmt(vc) if (vc is not None and vc != 0) else f"{'—':>25}"
-                        self._eeff_log_write(f"  {k:<42} {_fmt(va)} {vc_str}", "muted")
+                        self._eeff_log_write(f"  {_lbl(k):<42} {_fmt(va)} {vc_str}", "muted")
 
             if do_c:
                 items = [(k, actual.get("er", {}).get(k), comp.get("er", {}).get(k))
@@ -1643,10 +1687,10 @@ class App(tk.Tk):
                          if actual.get("er", {}).get(k) is not None and actual.get("er", {}).get(k) != 0]
                 if items:
                     self._eeff_log_write("\n── C  ·  Estado de Resultados ────────────────────────", "bold")
-                    self._eeff_log_write(f"  {'Campo':<42} {'Actual':>25} {'Comparativo':>25}", "muted")
+                    self._eeff_log_write(f"  {'Campo':<42} {'Actual':>25}  {'Comparativo':>25}", "bold")
                     for k, va, vc in items:
                         vc_str = _fmt(vc) if (vc is not None and vc != 0) else f"{'—':>25}"
-                        self._eeff_log_write(f"  {k:<42} {_fmt(va)} {vc_str}", "muted")
+                        self._eeff_log_write(f"  {_lbl(k):<42} {_fmt(va)} {vc_str}", "muted")
 
             if do_d:
                 er_a = actual.get("er", {})
@@ -1654,9 +1698,9 @@ class App(tk.Tk):
                 rit = er_a.get("resultado_integral_total")
                 if ori is not None and ori != 0:
                     self._eeff_log_write("\n── D  ·  Resultado Integral ──────────────────────────", "bold")
-                    self._eeff_log_write(f"  {'ori':<42} {_fmt(ori)}", "muted")
+                    self._eeff_log_write(f"  {_lbl('ori'):<42} {_fmt(ori)}", "muted")
                 if rit is not None and rit != 0:
-                    self._eeff_log_write(f"  {'resultado_integral_total':<42} {_fmt(rit)}", "muted")
+                    self._eeff_log_write(f"  {_lbl('resultado_integral_total'):<42} {_fmt(rit)}", "muted")
 
             if do_f:
                 items = [(k, actual.get("efe", {}).get(k), comp.get("efe", {}).get(k))
@@ -1664,10 +1708,10 @@ class App(tk.Tk):
                          if actual.get("efe", {}).get(k) is not None and actual.get("efe", {}).get(k) != 0]
                 if items:
                     self._eeff_log_write("\n── F  ·  Flujo de Efectivo ───────────────────────────", "bold")
-                    self._eeff_log_write(f"  {'Campo':<42} {'Actual':>25} {'Comparativo':>25}", "muted")
+                    self._eeff_log_write(f"  {'Campo':<42} {'Actual':>25}  {'Comparativo':>25}", "bold")
                     for k, va, vc in items:
                         vc_str = _fmt(vc) if (vc is not None and vc != 0) else f"{'—':>25}"
-                        self._eeff_log_write(f"  {k:<42} {_fmt(va)} {vc_str}", "muted")
+                        self._eeff_log_write(f"  {_lbl(k):<42} {_fmt(va)} {vc_str}", "muted")
 
             self._eeff_log_write("\n✓ Extracción completada.", "ok")
 
