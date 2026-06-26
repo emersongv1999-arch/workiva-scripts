@@ -1124,6 +1124,50 @@ class App(tk.Tk):
         self._cmp_log.tag_config("bold", font=("Consolas", 9, "bold"))
         self._cmp_log.tag_config("muted",foreground=CGE_MUTED)
 
+    def _cmp_show_result_popup(self, resultados, total_ok, total_err, dur_str):
+        nombres = "\n".join(f"  • {r['name']}" for r in resultados)
+        resumen = (f"Archivos procesados:\n{nombres}\n\n"
+                   f"OK: {total_ok}    ERR: {total_err}\n"
+                   f"Tiempo: {dur_str}")
+        if total_err == 0:
+            messagebox.showinfo("Completado sin errores", resumen)
+            return
+        # Con errores: popup custom con botón "Ver errores"
+        top = tk.Toplevel(self)
+        top.title(f"Completado con {total_err} ERR")
+        top.resizable(False, False)
+        top.grab_set()
+        top.configure(bg="white")
+        msg_frame = tk.Frame(top, bg="white", padx=16, pady=16)
+        msg_frame.pack(fill="both", expand=True)
+        tk.Label(msg_frame, text="⚠", font=("Segoe UI", 32),
+                 bg="white", fg="#E6A817").pack(side="left", anchor="n", padx=(4, 16))
+        tk.Label(msg_frame, text=resumen, font=("Segoe UI", 10),
+                 bg="white", fg="#1a1a1a", justify="left").pack(side="left", anchor="n")
+        tk.Frame(top, bg="#D0D0D0", height=1).pack(fill="x")
+        btn_row = tk.Frame(top, bg="#F0F0F0", padx=12, pady=8)
+        btn_row.pack(fill="x")
+        def ver_errores():
+            lines = "\n".join(
+                f"  {r['code']}:  {r['err']} ERR"
+                for r in resultados if r["err"] > 0
+            )
+            messagebox.showwarning("Detalle de errores",
+                                   f"Sociedades con errores:\n\n{lines}",
+                                   parent=top)
+        tk.Button(btn_row, text=f"Ver errores ({total_err})",
+                  font=("Segoe UI", 9, "bold"), bg=CGE_RED, fg=CGE_WHITE,
+                  relief="flat", padx=14, pady=4, cursor="hand2",
+                  command=ver_errores).pack(side="left")
+        tk.Button(btn_row, text="Aceptar", font=("Segoe UI", 9),
+                  relief="solid", bd=1, padx=14, pady=4,
+                  cursor="hand2", command=top.destroy).pack(side="right")
+        top.update_idletasks()
+        w, h = top.winfo_width(), top.winfo_height()
+        x = self.winfo_rootx() + (self.winfo_width()  - w) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - h) // 2
+        top.geometry(f"+{x}+{y}")
+
     def _cmp_log_write(self, msg, tag=None):
         def _do():
             self._cmp_log.configure(state="normal")
@@ -1253,24 +1297,20 @@ class App(tk.Tk):
                 exec(compile(_LLENAR_COMP_SRC, "llenar_comparativos.py", "exec"), mod.__dict__)
 
                 total_ok = total_err = 0
+                resultados = []
                 for t in seleccionados:
                     ok, err = mod.process_file(t, self._cmp_allfiles)
                     total_ok  += ok
                     total_err += err
+                    resultados.append({"name": t["name"], "code": t.get("code", t["name"]), "ok": ok, "err": err})
 
-                elapsed  = time.time() - t0
+                elapsed    = time.time() - t0
                 mins, secs = divmod(int(elapsed), 60)
-                dur_str  = f"{mins}m {secs}s" if mins else f"{secs}s"
-                nombres  = "\n".join(f"  • {t['name']}" for t in seleccionados)
-                resumen  = (f"Archivos procesados:\n{nombres}\n\n"
-                            f"OK: {total_ok}    ERR: {total_err}\n"
-                            f"Tiempo: {dur_str}")
+                dur_str    = f"{mins}m {secs}s" if mins else f"{secs}s"
                 self._cmp_log_write(f"\nRESUMEN: OK={total_ok}  ERR={total_err}  ({dur_str})",
                                     "ok" if total_err == 0 else "warn")
-                if total_err == 0:
-                    self.after(0, lambda r=resumen: messagebox.showinfo("Completado sin errores", r))
-                else:
-                    self.after(0, lambda r=resumen: messagebox.showwarning(f"Completado con {total_err} ERR", r))
+                self.after(0, lambda r=resultados, tok=total_ok, terr=total_err, d=dur_str:
+                           self._cmp_show_result_popup(r, tok, terr, d))
             finally:
                 builtins.print = _orig_print
         except Exception as e:
