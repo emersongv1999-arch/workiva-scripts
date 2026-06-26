@@ -1075,6 +1075,14 @@ class App(tk.Tk):
                   cursor="hand2", command=self._cmp_on_procesar, state="disabled")
         self._cmp_btn_procesar.pack(fill="x")
 
+        # Barra de progreso de hojas
+        tk.Frame(left, bg=CGE_LIGHT, height=10).pack()
+        self._cmp_prog_label = tk.Label(left, text="", font=("Segoe UI", 8),
+                                        bg=CGE_LIGHT, fg=CGE_MUTED)
+        self._cmp_prog_label.pack(anchor="w")
+        self._cmp_prog = ttk.Progressbar(left, mode="determinate", length=200)
+        self._cmp_prog.pack(fill="x", pady=(2, 0))
+
         # Panel derecho
         right = tk.Frame(body, bg=CGE_LIGHT)
         right.pack(side="left", fill="both", expand=True)
@@ -1125,43 +1133,83 @@ class App(tk.Tk):
         self._cmp_log.tag_config("muted",foreground=CGE_MUTED)
 
     def _cmp_show_result_popup(self, resultados, total_ok, total_err, dur_str):
-        nombres = "\n".join(f"  • {r['name']}" for r in resultados)
-        resumen = (f"Archivos procesados:\n{nombres}\n\n"
-                   f"OK: {total_ok}    ERR: {total_err}\n"
-                   f"Tiempo: {dur_str}")
-        if total_err == 0:
-            messagebox.showinfo("Completado sin errores", resumen)
-            return
-        # Con errores: popup custom con botón "Ver errores"
+        hay_err = total_err > 0
         top = tk.Toplevel(self)
-        top.title(f"Completado con {total_err} ERR")
+        top.title("Completado sin errores" if not hay_err else f"Completado con {total_err} ERR")
         top.resizable(False, False)
         top.grab_set()
         top.configure(bg="white")
+
+        # ── Zona de icono + contenido ──────────────────────────────────────
         msg_frame = tk.Frame(top, bg="white", padx=16, pady=16)
         msg_frame.pack(fill="both", expand=True)
-        tk.Label(msg_frame, text="⚠", font=("Segoe UI", 32),
-                 bg="white", fg="#E6A817").pack(side="left", anchor="n", padx=(4, 16))
-        tk.Label(msg_frame, text=resumen, font=("Segoe UI", 10),
-                 bg="white", fg="#1a1a1a", justify="left").pack(side="left", anchor="n")
+
+        icon = "⚠" if hay_err else "✓"
+        icon_color = "#E6A817" if hay_err else "#1A7A4A"
+        tk.Label(msg_frame, text=icon, font=("Segoe UI", 32),
+                 bg="white", fg=icon_color).pack(side="left", anchor="n", padx=(4, 16))
+
+        right = tk.Frame(msg_frame, bg="white")
+        right.pack(side="left", anchor="n")
+
+        # Tabla de sociedades
+        tk.Label(right, text="Archivos procesados:", font=("Segoe UI", 10, "bold"),
+                 bg="white", fg="#1a1a1a").grid(row=0, column=0, columnspan=4, sticky="w", pady=(0,6))
+
+        # Cabecera de tabla
+        for col, (txt, ancho) in enumerate([("Sociedad", 35), ("OK", 6), ("ERR", 6), ("Tiempo", 10)]):
+            tk.Label(right, text=txt, font=("Segoe UI", 9, "bold"),
+                     bg="white", fg="#555", width=ancho, anchor="w").grid(row=1, column=col, padx=(0,8))
+
+        tk.Frame(right, bg="#D0D0D0", height=1).grid(row=2, column=0, columnspan=4, sticky="ew", pady=2)
+
+        for i, r in enumerate(resultados):
+            err_color = CGE_RED if r["err"] > 0 else "#1a1a1a"
+            tk.Label(right, text=r["name"], font=("Consolas", 9),
+                     bg="white", fg="#1a1a1a", anchor="w", width=35).grid(row=3+i, column=0, padx=(0,8), pady=1)
+            tk.Label(right, text=str(r["ok"]), font=("Segoe UI", 9, "bold"),
+                     bg="white", fg="#1A7A4A", anchor="w", width=6).grid(row=3+i, column=1, padx=(0,8))
+            tk.Label(right, text=str(r["err"]), font=("Segoe UI", 9, "bold"),
+                     bg="white", fg=err_color, anchor="w", width=6).grid(row=3+i, column=2, padx=(0,8))
+            tk.Label(right, text=r.get("dur","–"), font=("Segoe UI", 9),
+                     bg="white", fg="#555", anchor="w", width=10).grid(row=3+i, column=3)
+
+        tk.Frame(right, bg="#D0D0D0", height=1).grid(row=3+len(resultados), column=0, columnspan=4, sticky="ew", pady=4)
+
+        # Totales
+        n = len(resultados)
+        tk.Label(right, text="TOTAL", font=("Segoe UI", 9, "bold"),
+                 bg="white", fg="#1a1a1a", anchor="w").grid(row=4+n, column=0, sticky="w")
+        tk.Label(right, text=str(total_ok), font=("Segoe UI", 9, "bold"),
+                 bg="white", fg="#1A7A4A", anchor="w").grid(row=4+n, column=1)
+        tk.Label(right, text=str(total_err), font=("Segoe UI", 9, "bold"),
+                 bg="white", fg=CGE_RED if hay_err else "#1a1a1a", anchor="w").grid(row=4+n, column=2)
+        tk.Label(right, text=dur_str, font=("Segoe UI", 9, "bold"),
+                 bg="white", fg=CGE_BLUE, anchor="w").grid(row=4+n, column=3)
+
+        # ── Separador + botones ────────────────────────────────────────────
         tk.Frame(top, bg="#D0D0D0", height=1).pack(fill="x")
         btn_row = tk.Frame(top, bg="#F0F0F0", padx=12, pady=8)
         btn_row.pack(fill="x")
-        def ver_errores():
-            lines = "\n".join(
-                f"  {r['code']}:  {r['err']} ERR"
-                for r in resultados if r["err"] > 0
-            )
-            messagebox.showwarning("Detalle de errores",
-                                   f"Sociedades con errores:\n\n{lines}",
-                                   parent=top)
-        tk.Button(btn_row, text=f"Ver errores ({total_err})",
-                  font=("Segoe UI", 9, "bold"), bg=CGE_RED, fg=CGE_WHITE,
-                  relief="flat", padx=14, pady=4, cursor="hand2",
-                  command=ver_errores).pack(side="left")
+
+        if hay_err:
+            def ver_errores():
+                lines = "\n".join(
+                    f"  {r['code']}:  {r['err']} ERR"
+                    for r in resultados if r["err"] > 0
+                )
+                messagebox.showwarning("Detalle de errores",
+                                       f"Sociedades con errores:\n\n{lines}",
+                                       parent=top)
+            tk.Button(btn_row, text=f"Ver errores ({total_err})",
+                      font=("Segoe UI", 9, "bold"), bg=CGE_RED, fg=CGE_WHITE,
+                      relief="flat", padx=14, pady=4, cursor="hand2",
+                      command=ver_errores).pack(side="left")
+
         tk.Button(btn_row, text="Aceptar", font=("Segoe UI", 9),
                   relief="solid", bd=1, padx=14, pady=4,
                   cursor="hand2", command=top.destroy).pack(side="right")
+
         top.update_idletasks()
         w, h = top.winfo_width(), top.winfo_height()
         x = self.winfo_rootx() + (self.winfo_width()  - w) // 2
@@ -1278,16 +1326,34 @@ class App(tk.Tk):
         threading.Thread(target=self._cmp_thread_procesar,
                          args=(seleccionados,), daemon=True).start()
 
+    def _cmp_set_progress(self, value, maximum, label=""):
+        def _do():
+            self._cmp_prog["maximum"] = maximum or 1
+            self._cmp_prog["value"]   = value
+            self._cmp_prog_label.configure(text=label)
+        self.after(0, _do)
+
     def _cmp_thread_procesar(self, seleccionados):
         try:
             import builtins, types
             _orig_print = builtins.print
+
+            # Estado de progreso por hojas — se actualiza desde _gui_print
+            prog_state = {"total": 0, "done": 0, "code": ""}
+
             def _gui_print(*args, **kwargs):
                 msg = " ".join(str(a) for a in args)
                 tag = "err" if "ERR" in msg or "✗" in msg else \
                       "ok"  if "OK" in msg or "✓" in msg else \
                       "bold" if msg.startswith("===") or msg.startswith("───") else None
                 self._cmp_log_write(msg, tag)
+                # Detectar inicio de hoja ("=== N.- Nombre")
+                if msg.startswith("===") and prog_state["total"] > 0:
+                    prog_state["done"] += 1
+                    d, t = prog_state["done"], prog_state["total"]
+                    lbl = f"{prog_state['code']}  hoja {d}/{t}"
+                    self._cmp_set_progress(d, t, lbl)
+
             builtins.print = _gui_print
             t0 = time.time()
             try:
@@ -1299,16 +1365,39 @@ class App(tk.Tk):
                 total_ok = total_err = 0
                 resultados = []
                 for t in seleccionados:
+                    code = t.get("code", t["name"])
+                    # Pre-contar hojas para la barra (get_sheets ya está en el módulo)
+                    try:
+                        ss_id  = list(mod.get_sheets(t["id"]).values())
+                        n_hojas = len(ss_id)
+                    except Exception:
+                        n_hojas = 1
+                    prog_state["total"] = n_hojas
+                    prog_state["done"]  = 0
+                    prog_state["code"]  = code
+                    self._cmp_set_progress(0, n_hojas, f"{code}  0/{n_hojas}")
+
+                    t_file = time.time()
                     ok, err = mod.process_file(t, self._cmp_allfiles)
+                    elapsed_file = time.time() - t_file
+                    mf, sf = divmod(int(elapsed_file), 60)
+                    dur_file = f"{mf}m {sf}s" if mf else f"{sf}s"
+
                     total_ok  += ok
                     total_err += err
-                    resultados.append({"name": t["name"], "code": t.get("code", t["name"]), "ok": ok, "err": err})
+                    resultados.append({
+                        "name": t["name"], "code": code,
+                        "ok": ok, "err": err, "dur": dur_file,
+                    })
+                    # Dejar la barra completa al terminar el archivo
+                    self._cmp_set_progress(n_hojas, n_hojas, f"{code}  listo ({dur_file})")
 
                 elapsed    = time.time() - t0
                 mins, secs = divmod(int(elapsed), 60)
                 dur_str    = f"{mins}m {secs}s" if mins else f"{secs}s"
                 self._cmp_log_write(f"\nRESUMEN: OK={total_ok}  ERR={total_err}  ({dur_str})",
                                     "ok" if total_err == 0 else "warn")
+                self._cmp_set_progress(0, 1, "")
                 self.after(0, lambda r=resultados, tok=total_ok, terr=total_err, d=dur_str:
                            self._cmp_show_result_popup(r, tok, terr, d))
             finally:
