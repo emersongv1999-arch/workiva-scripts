@@ -1075,14 +1075,6 @@ class App(tk.Tk):
                   cursor="hand2", command=self._cmp_on_procesar, state="disabled")
         self._cmp_btn_procesar.pack(fill="x")
 
-        # Barra de progreso de hojas
-        tk.Frame(left, bg=CGE_LIGHT, height=10).pack()
-        self._cmp_prog_label = tk.Label(left, text="", font=("Segoe UI", 8),
-                                        bg=CGE_LIGHT, fg=CGE_MUTED)
-        self._cmp_prog_label.pack(anchor="w")
-        self._cmp_prog = ttk.Progressbar(left, mode="determinate", length=200)
-        self._cmp_prog.pack(fill="x", pady=(2, 0))
-
         # Panel derecho
         right = tk.Frame(body, bg=CGE_LIGHT)
         right.pack(side="left", fill="both", expand=True)
@@ -1328,9 +1320,11 @@ class App(tk.Tk):
 
     def _cmp_set_progress(self, value, maximum, label=""):
         def _do():
-            self._cmp_prog["maximum"] = maximum or 1
-            self._cmp_prog["value"]   = value
-            self._cmp_prog_label.configure(text=label)
+            self._progress.stop()
+            self._progress.configure(mode="determinate")
+            self._progress["maximum"] = maximum or 1
+            self._progress["value"]   = value
+            self._header_subtitle.configure(text=label)
         self.after(0, _do)
 
     def _cmp_thread_procesar(self, seleccionados):
@@ -1397,7 +1391,7 @@ class App(tk.Tk):
                 dur_str    = f"{mins}m {secs}s" if mins else f"{secs}s"
                 self._cmp_log_write(f"\nRESUMEN: OK={total_ok}  ERR={total_err}  ({dur_str})",
                                     "ok" if total_err == 0 else "warn")
-                self._cmp_set_progress(0, 1, "")
+                self._cmp_set_progress(0, 1, "Llenar Comparativos")
                 self.after(0, lambda r=resultados, tok=total_ok, terr=total_err, d=dur_str:
                            self._cmp_show_result_popup(r, tok, terr, d))
             finally:
@@ -1407,6 +1401,7 @@ class App(tk.Tk):
         finally:
             self.after(0, lambda: self._cmp_btn_buscar.configure(state="normal"))
             self.after(0, lambda: self._cmp_btn_procesar.configure(state="normal"))
+            self.after(0, lambda: self._header_subtitle.configure(text="Llenar Comparativos"))
 
     # ── CRUCE DE NOTAS ────────────────────────────────────────────────────────
     def _build_view_cruce_notas(self):
