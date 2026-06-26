@@ -629,17 +629,7 @@ def build_write_values(tgt_cells, src_cells, dest_col, src_col):
                 unmapped.append(f"fila {i+1}:{tag}")
             vals.append(None); continue
         sv = get_cv(src_cells[src_row], src_col)
-        if isinstance(sv, (int, float)):
-            # Solo escribir 0 si la fila tiene agrupador (0 legítimo de cuenta)
-            # Filas de encabezado/subtotal sin agrupador → saltar el 0
-            has_bpc = (bpc_col is not None and
-                       get_cv(row_t, bpc_col) not in (None, ""))
-            if sv != 0 or has_bpc:
-                vals.append(sv)
-            else:
-                vals.append(None)
-        else:
-            vals.append(None)
+        vals.append(sv if isinstance(sv, (int, float)) else None)
     if unmapped:
         print(f"      [sin mapeo] {', '.join(unmapped[:8])}"
               + (" ..." if len(unmapped) > 8 else ""))
