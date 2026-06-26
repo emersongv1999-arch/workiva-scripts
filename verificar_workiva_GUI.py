@@ -1245,6 +1245,7 @@ class App(tk.Tk):
                       "bold" if msg.startswith("===") or msg.startswith("───") else None
                 self._cmp_log_write(msg, tag)
             builtins.print = _gui_print
+            t0 = time.time()
             try:
                 mod = types.ModuleType("llenar_comp")
                 mod.session   = self._cmp_session
@@ -1256,8 +1257,20 @@ class App(tk.Tk):
                     ok, err = mod.process_file(t, self._cmp_allfiles)
                     total_ok  += ok
                     total_err += err
-                self._cmp_log_write(f"\nRESUMEN: OK={total_ok}  ERR={total_err}",
+
+                elapsed  = time.time() - t0
+                mins, secs = divmod(int(elapsed), 60)
+                dur_str  = f"{mins}m {secs}s" if mins else f"{secs}s"
+                nombres  = "\n".join(f"  • {t['name']}" for t in seleccionados)
+                resumen  = (f"Archivos procesados:\n{nombres}\n\n"
+                            f"OK: {total_ok}    ERR: {total_err}\n"
+                            f"Tiempo: {dur_str}")
+                self._cmp_log_write(f"\nRESUMEN: OK={total_ok}  ERR={total_err}  ({dur_str})",
                                     "ok" if total_err == 0 else "warn")
+                if total_err == 0:
+                    self.after(0, lambda r=resumen: messagebox.showinfo("Completado sin errores", r))
+                else:
+                    self.after(0, lambda r=resumen: messagebox.showwarning(f"Completado con {total_err} ERR", r))
             finally:
                 builtins.print = _orig_print
         except Exception as e:
