@@ -1178,6 +1178,11 @@ class App(tk.Tk):
         mod = importlib.util.module_from_spec(spec)
         sys.modules["workiva_mcp"] = mod
         spec.loader.exec_module(mod)
+        # Inyectar credenciales desde la app (evita depender del .env)
+        mod.CLIENT_ID     = CLIENT_ID
+        mod.CLIENT_SECRET = CLIENT_SECRET
+        mod.WORKSPACE_ID  = WORKSPACE_ID
+        mod._wk._token    = ""  # forzar renovación de token con nuevas credenciales
         return mod
 
     def _cmp_thread_buscar(self, mes, anio):
