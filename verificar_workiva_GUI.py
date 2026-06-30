@@ -1190,6 +1190,7 @@ class App(tk.Tk):
             import asyncio, re as _re
             mcp = self._cmp_load_mcp()
 
+            mcp._wk._client = None  # nuevo cliente para este event loop
             all_files = asyncio.run(mcp._load_all_files())
 
             pattern = _re.compile(rf"^E\d+_IND_{mes}[-_]{anio}_Base Notas .+$")
@@ -1239,8 +1240,14 @@ class App(tk.Tk):
                     # Preview (dry_run) para confirmar que hay columnas que llenar
                     params_dry = mcp.FillComparativesInput(
                         spreadsheet_id=t["id"], dry_run=True)
-                    preview = json.loads(
-                        asyncio.run(mcp.workiva_fill_comparatives(params_dry)))
+                    mcp._wk._client = None  # nuevo cliente para este event loop
+                    raw_preview = asyncio.run(mcp.workiva_fill_comparatives(params_dry))
+                    try:
+                        preview = json.loads(raw_preview)
+                    except Exception:
+                        self._cmp_log_write(f"  ERROR API: {raw_preview}", "err")
+                        total_err += 1
+                        continue
 
                     if "warning" in preview:
                         self._cmp_log_write(f"  ⚠ {preview['warning']}", "warn")
@@ -1261,8 +1268,14 @@ class App(tk.Tk):
                     # Escritura real
                     params_real = mcp.FillComparativesInput(
                         spreadsheet_id=t["id"], dry_run=False)
-                    result = json.loads(
-                        asyncio.run(mcp.workiva_fill_comparatives(params_real)))
+                    mcp._wk._client = None  # nuevo cliente para este event loop
+                    raw_result = asyncio.run(mcp.workiva_fill_comparatives(params_real))
+                    try:
+                        result = json.loads(raw_result)
+                    except Exception:
+                        self._cmp_log_write(f"  ERROR API: {raw_result}", "err")
+                        total_err += 1
+                        continue
 
                     if "warning" in result:
                         self._cmp_log_write(f"  ⚠ {result['warning']}", "warn")
