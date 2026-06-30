@@ -1170,10 +1170,13 @@ class App(tk.Tk):
                          args=(mes, anio), daemon=True).start()
 
     def _cmp_load_mcp(self):
-        import importlib.util
+        import importlib.util, sys
+        if "workiva_mcp" in sys.modules:
+            return sys.modules["workiva_mcp"]
         mcp_path = str(Path(__file__).parent / "workiva_mcp.py")
         spec = importlib.util.spec_from_file_location("workiva_mcp", mcp_path)
         mod = importlib.util.module_from_spec(spec)
+        sys.modules["workiva_mcp"] = mod
         spec.loader.exec_module(mod)
         return mod
 
