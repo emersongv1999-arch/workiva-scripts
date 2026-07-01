@@ -820,9 +820,10 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             }
 
             for dest_col in comp_cols:
-                # Solo mes 03 llena comparativo de balance (regla 11)
-                if mm != "03":
-                    sheet_report["skipped_reason"] = "Solo se llena comparativo balance en mes 03"
+                # A.- y B.- (balance) solo se llenan en cierre de marzo
+                is_balance_sheet = re.match(r"^[AB]\.-", sname)
+                if is_balance_sheet and mm != "03":
+                    sheet_report["skipped_reason"] = "Hoja de balance: solo se llena en mes 03"
                     continue
 
                 # Detectar columna fuente por offset
