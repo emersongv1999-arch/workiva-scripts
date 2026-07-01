@@ -793,6 +793,24 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             if not comp_cols:
                 continue
 
+            # Verificar idempotencia: si la columna comparativa ya tiene valores
+            # numéricos en filas de datos (saltando las 6 primeras), saltar la hoja.
+            # En dry_run se muestra igual para que el reporte sea completo.
+            if not params.dry_run:
+                already_filled = False
+                for dest_col in comp_cols:
+                    for row in tgt_cells[6:]:
+                        if dest_col < len(row):
+                            v = _cv(row[dest_col])
+                            if isinstance(v, (int, float)) and v != 0:
+                                already_filled = True
+                                break
+                    if already_filled:
+                        break
+                if already_filled:
+                    report["sheets_skipped"].append(f"{sname} (ya llenada)")
+                    continue
+
             src_cells = await _read_sheet_cells(src_balance_id, src_sheets[sname])
 
             sheet_report: dict[str, Any] = {
