@@ -793,29 +793,48 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             if not comp_cols:
                 continue
 
-            # Verificar idempotencia: si la columna comparativa ya tiene valores
-            # numéricos en filas de datos (saltando las 6 primeras), saltar la hoja.
-            # En dry_run se muestra igual para que el reporte sea completo.
-            if not params.dry_run:
-                already_filled = False
+            # ── DRY-RUN: reporte rápido sin leer celdas fuente ───────────────
+            if params.dry_run:
+                is_balance_sheet = re.match(r"^[AB]\.-", sname)
+                sheet_report: dict[str, Any] = {
+                    "sheet":       sname,
+                    "comp_cols":   [_col_letter(c) for c in comp_cols],
+                    "cols_written": 0,
+                }
                 for dest_col in comp_cols:
-                    for row in tgt_cells[6:]:
-                        if dest_col < len(row):
-                            v = _cv(row[dest_col])
-                            if isinstance(v, (int, float)) and v != 0:
-                                already_filled = True
-                                break
-                    if already_filled:
-                        break
+                    if is_balance_sheet and mm != "03":
+                        sheet_report["skipped_reason"] = "Hoja de balance: solo se llena en mes 03"
+                        continue
+                    src_col = dest_col - 2
+                    if src_col < 0:
+                        continue
+                    sheet_report["cols_written"] += 1
+                    report["total_cols_written"] += 1
+                report["sheets_processed"].append(sheet_report)
+                continue
+
+            # ── ESCRITURA REAL ────────────────────────────────────────────────
+
+            # Idempotencia: saltar si la columna comparativa ya tiene valores
+            already_filled = False
+            for dest_col in comp_cols:
+                for row in tgt_cells[6:]:
+                    if dest_col < len(row):
+                        v = _cv(row[dest_col])
+                        if isinstance(v, (int, float)) and v != 0:
+                            already_filled = True
+                            break
                 if already_filled:
-                    report["sheets_skipped"].append(f"{sname} (ya llenada)")
-                    continue
+                    break
+            if already_filled:
+                report["sheets_skipped"].append(f"{sname} (ya llenada)")
+                continue
 
             src_cells = await _read_sheet_cells(src_balance_id, src_sheets[sname])
 
-            sheet_report: dict[str, Any] = {
-                "sheet": sname,
-                "comp_cols": [_col_letter(c) for c in comp_cols],
+            sheet_report = {
+                "sheet":       sname,
+                "comp_cols":   [_col_letter(c) for c in comp_cols],
                 "cols_written": 0,
             }
 
@@ -826,12 +845,10 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     sheet_report["skipped_reason"] = "Hoja de balance: solo se llena en mes 03"
                     continue
 
-                # Detectar columna fuente por offset
-                src_col = dest_col - 2  # offset típico
+                src_col = dest_col - 2
                 if src_col < 0:
                     continue
 
-                # Construir valores a escribir
                 write_vals: list[Any] = []
                 for i, row_t in enumerate(tgt_cells):
                     if _is_formula(row_t, dest_col):
@@ -845,14 +862,10 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 if n == 0:
                     continue
 
-                if not params.dry_run:
-                    ok = await _write_column(
-                        params.spreadsheet_id, sid_t, dest_col, write_vals
-                    )
-                    sheet_report["cols_written"] += (1 if ok else 0)
-                else:
-                    sheet_report["cols_written"] += 1  # simulado
-
+                ok = await _write_column(
+                    params.spreadsheet_id, sid_t, dest_col, write_vals
+                )
+                sheet_report["cols_written"] += (1 if ok else 0)
                 report["total_cols_written"] += 1
 
             report["sheets_processed"].append(sheet_report)
