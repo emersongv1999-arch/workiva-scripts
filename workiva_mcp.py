@@ -139,6 +139,57 @@ def _strip_prefix(name: str) -> str:
     return _PREFIX_RE.sub("", name or "").strip()
 
 
+_MESES = {
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+    "julio": 7, "agosto": 8, "septiembre": 9, "setiembre": 9, "octubre": 10,
+    "noviembre": 11, "diciembre": 12,
+}
+
+
+def _parse_fecha(s: Any) -> str | None:
+    """Normaliza una fecha a 'YYYY-MM-DD'. Acepta ISO, DD-MM-YYYY, DD/MM/YYYY
+    y texto en español ('31 de diciembre de 2025')."""
+    t = str(s or "").strip().lower()
+    if not t:
+        return None
+    m = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", t)
+    if m:
+        y, mo, d = m.groups()
+        return f"{y}-{int(mo):02d}-{int(d):02d}"
+    m = re.search(r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})", t)
+    if m:
+        d, mo, y = m.groups()
+        if 1 <= int(mo) <= 12:
+            return f"{y}-{int(mo):02d}-{int(d):02d}"
+    m = re.search(r"(\d{1,2})\s+de\s+([a-záéíóúñ]+)\s+(?:de\s+|del\s+)?(\d{4})", t)
+    if m:
+        d, mes_txt, y = m.groups()
+        mo = _MESES.get(mes_txt)
+        if mo:
+            return f"{y}-{mo:02d}-{int(d):02d}"
+    return None
+
+
+def _kw_variants(iso: str, raw: Any = None) -> list[str]:
+    """Formas en que una fecha puede aparecer en un encabezado de columna."""
+    y, mo, d = iso.split("-")
+    mes_nombre = next(k for k, v in _MESES.items() if v == int(mo))
+    variants = {
+        iso,
+        f"{d}-{mo}-{y}", f"{int(d)}-{int(mo)}-{y}",
+        f"{d}/{mo}/{y}", f"{int(d)}/{int(mo)}/{y}",
+        f"{d}.{mo}.{y}",
+        f"{int(d)} de {mes_nombre} de {y}",
+        f"{int(d)} de {mes_nombre} del {y}",
+        f"{mes_nombre} {y}", f"{mes_nombre} de {y}",
+        f"{mes_nombre[:3]}-{y}", f"{mes_nombre[:3]}-{y[2:]}",
+        f"{mes_nombre[:3]}.{y[2:]}", f"{mes_nombre[:3]} {y}",
+    }
+    if raw:
+        variants.add(str(raw).strip())
+    return [v.lower() for v in variants if v]
+
+
 def _col_letter(idx: int) -> str:
     if idx < 26:
         return chr(65 + idx)
@@ -732,9 +783,14 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             ("prev_period_end", "prior_prev_period_end"),
         ]
 
-        def _row_has_content(row: list) -> bool:
-            return any(str(_cv(c) or "").strip()
-                       for c in row if isinstance(c, dict))
+        def _row_dates(row: list) -> list[str]:
+            """Fechas (ISO) encontradas en las primeras columnas de la fila."""
+            found = []
+            for c in row[:10]:
+                iso = _parse_fecha(_cv(c)) if isinstance(c, dict) else None
+                if iso:
+                    found.append(iso)
+            return found
 
         anchor = 12  # fallback: layout clásico
         for idx, row in enumerate(bases_cells[:40]):
@@ -744,18 +800,17 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 anchor = idx
                 break
 
+        # Una fila solo consume una clave del bloque si contiene fechas;
+        # filas en blanco o de puro texto (encabezados) se saltan.
         row_idx, key_idx = anchor, 0
-        while key_idx < len(block_keys) and row_idx < len(bases_cells):
-            row = bases_cells[row_idx]
-            if not _row_has_content(row):
-                row_idx += 1
-                continue
-            key_c, key_p = block_keys[key_idx]
-            for col_idx, key in [(3, key_c), (5, key_p)]:
-                cv = _cv(row[col_idx]) if col_idx < len(row) else None
-                if cv:
-                    bases[key] = str(cv)
-            key_idx += 1
+        while key_idx < len(block_keys) and row_idx < min(len(bases_cells), anchor + 20):
+            fechas = _row_dates(bases_cells[row_idx])
+            if fechas:
+                key_c, key_p = block_keys[key_idx]
+                bases[key_c] = fechas[0]
+                if len(fechas) > 1:
+                    bases[key_p] = fechas[1]
+                key_idx += 1
             row_idx += 1
 
         curr_end  = bases.get("current_end", "?")
@@ -794,6 +849,26 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
 
         code, tipo, mm, yyyy, suffix = m.groups()
 
+        # El balance comparativo es siempre diciembre del año anterior al del
+        # nombre del archivo. Si Bases no entregó un prior_end válido (layouts
+        # de plantilla distintos, fechas en texto, etc.), se deriva del nombre.
+        expected_prior = f"{int(yyyy) - 1}-12-31"
+        prior_iso = _parse_fecha(bases.get("prior_end"))
+        if not prior_iso or not prior_iso.startswith(f"{int(yyyy) - 1}-12"):
+            report["prior_end_nota"] = (
+                f"prior_end de Bases era '{bases.get('prior_end', '(vacío)')}'; "
+                f"se usa {expected_prior} derivado del nombre del archivo."
+            )
+            prior_iso = expected_prior
+        prior_end = prior_iso
+        report["prior_end"] = prior_end
+
+        if curr_end == "?":
+            import calendar
+            last_day = calendar.monthrange(int(yyyy), int(mm))[1]
+            curr_end = f"{yyyy}-{mm}-{last_day:02d}"
+            report["current_end"] = f"{curr_end} (derivado del nombre)"
+
         def _date_parts(d: str) -> tuple[str, str]:
             parts = str(d).split("-")
             return (parts[1], parts[0]) if len(parts) >= 2 else ("", "")
@@ -807,16 +882,15 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
         # Buscar fuente balance (prior_end = dic del año anterior)
         src_balance_id: str | None = None
         candidatos: list[str] = []
-        if bases.get("prior_end"):
-            mm_b, yy_b = _date_parts(bases["prior_end"])
-            for sep in ["-", "_"]:
-                cand = f"{code}_{tipo}_{mm_b}{sep}{yy_b}_{suffix}"
-                candidatos.append(cand)
-                hit = norm_files.get(cand.lower())
-                if hit:
-                    report["source_balance"] = hit[0]
-                    src_balance_id = hit[1]
-                    break
+        mm_b, yy_b = _date_parts(prior_end)
+        for sep in ["-", "_"]:
+            cand = f"{code}_{tipo}_{mm_b}{sep}{yy_b}_{suffix}"
+            candidatos.append(cand)
+            hit = norm_files.get(cand.lower())
+            if hit:
+                report["source_balance"] = hit[0]
+                src_balance_id = hit[1]
+                break
 
         if not src_balance_id:
             # Listar archivos del mismo código para facilitar el diagnóstico
@@ -824,9 +898,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                          if _strip_prefix(n).upper().startswith(f"{code.upper()}_")]
             report["warning"] = (
                 "No se encontró el archivo fuente (balance comparativo). "
-                f"prior_end leído de Bases: '{bases.get('prior_end', '(vacío)')}'. "
-                f"Nombres buscados: {candidatos or '(ninguno: falta prior_end)'}. "
-                f"Archivos existentes de {code}: {parecidos[:10]}"
+                f"prior_end usado: '{prior_end}'. "
+                f"Nombres buscados: {candidatos}. "
+                f"Archivos existentes de {code}: {sorted(parecidos)[:40]}"
             )
             return json.dumps(report, indent=2, ensure_ascii=False)
 
@@ -856,15 +930,17 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 report["sheets_skipped"].append(f"{sname} (vacía)")
                 continue
 
-            # Detectar columnas con prior_end en encabezado
+            # Detectar columnas con prior_end en encabezado, aceptando la
+            # fecha en cualquier formato habitual (ISO, DD-MM-YYYY, texto
+            # en español, 'dic-25', etc.)
             comp_cols: list[int] = []
-            kw = str(prior_end).lower() if prior_end else ""
+            kws = _kw_variants(prior_end, bases.get("prior_end"))
             for row in tgt_cells[:8]:
                 for j, cell in enumerate(row):
                     if isinstance(cell, dict):
                         for val_key in ["calculatedValue", "value"]:
                             v = str(cell.get(val_key, "") or "").lower()
-                            if kw and kw in v and j not in comp_cols:
+                            if v and j not in comp_cols and any(k in v for k in kws):
                                 comp_cols.append(j)
 
             if not comp_cols:
