@@ -806,18 +806,28 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
 
         # Buscar fuente balance (prior_end = dic del año anterior)
         src_balance_id: str | None = None
+        candidatos: list[str] = []
         if bases.get("prior_end"):
             mm_b, yy_b = _date_parts(bases["prior_end"])
             for sep in ["-", "_"]:
-                cand = f"{code}_{tipo}_{mm_b}{sep}{yy_b}_{suffix}".lower()
-                hit = norm_files.get(cand)
+                cand = f"{code}_{tipo}_{mm_b}{sep}{yy_b}_{suffix}"
+                candidatos.append(cand)
+                hit = norm_files.get(cand.lower())
                 if hit:
                     report["source_balance"] = hit[0]
                     src_balance_id = hit[1]
                     break
 
         if not src_balance_id:
-            report["warning"] = "No se encontró el archivo fuente (balance comparativo)."
+            # Listar archivos del mismo código para facilitar el diagnóstico
+            parecidos = [n for n in all_files
+                         if _strip_prefix(n).upper().startswith(f"{code.upper()}_")]
+            report["warning"] = (
+                "No se encontró el archivo fuente (balance comparativo). "
+                f"prior_end leído de Bases: '{bases.get('prior_end', '(vacío)')}'. "
+                f"Nombres buscados: {candidatos or '(ninguno: falta prior_end)'}. "
+                f"Archivos existentes de {code}: {parecidos[:10]}"
+            )
             return json.dumps(report, indent=2, ensure_ascii=False)
 
         src_sheets = await _get_sheets(src_balance_id)
