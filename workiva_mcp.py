@@ -873,23 +873,38 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             parts = str(d).split("-")
             return (parts[1], parts[0]) if len(parts) >= 2 else ("", "")
 
-        # Índice de archivos sin prefijo y sin distinguir mayúsculas,
-        # para que la fuente se encuentre aunque lleve '(CHN)' / '(LC)'
+        # Extraer el prefijo del destino (ej: "(CHN) ", "(LC) ", "")
+        # La fuente debe tener el MISMO prefijo que el destino: son entidades
+        # distintas y no deben mezclarse entre sí.
+        m_prefix = re.match(r"^(\s*\([^)]*\)\s*)", target_name)
+        dest_prefix = m_prefix.group(1) if m_prefix else ""
+
+        # Índice case-insensitive del nombre sin prefijo → (nombre real, id)
         norm_files: dict[str, tuple[str, str]] = {}
         for fname, fid_ in all_files.items():
             norm_files.setdefault(_strip_prefix(fname).lower(), (fname, fid_))
 
-        # Buscar fuente balance (prior_end = dic del año anterior)
+        # Buscar fuente balance con el MISMO prefijo que el destino.
+        # Si no existe con ese prefijo, se intenta sin prefijo como fallback.
         src_balance_id: str | None = None
         candidatos: list[str] = []
         mm_b, yy_b = _date_parts(prior_end)
         for sep in ["-", "_"]:
-            cand = f"{code}_{tipo}_{mm_b}{sep}{yy_b}_{suffix}"
-            candidatos.append(cand)
-            hit = norm_files.get(cand.lower())
-            if hit:
-                report["source_balance"] = hit[0]
+            bare = f"{code}_{tipo}_{mm_b}{sep}{yy_b}_{suffix}"
+            # 1er intento: mismo prefijo que el destino
+            cand_exact = (dest_prefix + bare).strip()
+            candidatos.append(cand_exact)
+            if cand_exact.lower() in {n.lower() for n in all_files}:
+                matched = next(n for n in all_files if n.lower() == cand_exact.lower())
+                src_balance_id = all_files[matched]
+                report["source_balance"] = matched
+                break
+            # 2do intento: sin prefijo (via índice normalizado)
+            hit = norm_files.get(bare.lower())
+            if hit and not dest_prefix:
+                candidatos.append(hit[0])
                 src_balance_id = hit[1]
+                report["source_balance"] = hit[0]
                 break
 
         if not src_balance_id:
