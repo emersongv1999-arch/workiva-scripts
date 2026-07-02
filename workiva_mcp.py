@@ -210,13 +210,27 @@ def _is_formula(row: list, col: int) -> bool:
     return str(c.get("value", "") if isinstance(c, dict) else "").startswith("=")
 
 
+async def _get_json(url: str, attempts: int = 4) -> dict:
+    """GET con reintentos ante rate limits o respuestas no-JSON transitorias."""
+    last_exc: Exception | None = None
+    for k in range(attempts):
+        try:
+            r = await _wk.get(url)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            last_exc = e
+            if k < attempts - 1:
+                await asyncio.sleep(3 * (k + 1))
+    raise last_exc  # type: ignore[misc]
+
+
 async def _get_sheets(ss_id: str) -> dict[str, str]:
     """name → id para todas las hojas de un spreadsheet."""
     result: dict[str, str] = {}
     url = f"{PLATFORM_URL}/spreadsheets/{ss_id}/sheets"
     while url:
-        r    = await _wk.get(url)
-        data = r.json()
+        data = await _get_json(url)
         for s in data.get("data", []):
             result[s["name"]] = s["id"]
         url = data.get("@nextLink")
@@ -290,8 +304,7 @@ async def _load_all_files() -> dict[str, str]:
     result: dict[str, str] = {}
     url = f"{PLATFORM_URL}/files?workspaceId={WORKSPACE_ID}&limit=100"
     while url:
-        r    = await _wk.get(url)
-        data = r.json()
+        data = await _get_json(url)
         for f in data.get("data", []):
             result[f["name"]] = f["id"]
         url = data.get("@nextLink")
@@ -884,54 +897,80 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
         for fname, fid_ in all_files.items():
             norm_files.setdefault(_strip_prefix(fname).lower(), (fname, fid_))
 
-        # Buscar fuente balance con el MISMO prefijo que el destino.
-        # Si no existe con ese prefijo, se intenta sin prefijo como fallback.
-        src_balance_id: str | None = None
-        candidatos: list[str] = []
+        # ── Resolución de archivos fuente por período ─────────────────────
+        # Cada columna comparativa puede apuntar a un período distinto:
+        #   · balance y notas de saldo → dic del año anterior (12-2025)
+        #   · EERR y notas de resultado → mismo mes del año anterior (09-2025)
+        #   · períodos intermedios → 06-2025, etc.
+        # La fuente debe tener el MISMO prefijo que el destino.
+        lower_files = {n.lower(): n for n in all_files}
+        _src_cache: dict[str, Any] = {}
+
+        async def _resolve_source(mm_s: str, yy_s: str):
+            """(mm, yyyy) → {'name','id','sheets'} de la fuente, o None."""
+            key = f"{mm_s}-{yy_s}"
+            if key in _src_cache:
+                return _src_cache[key]
+            found = None
+            for sep in ["-", "_"]:
+                bare = f"{code}_{tipo}_{mm_s}{sep}{yy_s}_{suffix}"
+                cand = (dest_prefix + bare).strip().lower()
+                if cand in lower_files:
+                    name = lower_files[cand]
+                    found = {"name": name, "id": all_files[name]}
+                    break
+                if not dest_prefix:
+                    hit = norm_files.get(bare.lower())
+                    if hit:
+                        found = {"name": hit[0], "id": hit[1]}
+                        break
+            if found:
+                found["sheets"] = await _get_sheets(found["id"])
+            _src_cache[key] = found
+            report["sources"][key] = found["name"] if found else None
+            return found
+
+        report["sources"] = {}
+        prior_year = str(int(yyyy) - 1)
+        _BLOQUE_RE = re.compile(r"movimiento\s+(?:del\s+)?a[ñn]o\s+(\d{4})",
+                                re.IGNORECASE)
+
+        def _year_markers(cells: list) -> list[tuple[int, str]]:
+            """Filas que abren un bloque anual: [(fila, año), ...]."""
+            out = []
+            for ri, row in enumerate(cells):
+                for cell in row[:4]:
+                    if isinstance(cell, dict):
+                        m_b = _BLOQUE_RE.search(str(_cv(cell) or ""))
+                        if m_b:
+                            out.append((ri, m_b.group(1)))
+                            break
+            return out
+
+        # Fuente balance (dic año anterior): la principal, informativa
         mm_b, yy_b = _date_parts(prior_end)
-        for sep in ["-", "_"]:
-            bare = f"{code}_{tipo}_{mm_b}{sep}{yy_b}_{suffix}"
-            # 1er intento: mismo prefijo que el destino
-            cand_exact = (dest_prefix + bare).strip()
-            candidatos.append(cand_exact)
-            if cand_exact.lower() in {n.lower() for n in all_files}:
-                matched = next(n for n in all_files if n.lower() == cand_exact.lower())
-                src_balance_id = all_files[matched]
-                report["source_balance"] = matched
-                break
-            # 2do intento: sin prefijo (via índice normalizado)
-            hit = norm_files.get(bare.lower())
-            if hit and not dest_prefix:
-                candidatos.append(hit[0])
-                src_balance_id = hit[1]
-                report["source_balance"] = hit[0]
-                break
-
-        if not src_balance_id:
-            # Listar archivos del mismo código para facilitar el diagnóstico
-            parecidos = [n for n in all_files
-                         if _strip_prefix(n).upper().startswith(f"{code.upper()}_")]
-            report["warning"] = (
-                "No se encontró el archivo fuente (balance comparativo). "
-                f"prior_end usado: '{prior_end}'. "
-                f"Nombres buscados: {candidatos}. "
-                f"Archivos existentes de {code}: {sorted(parecidos)[:40]}"
-            )
-            return json.dumps(report, indent=2, ensure_ascii=False)
-
-        src_sheets = await _get_sheets(src_balance_id)
+        src_balance = await _resolve_source(mm_b, yy_b)
+        if src_balance:
+            report["source_balance"] = src_balance["name"]
 
         # 4. Por cada hoja del destino, detectar y llenar columnas comparativas.
         # Cada hoja se lee y escribe de inmediato (commit por hoja): si algo
         # falla a mitad de camino, lo ya escrito persiste y una nueva corrida
         # retoma solo lo pendiente gracias a la idempotencia por columna.
+        #
+        # Reglas por tipo de hoja (derivadas de la estructura real de los
+        # archivos Base Notas):
+        #   1. Columnas con fecha del año anterior en el encabezado → se
+        #      llenan desde el archivo del período de esa fecha (12-2025 para
+        #      balance, 09-2025 / 06-2025 para EERR), columna fuente = -2.
+        #   2. A.- y B.- (balance) solo se llenan en cierres de marzo.
+        #   3. Hojas de bloques anuales ("Movimiento año YYYY", ej. hoja 60):
+        #      el bloque del año anterior se copia desde el archivo de
+        #      diciembre del año anterior, donde ese movimiento es el bloque
+        #      del año en curso (offset de filas, mismas columnas).
         for sname, sid_t in tgt_sheets.items():
             if sname in SKIP_SHEETS:
                 report["sheets_skipped"].append(sname)
-                continue
-
-            if sname not in src_sheets:
-                report["sheets_skipped"].append(f"{sname} (no en fuente)")
                 continue
 
             try:
@@ -945,106 +984,220 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 report["sheets_skipped"].append(f"{sname} (vacía)")
                 continue
 
-            # Detectar columnas con prior_end en encabezado, aceptando la
-            # fecha en cualquier formato habitual (ISO, DD-MM-YYYY, texto
-            # en español, 'dic-25', etc.)
-            comp_cols: list[int] = []
-            kws = _kw_variants(prior_end, bases.get("prior_end"))
+            # Fecha fin de cada columna: la mayor fecha parseable de sus
+            # encabezados (una columna del/al tiene dos fechas; manda el fin).
+            col_dates: dict[int, str] = {}
             for row in tgt_cells[:8]:
                 for j, cell in enumerate(row):
                     if isinstance(cell, dict):
-                        for val_key in ["calculatedValue", "value"]:
-                            v = str(cell.get(val_key, "") or "").lower()
-                            if v and j not in comp_cols and any(k in v for k in kws):
-                                comp_cols.append(j)
+                        for val_key in ("calculatedValue", "value"):
+                            iso = _parse_fecha(cell.get(val_key))
+                            if iso:
+                                if j not in col_dates or iso > col_dates[j]:
+                                    col_dates[j] = iso
+                                break
 
-            if not comp_cols:
-                continue
+            # Comparativas = columnas cuya fecha fin es del año anterior
+            comp_cols: dict[int, str] = {
+                j: d for j, d in col_dates.items() if d[:4] == prior_year
+            }
 
-            # ── DRY-RUN: reporte rápido sin leer celdas fuente ───────────────
-            if params.dry_run:
-                is_balance_sheet = re.match(r"^[AB]\.-", sname)
+            is_balance_sheet = re.match(r"^[AB]\.-", sname)
+
+            # ── REGLA 1 y 2: columnas comparativas por fecha ─────────────────
+            if comp_cols:
+                def _col_filled(col: int) -> bool:
+                    for row in tgt_cells[6:]:
+                        if col < len(row):
+                            v = _cv(row[col])
+                            if isinstance(v, (int, float)) and v != 0:
+                                return True
+                    return False
+
                 sheet_report: dict[str, Any] = {
-                    "sheet":       sname,
-                    "comp_cols":   [_col_letter(c) for c in comp_cols],
+                    "sheet":     sname,
+                    "comp_cols": {_col_letter(c): d
+                                  for c, d in sorted(comp_cols.items())},
                     "cols_written": 0,
+                    "cols_failed":  [],
+                    "cols_skipped": [],
                 }
-                for dest_col in comp_cols:
+                src_data_cache: dict[str, Any] = {}
+
+                for dest_col, d_iso in sorted(comp_cols.items()):
+                    letra = _col_letter(dest_col)
                     if is_balance_sheet and mm != "03":
-                        sheet_report["skipped_reason"] = "Hoja de balance: solo se llena en mes 03"
+                        sheet_report["skipped_reason"] = (
+                            "Hoja de balance: solo se llena en mes 03")
                         continue
                     src_col = dest_col - 2
                     if src_col < 0:
                         continue
-                    sheet_report["cols_written"] += 1
-                    report["total_cols_written"] += 1
+
+                    mm_s, yy_s = _date_parts(d_iso)
+                    src = await _resolve_source(mm_s, yy_s)
+                    if not src:
+                        sheet_report["cols_skipped"].append(
+                            f"{letra} (sin archivo fuente {mm_s}-{yy_s})")
+                        continue
+                    if sname not in src["sheets"]:
+                        sheet_report["cols_skipped"].append(
+                            f"{letra} (hoja no está en fuente {mm_s}-{yy_s})")
+                        continue
+
+                    if params.dry_run:
+                        sheet_report["cols_written"] += 1
+                        report["total_cols_written"] += 1
+                        continue
+
+                    if _col_filled(dest_col):
+                        sheet_report["cols_skipped"].append(f"{letra} (ya llenada)")
+                        continue
+
+                    key = f"{mm_s}-{yy_s}"
+                    if key not in src_data_cache:
+                        try:
+                            src_data_cache[key] = await _read_sheet_cells_retry(
+                                src["id"], src["sheets"][sname])
+                        except Exception as e:
+                            src_data_cache[key] = None
+                            report["sheets_failed"].append(
+                                {"sheet": sname,
+                                 "error": f"fuente {key}: {_handle_error(e)}"})
+                    src_cells = src_data_cache[key]
+                    if src_cells is None:
+                        sheet_report["cols_failed"].append(letra)
+                        report["total_cols_failed"] += 1
+                        continue
+
+                    write_vals: list[Any] = []
+                    for i, row_t in enumerate(tgt_cells):
+                        if _is_formula(row_t, dest_col):
+                            write_vals.append(None)
+                            continue
+                        row_s = src_cells[i] if i < len(src_cells) else []
+                        sv    = _cv(row_s[src_col]) if src_col < len(row_s) else None
+                        write_vals.append(sv if isinstance(sv, (int, float)) else None)
+
+                    if not any(v is not None for v in write_vals):
+                        continue
+
+                    try:
+                        ok = await _write_column(
+                            params.spreadsheet_id, sid_t, dest_col, write_vals
+                        )
+                    except Exception:
+                        ok = False
+                    if ok:
+                        sheet_report["cols_written"] += 1
+                        report["total_cols_written"] += 1
+                    else:
+                        sheet_report["cols_failed"].append(letra)
+                        report["total_cols_failed"] += 1
+
+                for k in ("cols_failed", "cols_skipped"):
+                    if not sheet_report[k]:
+                        del sheet_report[k]
                 report["sheets_processed"].append(sheet_report)
                 continue
 
-            # ── ESCRITURA REAL ────────────────────────────────────────────────
+            # ── REGLA 3: hojas de bloques anuales (ej. 60.- activo fijo) ────
+            markers = _year_markers(tgt_cells)
+            dest_marker = next(((ri, y) for ri, y in markers
+                                if y == prior_year), None)
+            if not dest_marker:
+                continue  # hoja sin comparativos detectables
 
-            # Idempotencia POR COLUMNA: se salta solo cada columna que ya
-            # tiene valores; las demás columnas de la hoja sí se llenan
-            # (una corrida interrumpida a media hoja es reanudable).
-            def _col_filled(col: int) -> bool:
-                for row in tgt_cells[6:]:
-                    if col < len(row):
-                        v = _cv(row[col])
-                        if isinstance(v, (int, float)) and v != 0:
-                            return True
-                return False
-
-            pending_cols = [c for c in comp_cols if not _col_filled(c)]
-            if not pending_cols:
-                report["sheets_skipped"].append(f"{sname} (ya llenada)")
+            src = await _resolve_source("12", prior_year)
+            if not src or sname not in src["sheets"]:
+                report["sheets_skipped"].append(
+                    f"{sname} (bloque {prior_year}: sin fuente 12-{prior_year})")
                 continue
-
             try:
-                src_cells = await _read_sheet_cells_retry(src_balance_id, src_sheets[sname])
+                src_cells = await _read_sheet_cells_retry(
+                    src["id"], src["sheets"][sname])
             except Exception as e:
                 report["sheets_failed"].append(
-                    {"sheet": sname, "error": f"fuente: {_handle_error(e)}"}
-                )
+                    {"sheet": sname, "error": f"fuente: {_handle_error(e)}"})
+                continue
+
+            src_markers = _year_markers(src_cells)
+            src_marker = next(((ri, y) for ri, y in src_markers
+                               if y == prior_year), None)
+            if not src_marker:
+                report["sheets_skipped"].append(
+                    f"{sname} (bloque {prior_year} no está en la fuente)")
+                continue
+
+            d0, s0 = dest_marker[0], src_marker[0]
+            d_next = next((ri for ri, _ in markers if ri > d0), len(tgt_cells))
+            s_next = next((ri for ri, _ in src_markers if ri > s0), len(src_cells))
+            blk_len = min(d_next - d0, s_next - s0)
+
+            # Columnas del bloque = las que traen datos numéricos en la fuente
+            blk_cols: set[int] = set()
+            for i in range(blk_len):
+                if s0 + i >= len(src_cells):
+                    break
+                for j, cell in enumerate(src_cells[s0 + i]):
+                    v = _cv(cell)
+                    if isinstance(v, (int, float)) and v != 0:
+                        blk_cols.add(j)
+
+            if not blk_cols:
+                report["sheets_skipped"].append(
+                    f"{sname} (bloque {prior_year} sin datos en fuente)")
                 continue
 
             sheet_report = {
-                "sheet":       sname,
-                "comp_cols":   [_col_letter(c) for c in comp_cols],
+                "sheet":      sname,
+                "bloque_año": prior_year,
+                "filas":      f"{d0 + 1}-{d0 + blk_len}",
                 "cols_written": 0,
                 "cols_failed":  [],
             }
-            if len(pending_cols) < len(comp_cols):
-                sheet_report["cols_already_filled"] = [
-                    _col_letter(c) for c in comp_cols if c not in pending_cols
-                ]
 
-            for dest_col in pending_cols:
-                # A.- y B.- (balance) solo se llenan en cierre de marzo
-                is_balance_sheet = re.match(r"^[AB]\.-", sname)
-                if is_balance_sheet and mm != "03":
-                    sheet_report["skipped_reason"] = "Hoja de balance: solo se llena en mes 03"
-                    continue
+            # Idempotencia: bloque destino ya tiene números (solo celdas
+            # sin fórmula, para no confundir totales calculados)
+            ya_llenado = False
+            for i in range(1, blk_len):
+                if d0 + i >= len(tgt_cells):
+                    break
+                row_d = tgt_cells[d0 + i]
+                for j in blk_cols:
+                    if j < len(row_d) and not _is_formula(row_d, j):
+                        v = _cv(row_d[j])
+                        if isinstance(v, (int, float)) and v != 0:
+                            ya_llenado = True
+                            break
+                if ya_llenado:
+                    break
+            if ya_llenado:
+                report["sheets_skipped"].append(
+                    f"{sname} (bloque {prior_year} ya llenado)")
+                continue
 
-                src_col = dest_col - 2
-                if src_col < 0:
-                    continue
+            if params.dry_run:
+                sheet_report["cols_written"] = len(blk_cols)
+                report["total_cols_written"] += len(blk_cols)
+                report["sheets_processed"].append(sheet_report)
+                continue
 
-                write_vals: list[Any] = []
-                for i, row_t in enumerate(tgt_cells):
-                    if _is_formula(row_t, dest_col):
-                        write_vals.append(None)
+            for j in sorted(blk_cols):
+                vals: list[Any] = []
+                for i in range(blk_len):
+                    row_d = tgt_cells[d0 + i] if d0 + i < len(tgt_cells) else []
+                    if _is_formula(row_d, j):
+                        vals.append(None)
                         continue
-                    row_s = src_cells[i] if i < len(src_cells) else []
-                    sv    = _cv(row_s[src_col]) if src_col < len(row_s) else None
-                    write_vals.append(sv if isinstance(sv, (int, float)) else None)
-
-                n = sum(1 for v in write_vals if v is not None)
-                if n == 0:
+                    row_s = src_cells[s0 + i] if s0 + i < len(src_cells) else []
+                    sv = _cv(row_s[j]) if j < len(row_s) else None
+                    vals.append(sv if isinstance(sv, (int, float)) else None)
+                if not any(v is not None for v in vals):
                     continue
-
                 try:
                     ok = await _write_column(
-                        params.spreadsheet_id, sid_t, dest_col, write_vals
+                        params.spreadsheet_id, sid_t, j, vals, start_row=d0
                     )
                 except Exception:
                     ok = False
@@ -1052,12 +1205,23 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     sheet_report["cols_written"] += 1
                     report["total_cols_written"] += 1
                 else:
-                    sheet_report["cols_failed"].append(_col_letter(dest_col))
+                    sheet_report["cols_failed"].append(_col_letter(j))
                     report["total_cols_failed"] += 1
 
             if not sheet_report["cols_failed"]:
                 del sheet_report["cols_failed"]
             report["sheets_processed"].append(sheet_report)
+
+        # Aviso si no se pudo hacer nada por falta de fuentes
+        if not report["sheets_processed"] and report["total_cols_written"] == 0:
+            faltantes = [k for k, v in report["sources"].items() if v is None]
+            if faltantes:
+                parecidos = [n for n in all_files
+                             if _strip_prefix(n).upper().startswith(f"{code.upper()}_")]
+                report["warning_fuentes"] = (
+                    f"Sin archivo fuente para los períodos {faltantes}. "
+                    f"Archivos existentes de {code}: {sorted(parecidos)[:40]}"
+                )
 
         if params.dry_run:
             report["message"] = (
