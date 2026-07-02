@@ -997,9 +997,12 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                     col_dates[j] = iso
                                 break
 
-            # Comparativas = columnas cuya fecha fin es del año anterior
+            # Comparativas = columnas cuya fecha fin es del año anterior y
+            # es un cierre real (día ≥ 28); fechas sueltas como 01-01 (inicio
+            # de período) o días intermedios no definen columna comparativa.
             comp_cols: dict[int, str] = {
-                j: d for j, d in col_dates.items() if d[:4] == prior_year
+                j: d for j, d in col_dates.items()
+                if d[:4] == prior_year and int(d[8:10]) >= 28
             }
 
             is_balance_sheet = re.match(r"^[AB]\.-", sname)
@@ -1180,6 +1183,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             if params.dry_run:
                 sheet_report["cols_written"] = len(blk_cols)
                 report["total_cols_written"] += len(blk_cols)
+                del sheet_report["cols_failed"]
                 report["sheets_processed"].append(sheet_report)
                 continue
 
