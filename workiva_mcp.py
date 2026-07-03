@@ -353,6 +353,7 @@ async def _write_column(ss_id: str, sid: str, col_idx: int,
     )
     if rp.status_code == 202:
         return await _poll_operation(rp.headers.get("Location", ""))
+    print(f"  [write_column] FALLO {rp.status_code} rng={rng}: {rp.text[:300]}")
     return False
 
 
@@ -1289,7 +1290,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             cell = tgt_cells[dr][ci4] if ci4 < len(tgt_cells[dr]) else None
                             dest_vals4.append(_cv(cell) if isinstance(cell, dict) else None)
                     src_nonnull = [v for v in vals4 if v is not None]
-                    dst_nonnull = [v for v in dest_vals4 if v is not None]
+                    dst_nonnull = [v for v in dest_vals4 if isinstance(v, (int, float))]
                     if src_nonnull and src_nonnull == dst_nonnull:
                         sheet_report4.setdefault("cols_skipped", []).append(
                             f"{_col_letter(ci4)} (ya llenada)")
