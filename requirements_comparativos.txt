@@ -1,0 +1,6 @@
+# Dependencias del validador de comparativos Workiva
+# Instalar con:  pip install -r requirements_comparativos.txt
+mcp>=1.0
+httpx
+python-dotenv
+openpyxl
