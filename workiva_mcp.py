@@ -1186,9 +1186,24 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     else None
                 )
                 period_iso = _parse_fecha(period_val)
+
+                # Fallback: si la celda configurada no tiene fecha (está combinada o
+                # tiene texto/número), escanear columnas A-E del bloque inferior buscando
+                # la fecha más tardía del año anterior. Funciona en todos los templates
+                # donde la fecha está embebida en etiquetas de fila (ej. "al 30 de junio de 2025").
+                if not period_iso:
+                    for dr in range(split_row, min(split_row + 40, len(tgt_cells))):
+                        for ci in range(6):  # columnas A a F
+                            cell = tgt_cells[dr][ci] if ci < len(tgt_cells[dr]) else None
+                            iso = _parse_fecha(_cv(cell) if isinstance(cell, dict) else None)
+                            if iso and iso[:4] == prior_year:
+                                if period_iso is None or iso > period_iso:
+                                    period_iso = iso
+
                 if not period_iso:
                     report["sheets_skipped"].append(
-                        f"{sname} (bloque doble: celda {period_cell}='{period_val}' no es fecha válida)")
+                        f"{sname} (bloque doble: no se encontró fecha del año {prior_year} "
+                        f"en celda {period_cell} ni en primeras filas del bloque inferior)")
                     continue
 
                 mm_s, yy_s = _date_parts(period_iso)
