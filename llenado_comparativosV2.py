@@ -34,6 +34,62 @@ import time
 from pathlib import Path
 
 
+MES_POR_TRIMESTRE = {
+    "Q1": "03", "Q2": "06", "Q3": "09", "Q4": "12",
+    "1": "03", "2": "06", "3": "09", "4": "12",
+    "03": "03", "06": "06", "09": "09", "12": "12",
+}
+
+
+# ── Modo interactivo (doble clic en Windows) ──────────────────────────────────
+
+def _pedir(texto: str, validar, default: str | None = None) -> str:
+    while True:
+        v = input(texto)
+        for bom in (chr(0xFEFF), chr(0xEF) + chr(0xBB) + chr(0xBF)):
+            v = v.removeprefix(bom)
+        v = v.strip()
+        if not v and default is not None:
+            return default
+        if validar(v):
+            return v
+        print("   Valor no válido, intenta de nuevo.")
+
+
+def pedir_opciones() -> tuple[str, str, bool, str | None, int]:
+    """Menú interactivo para cuando se ejecuta sin argumentos (doble clic)."""
+    print("=== Llenado de Comparativos V2 — modo interactivo ===\n")
+    mes_raw = _pedir(
+        "Trimestre o mes  (Q1/Q2/Q3/Q4  o  03/06/09/12): ",
+        lambda v: v.upper() in MES_POR_TRIMESTRE,
+    )
+    mes = MES_POR_TRIMESTRE[mes_raw.upper()]
+    anio = _pedir(
+        "Año (ej 2026): ",
+        lambda v: re.fullmatch(r"\d{4}", v) is not None,
+    )
+    modo = _pedir(
+        "Modo  [1] DRY-RUN (simulación)  [2] ESCRITURA REAL  (Enter = DRY-RUN): ",
+        lambda v: v in ("1", "2"),
+        default="1",
+    )
+    dry_run = (modo == "1")
+    solo_raw = _pedir(
+        "Sociedad específica (ej E215) o Enter para TODAS: ",
+        lambda v: True,
+        default="",
+    )
+    solo = solo_raw.strip() or None
+    lote_raw = _pedir(
+        "Hojas por lote (Enter = 50): ",
+        lambda v: v.isdigit() and 1 <= int(v) <= 100,
+        default="50",
+    )
+    lote = int(lote_raw)
+    print()
+    return mes, anio, dry_run, solo, lote
+
+
 # ── Cargar workiva_mcp desde la misma carpeta ────────────────────────────────
 
 def _load_mcp():
@@ -297,6 +353,18 @@ async def run(mes: str, anio: str, dry_run: bool, solo: str | None, lote: int) -
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
+    # Sin argumentos → modo interactivo (doble clic en Windows)
+    if len(sys.argv) == 1:
+        try:
+            mes, anio, dry_run, solo, lote = pedir_opciones()
+        except KeyboardInterrupt:
+            print("\nCancelado.")
+            input("\nPresiona Enter para cerrar...")
+            sys.exit(1)
+        codigo = asyncio.run(run(mes=mes, anio=anio, dry_run=dry_run, solo=solo, lote=lote))
+        input("\nPresiona Enter para cerrar...")
+        sys.exit(codigo)
+
     parser = argparse.ArgumentParser(
         description="Llena comparativos de todos los IND de un período (paginación completa)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -322,13 +390,18 @@ def main():
 
     lote = max(1, min(args.lote, 100))
 
-    sys.exit(asyncio.run(run(
-        mes     = args.mes.strip().zfill(2),
-        anio    = anio,
-        dry_run = args.dry_run,
-        solo    = args.solo,
-        lote    = lote,
-    )))
+    try:
+        codigo = asyncio.run(run(
+            mes     = args.mes.strip().zfill(2),
+            anio    = anio,
+            dry_run = args.dry_run,
+            solo    = args.solo,
+            lote    = lote,
+        ))
+    except KeyboardInterrupt:
+        print("\nCancelado.")
+        sys.exit(1)
+    sys.exit(codigo)
 
 
 if __name__ == "__main__":
