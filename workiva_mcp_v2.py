@@ -621,7 +621,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             report["warning"] = "No se encontró el archivo fuente de balance comparativo."
             return json.dumps(report, indent=2, ensure_ascii=False)
 
-        # Fuente EERR (prior_eerr_end = mismo período año anterior, ej. 09-2025)
+        # Fuente EERR/QUARTER (prior_eerr_end = mismo período año anterior, ej. 09-2025)
         src_eerr_id: str | None = None
         if bases.get("prior_eerr_end"):
             mm_e, yy_e = _date_parts(bases["prior_eerr_end"])
@@ -634,8 +634,22 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
         if not src_eerr_id:
             report["source_eerr"] = "No encontrado"
 
+        # Fuente PERÍODO ANTERIOR (prior_prev_period_end = ej. 06-2025 para Q3)
+        src_prev_id: str | None = None
+        if bases.get("prior_prev_period_end"):
+            mm_p, yy_p = _date_parts(bases["prior_prev_period_end"])
+            for sep in ["-", "_"]:
+                name = f"{prefix}{code}_{tipo}_{mm_p}{sep}{yy_p}_{suffix}"
+                if name in all_files:
+                    src_prev_id = all_files[name]
+                    report["source_prev_period"] = name
+                    break
+        if not src_prev_id:
+            report["source_prev_period"] = "No encontrado"
+
         src_sheets_bal  = await _get_sheets(src_balance_id)
         src_sheets_eerr = await _get_sheets(src_eerr_id) if src_eerr_id else {}
+        src_sheets_prev = await _get_sheets(src_prev_id) if src_prev_id else {}
 
         # 4. Candidatas
         extra_excludes = set(params.exclude_sheets)
@@ -650,7 +664,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     report["sheets_skipped"].append(f"{sname} (auxiliar)")
             elif params.apply_default_excludes and SOCIEDAD_RE.search(sname):
                 skipped_sociedad += 1
-            elif sname not in src_sheets_bal and sname not in src_sheets_eerr:
+            elif sname not in src_sheets_bal and sname not in src_sheets_eerr and sname not in src_sheets_prev:
                 if params.sheet_offset == 0:
                     report["sheets_skipped"].append(f"{sname} (no en fuente)")
             else:
@@ -681,59 +695,101 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             ),
         ))
 
-        # 6. Detectar columnas comparativas: BALANCE (prior_end) y EERR (prior_eerr_end)
-        #    Cada entrada: {"col": int, "type": "bal"|"eerr"}
-        kw_bal  = str(prior_end).lower() if prior_end else ""
-        kw_eerr = str(bases.get("prior_eerr_end", "")).lower()
+        # 6. Detectar columnas comparativas por fecha en encabezado.
+        #    Tipos y keywords de detección (en orden de prioridad para evitar ambigüedades):
+        #      "quarter"    → prior_quarter_start  (ej. 2025-07-01, única para el quarter)
+        #      "eerr"       → prior_eerr_end       (ej. 2025-09-30, acumulado anual)
+        #      "prev_period"→ prior_prev_period_end (ej. 2025-06-30, semestre anterior)
+        #      "bal"        → prior_end            (ej. 2025-12-31, balance)
+        #
+        #    Para encontrar la columna fuente se busca en el archivo fuente la columna
+        #    que contenga la keyword característica de cada tipo (date-driven, sin offset fijo).
+        #    La keyword de búsqueda en el fuente:
+        #      "quarter"    → prior_quarter_start  (col del quarter en fuente 09-aaaa)
+        #      "eerr"       → prior_eerr_start     (inicio EERR, distingue de quarter)
+        #      "prev_period"→ prior_prev_period_end (col actual en fuente 06-aaaa)
+        #      "bal"        → prior_end            (col actual en fuente 12-aaaa)
+
+        kw_bal     = str(bases.get("prior_end",             "")).lower()
+        kw_eerr    = str(bases.get("prior_eerr_end",        "")).lower()
+        kw_quarter = str(bases.get("prior_quarter_start",   "")).lower()
+        kw_prev    = str(bases.get("prior_prev_period_end", "")).lower()
+        # Para buscar en fuente: usar start del EERR (distingue EERR vs quarter)
+        kw_eerr_src = str(bases.get("prior_eerr_start", "")).lower() or kw_eerr
+
+        # Mapeo tipo → (keyword detección en destino, archivo fuente, keyword búsqueda en fuente)
+        # Orden de prioridad: quarter primero (más específico), luego eerr, prev_period, bal
+        TYPE_MAP = [
+            ("quarter",     kw_quarter, src_eerr_id,    src_sheets_eerr, kw_quarter),
+            ("eerr",        kw_eerr,    src_eerr_id,    src_sheets_eerr, kw_eerr_src),
+            ("prev_period", kw_prev,    src_prev_id,    src_sheets_prev, kw_prev),
+            ("bal",         kw_bal,     src_balance_id, src_sheets_bal,  kw_bal),
+        ]
+
+        def _find_src_col(src_cells: list[list], kw: str) -> int | None:
+            """Busca en las primeras 8 filas la primera columna cuyo header contenga kw."""
+            if not kw:
+                return None
+            for row in src_cells[:8]:
+                for j, cell in enumerate(row):
+                    if not isinstance(cell, dict):
+                        continue
+                    for val_key in ("calculatedValue", "value"):
+                        v = str(cell.get(val_key, "") or "").lower()
+                        if kw in v:
+                            return j
+            return None
 
         comp_cols_by_name: dict[str, list[dict]] = {}
         for sname in batch:
             comp_cols: list[dict] = []
             seen: set[int] = set()
-            for row in tgt_cells_by_name[sname][:8]:
-                for j, cell in enumerate(row):
-                    if j in seen or not isinstance(cell, dict):
-                        continue
-                    for val_key in ("calculatedValue", "value"):
-                        v = str(cell.get(val_key, "") or "").lower()
-                        if kw_bal and kw_bal in v:
-                            comp_cols.append({"col": j, "type": "bal"})
-                            seen.add(j)
-                            break
-                        if kw_eerr and kw_eerr in v:
-                            comp_cols.append({"col": j, "type": "eerr"})
-                            seen.add(j)
-                            break
+            for col_type, kw_detect, src_id, src_sh, kw_src in TYPE_MAP:
+                if not kw_detect or not src_id:
+                    continue
+                for row in tgt_cells_by_name[sname][:8]:
+                    for j, cell in enumerate(row):
+                        if j in seen or not isinstance(cell, dict):
+                            continue
+                        for val_key in ("calculatedValue", "value"):
+                            v = str(cell.get(val_key, "") or "").lower()
+                            if kw_detect in v:
+                                comp_cols.append({
+                                    "col":      j,
+                                    "type":     col_type,
+                                    "src_id":   src_id,
+                                    "src_sh":   src_sh,
+                                    "kw_src":   kw_src,
+                                })
+                                seen.add(j)
+                                break
             if comp_cols:
                 comp_cols_by_name[sname] = comp_cols
 
         with_cols = list(comp_cols_by_name)
 
-        # 7. Leer celdas fuente (balance y EERR) solo para hojas que lo necesiten
-        needs_bal  = [s for s in with_cols
-                      if any(c["type"] == "bal"  for c in comp_cols_by_name[s])
-                      and s in src_sheets_bal]
-        needs_eerr = [s for s in with_cols
-                      if any(c["type"] == "eerr" for c in comp_cols_by_name[s])
-                      and s in src_sheets_eerr]
+        # 7. Leer celdas fuente agrupadas por (src_id, sheet) para evitar lecturas duplicadas
+        #    Clave: (src_id, sname) → cells
+        src_read_keys: list[tuple[str, str, str]] = []  # (src_id, sheet_id, sname)
+        seen_reads: set[tuple[str, str]] = set()
+        for sname in with_cols:
+            for col_info in comp_cols_by_name[sname]:
+                sid_src = col_info["src_id"]
+                src_sh  = col_info["src_sh"]
+                if not sid_src or sname not in src_sh:
+                    continue
+                key = (sid_src, sname)
+                if key not in seen_reads:
+                    seen_reads.add(key)
+                    src_read_keys.append((sid_src, src_sh[sname], sname))
 
-        src_cells_bal_map: dict[str, list[list]] = {}
-        src_cells_eerr_map: dict[str, list[list]] = {}
-
-        if needs_bal:
-            src_cells_bal_map = dict(zip(
-                needs_bal,
-                await asyncio.gather(
-                    *(_read_lim(src_balance_id, src_sheets_bal[s]) for s in needs_bal)
-                ),
-            ))
-        if needs_eerr:
-            src_cells_eerr_map = dict(zip(
-                needs_eerr,
-                await asyncio.gather(
-                    *(_read_lim(src_eerr_id, src_sheets_eerr[s]) for s in needs_eerr)
-                ),
-            ))
+        src_cells_cache: dict[tuple[str, str], list[list]] = {}
+        if src_read_keys:
+            results = await asyncio.gather(
+                *(_read_lim(sid, sheet_id) for sid, sheet_id, _ in src_read_keys)
+            )
+            for (sid, _, sname), cells in zip(src_read_keys, results):
+                src_cells_cache[(sid, sname)] = cells
 
         # 8. Procesar cada hoja
         for sname in with_cols:
@@ -743,7 +799,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             sheet_report: dict[str, Any] = {
                 "sheet": sname,
                 "comp_cols": [
-                    f"{_col_letter(c['col'])}({'bal' if c['type'] == 'bal' else 'eerr'})"
+                    f"{_col_letter(c['col'])}({c['type']})"
                     for c in comp_cols_by_name[sname]
                 ],
                 "cols_written": 0,
@@ -751,20 +807,18 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
 
             for col_info in comp_cols_by_name[sname]:
                 dest_col = col_info["col"]
-                col_type = col_info["type"]  # "bal" o "eerr"
+                col_type = col_info["type"]
+                src_id   = col_info["src_id"]
+                kw_src   = col_info["kw_src"]
 
-                # Seleccionar fuente correcta
-                if col_type == "bal":
-                    src_cells = src_cells_bal_map.get(sname, [])
-                else:
-                    src_cells = src_cells_eerr_map.get(sname, [])
-
+                # Obtener celdas fuente desde cache
+                src_cells = src_cells_cache.get((src_id, sname), [])
                 if not src_cells:
-                    continue  # hoja no presente en esa fuente
+                    continue
 
-                # Columna fuente: offset -2 (igual que versión original)
-                src_col = dest_col - 2
-                if src_col < 0:
+                # Buscar columna fuente por keyword date-driven (sin offset fijo)
+                src_col = _find_src_col(src_cells, kw_src)
+                if src_col is None:
                     continue
 
                 src_vals: list[Any] = []
@@ -784,7 +838,8 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     continue
 
                 if not params.dry_run:
-                    # Balance: solo escribir en mes 03 (restricción contable)
+                    # Columnas de BALANCE: solo escribir en mes 03 (restricción contable)
+                    # EERR, quarter y prev_period se escriben en cualquier mes
                     if col_type == "bal" and mm != "03":
                         sheet_report.setdefault("cols_skipped_bal_restriction", []).append(
                             _col_letter(dest_col)
@@ -843,7 +898,10 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     if samples:
                         comp["ejemplos_distintos"] = samples
                     if params.detalle_filas:
-                        kw_active = kw_bal if col_type == "bal" else kw_eerr
+                        kw_active = {
+                            "bal": kw_bal, "eerr": kw_eerr,
+                            "quarter": kw_quarter, "prev_period": kw_prev,
+                        }.get(col_type, "")
                         textos: list[str] = []
                         for row_h in tgt_cells[:8]:
                             for c_h in (dest_col, dest_col - 1, dest_col - 2):
