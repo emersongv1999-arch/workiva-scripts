@@ -150,6 +150,11 @@ async def _procesar_archivo(
         if "warning" in r:
             return {"estado": "warning", "detalle": r["warning"]}
 
+        # workiva_mcp solo permite escritura real en mes 03 (regla 11).
+        # Para otros meses devuelve "message" y no incluye sheet_offset/batch_size.
+        if "message" in r and "sheet_offset" not in r:
+            return {"estado": "warning", "detalle": r["message"]}
+
         # Imprimir encabezado una sola vez (primer lote)
         if not encabezado:
             candidatas = r.get("total_candidate_sheets", "?")
@@ -166,7 +171,7 @@ async def _procesar_archivo(
         total_cols  += cols_lote
 
         accion = "simuladas" if dry_run else "escritas"
-        print(f"  lote offset {r['sheet_offset']:>3}: {r['batch_size']} hojas | "
+        print(f"  lote offset {r.get('sheet_offset', offset):>3}: {r.get('batch_size', hojas_lote)} hojas | "
               f"{cols_lote} columnas {accion}")
 
         # Hojas o columnas con error en este lote
@@ -208,6 +213,14 @@ async def run(mes: str, anio: str, dry_run: bool, solo: str | None, lote: int) -
     if solo:
         print(f"  Filtro: solo {solo}")
     print("=" * 65)
+
+    # Workiva solo permite escritura de comparativo de balance en mes 03.
+    # Para otros meses advertir, pero continuar (el conector lo bloqueará por archivo).
+    if mes != "03" and not dry_run:
+        print(f"\n  AVISO: workiva_mcp solo escribe comparativos de balance en archivos de")
+        print(f"  mes 03. El mes seleccionado es {mes}, por lo que la escritura será")
+        print(f"  bloqueada por el conector. Usa --dry-run para validar sin restricción de mes.")
+        print()
 
     # 1. Descubrir archivos IND del período
     print("\nBuscando archivos IND...")
