@@ -178,6 +178,10 @@ async def run(mes: str, anio: str, dry_run: bool, solo: str | None):
                           f" | columnas fallidas: {cols_fail}")
                     for f in fallidas[:5]:
                         print(f"      · {f.get('sheet')}: {f.get('error')}")
+                    # Mostrar columnas específicas que fallaron dentro de hojas
+                    for s in result.get("sheets_processed", []):
+                        if s.get("cols_failed"):
+                            print(f"      · {s['sheet']}: cols fallidas = {s['cols_failed']}")
                     continue
 
                 estado = "ok" if n_cols > 0 else "sin_cambios"

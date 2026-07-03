@@ -1282,6 +1282,19 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     if not any(v is not None for v in vals4):
                         continue
 
+                    # Idempotencia: verificar si los valores del bloque inferior ya coinciden
+                    dest_vals4: list[Any] = []
+                    for dr in range(split_row, len(tgt_cells)):
+                        if not _is_formula(tgt_cells[dr], ci4):
+                            cell = tgt_cells[dr][ci4] if ci4 < len(tgt_cells[dr]) else None
+                            dest_vals4.append(_cv(cell) if isinstance(cell, dict) else None)
+                    src_nonnull = [v for v in vals4 if v is not None]
+                    dst_nonnull = [v for v in dest_vals4 if v is not None]
+                    if src_nonnull and src_nonnull == dst_nonnull:
+                        sheet_report4.setdefault("cols_skipped", []).append(
+                            f"{_col_letter(ci4)} (ya llenada)")
+                        continue
+
                     try:
                         ok4 = await _write_column(
                             params.spreadsheet_id, sid_t, ci4, vals4,
