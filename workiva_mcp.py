@@ -145,6 +145,51 @@ _MESES = {
     "noviembre": 11, "diciembre": 12,
 }
 
+# Hojas con patrón "bloque doble": el bloque superior tiene datos del período actual
+# y el bloque inferior es el comparativo que debe llenarse desde el archivo fuente.
+# Valor: (split_cell, period_cell)
+#   split_cell:  referencia de la celda cuya FILA indica dónde empieza el bloque inferior
+#   period_cell: referencia de la celda cuyo VALOR contiene la fecha del período fuente
+# Búsqueda por prefijo del nombre de hoja para tolerar variaciones entre plantillas.
+_DOUBLE_BLOCK_CONFIG: dict[str, tuple[str, str]] = {
+    "E.- Estado de cambios de patrimonio":                         ("D45", "D71"),
+    "L.- Nota de riesgo":                                          ("B18", "B18"),
+    "N.- Nota de riesgo":                                          ("B18", "B18"),
+    "O.- Resumen de deuda":                                        ("B15", "B15"),
+    "1,b Efectivo y equivalentes al efectivo":                     ("B33", "B33"),
+    "9.- Instrumentos financieros a valor razonable con cambios":  ("D24", "D24"),
+    "10.- Instrumentos financieros medidos a valor razonable":     ("D25", "D25"),
+    "11.- Instrumentos financieros medidos a valor razonable":     ("D24", "D24"),
+    "12.- Activos financieros disponibles para la venta":          ("D25", "D25"),
+    "19.- Estratificación de la cartera":                          ("B23", "B23"),
+    "21.- Cartera en cobranza judicial":                           ("B18", "B18"),
+    "34.- Movimiento de inversiones en asociadas":                  ("AD21", "AD21"),
+    "35.- Inversiones en asociadas":                               ("F17", "F17"),
+    "36.- Movimiento de inversiones en sociedades con control":     ("AD23", "AD23"),
+    "37.- Inversiones en sociedades con control conjunto":         ("F19", "F19"),
+    "38.- Otra información de inversiones en sociedades":          ("AD20", "AD20"),
+    "39.- Movimiento de inversiones en sociedades subsidiarias":   ("D25", "D25"),
+    "40.- Inversiones en sociedades subsidiarias directas":        ("F29", "F29"),
+    "41.- Activos Intangibles":                                    ("D22", "D22"),
+    "43.- Movimientos en activos intangibles":                     ("D41", "D41"),
+    "44.- Detalle de otros activos identificables al":             ("B22", "B22"),
+    "82.- Obligaciones con el público pagarés":                    ("R20", "R20"),
+    "86.- Cuentas comerciales con pagos al día":                   ("D44", "D44"),
+    "88.- Movimiento de las provisiones":                          ("P37", "P37"),
+    "93.- Hipótesis actuariales":                                  ("D49", "D49"),
+    "101.- Transacciones con participaciones no controladoras":    ("D24", "D24"),
+}
+
+
+def _get_double_block_cfg(sname: str):
+    """Retorna (split_cell, period_cell) para la hoja, o None. Búsqueda por prefijo."""
+    if sname in _DOUBLE_BLOCK_CONFIG:
+        return _DOUBLE_BLOCK_CONFIG[sname]
+    for key, val in _DOUBLE_BLOCK_CONFIG.items():
+        if sname.startswith(key):
+            return val
+    return None
+
 
 def _parse_fecha(s: Any) -> str | None:
     """Normaliza una fecha a 'YYYY-MM-DD'. Acepta ISO, DD-MM-YYYY, DD/MM/YYYY
@@ -194,6 +239,18 @@ def _col_letter(idx: int) -> str:
     if idx < 26:
         return chr(65 + idx)
     return chr(64 + idx // 26) + chr(65 + idx % 26)
+
+
+def _parse_cell_ref(ref: str) -> tuple[int, int]:
+    """'B18' → (row=17, col=1), 0-indexed. Returns (-1,-1) si no parseable."""
+    m = re.match(r"([A-Za-z]+)(\d+)", ref.strip())
+    if not m:
+        return (-1, -1)
+    col_str, row_str = m.groups()
+    col = 0
+    for ch in col_str.upper():
+        col = col * 26 + (ord(ch) - ord("A") + 1)
+    return (int(row_str) - 1, col - 1)  # 0-indexed
 
 
 def _cv(cell: Any) -> Any:
@@ -1102,6 +1159,131 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     if not sheet_report[k]:
                         del sheet_report[k]
                 report["sheets_processed"].append(sheet_report)
+                continue
+
+            # ── REGLA 4: bloques dobles (cuadro arriba = actual; cuadro abajo = comparativo)
+            # La celda indicadora (split_cell) marca dónde empieza el bloque inferior y
+            # la celda de período (period_cell) contiene la fecha del archivo fuente.
+            # Se copia: source_rows[0..split_row-1] → dest_rows[split_row..end], omitiendo fórmulas.
+            double_cfg = _get_double_block_cfg(sname)
+            if double_cfg:
+                split_cell, period_cell = double_cfg
+                split_row, _           = _parse_cell_ref(split_cell)
+                period_row, period_col = _parse_cell_ref(period_cell)
+
+                if split_row < 0 or period_row < 0:
+                    report["sheets_skipped"].append(
+                        f"{sname} (bloque doble: celda indicadora '{split_cell}' inválida)")
+                    continue
+                if split_row >= len(tgt_cells):
+                    report["sheets_skipped"].append(
+                        f"{sname} (bloque doble: split_row {split_row+1} fuera de rango, hoja tiene {len(tgt_cells)} filas)")
+                    continue
+
+                period_val = (
+                    _cv(tgt_cells[period_row][period_col])
+                    if period_row < len(tgt_cells) and period_col < len(tgt_cells[period_row])
+                    else None
+                )
+                period_iso = _parse_fecha(period_val)
+                if not period_iso:
+                    report["sheets_skipped"].append(
+                        f"{sname} (bloque doble: celda {period_cell}='{period_val}' no es fecha válida)")
+                    continue
+
+                mm_s, yy_s = _date_parts(period_iso)
+                src4 = await _resolve_source(mm_s, yy_s)
+                if not src4:
+                    report["sheets_skipped"].append(
+                        f"{sname} (bloque doble: sin fuente para {mm_s}-{yy_s})")
+                    continue
+                if sname not in src4["sheets"]:
+                    report["sheets_skipped"].append(
+                        f"{sname} (bloque doble: hoja no existe en fuente {mm_s}-{yy_s})")
+                    continue
+
+                try:
+                    src4_cells = await _read_sheet_cells_retry(
+                        src4["id"], src4["sheets"][sname])
+                except Exception as exc4:
+                    report["sheets_failed"].append(
+                        {"sheet": sname,
+                         "error": f"bloque doble fuente {mm_s}-{yy_s}: {_handle_error(exc4)}"})
+                    continue
+
+                # Idempotencia: si el bloque inferior ya tiene valores numéricos no-fórmula, saltar
+                if not params.dry_run:
+                    ya_lleno4 = False
+                    for dr in range(split_row, len(tgt_cells)):
+                        for ci_ch, _ in enumerate(tgt_cells[dr]):
+                            if not _is_formula(tgt_cells[dr], ci_ch):
+                                v4 = _cv(tgt_cells[dr][ci_ch])
+                                if isinstance(v4, (int, float)) and v4 != 0:
+                                    ya_lleno4 = True
+                                    break
+                        if ya_lleno4:
+                            break
+                    if ya_lleno4:
+                        report["sheets_skipped"].append(
+                            f"{sname} (bloque doble: bloque inferior ya llenado)")
+                        continue
+
+                # Columnas con valores numéricos en el bloque superior de la fuente
+                data_cols4: set[int] = set()
+                for si4 in range(min(split_row, len(src4_cells))):
+                    for ci4, cell4 in enumerate(src4_cells[si4]):
+                        v4 = _cv(cell4)
+                        if isinstance(v4, (int, float)) and v4 != 0:
+                            data_cols4.add(ci4)
+
+                sheet_report4: dict[str, Any] = {
+                    "sheet":          sname,
+                    "bloque_tipo":    "doble",
+                    "periodo_fuente": f"{mm_s}-{yy_s}",
+                    "fuente":         src4["name"],
+                    "split_row":      split_row + 1,
+                    "cols_written":   0,
+                    "cols_failed":    [],
+                }
+
+                if params.dry_run:
+                    sheet_report4["cols_written"] = len(data_cols4)
+                    report["total_cols_written"] += len(data_cols4)
+                    del sheet_report4["cols_failed"]
+                    report["sheets_processed"].append(sheet_report4)
+                    continue
+
+                for ci4 in sorted(data_cols4):
+                    vals4: list[Any] = []
+                    for dr in range(split_row, len(tgt_cells)):
+                        src_ri = dr - split_row
+                        if _is_formula(tgt_cells[dr], ci4):
+                            vals4.append(None)
+                            continue
+                        row_s4 = src4_cells[src_ri] if src_ri < len(src4_cells) else []
+                        sv4 = _cv(row_s4[ci4]) if ci4 < len(row_s4) else None
+                        vals4.append(sv4 if isinstance(sv4, (int, float)) else None)
+
+                    if not any(v is not None for v in vals4):
+                        continue
+
+                    try:
+                        ok4 = await _write_column(
+                            params.spreadsheet_id, sid_t, ci4, vals4,
+                            start_row=split_row)
+                    except Exception:
+                        ok4 = False
+
+                    if ok4:
+                        sheet_report4["cols_written"] += 1
+                        report["total_cols_written"] += 1
+                    else:
+                        sheet_report4["cols_failed"].append(_col_letter(ci4))
+                        report["total_cols_failed"] += 1
+
+                if not sheet_report4["cols_failed"]:
+                    del sheet_report4["cols_failed"]
+                report["sheets_processed"].append(sheet_report4)
                 continue
 
             # ── REGLA 3: hojas de bloques anuales (ej. 60.- activo fijo) ────
