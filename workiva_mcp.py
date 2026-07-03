@@ -1218,22 +1218,22 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                         if _is_formula(row_t, dest_col):
                             write_vals.append(None)
                             continue
-                        # Solo escribir en filas donde la columna del período actual
-                        # en el destino tiene un valor activo (número o fórmula).
-                        # Evita escribir en filas de cálculo fuera del cuadro de datos.
+                        # Solo escribir en filas que pertenecen al cuadro de datos del
+                        # destino. Si ninguna celda antes de src_col tiene valor (número,
+                        # string no vacío o fórmula), la fila está fuera de la tabla
+                        # (zona de cálculo). Evita escribir en filas 30+ de la fuente que
+                        # tienen valores de cálculo pero que no existen en el destino.
                         if i >= 6:
-                            curr_col = dest_col - 2
-                            if curr_col >= 0:
-                                has_curr = (
-                                    _is_formula(row_t, curr_col)
-                                    or isinstance(
-                                        _cv(row_t[curr_col] if curr_col < len(row_t) else None),
-                                        (int, float),
-                                    )
+                            row_in_table = any(
+                                _is_formula(row_t, ci) or (
+                                    isinstance(row_t[ci], dict)
+                                    and _cv(row_t[ci]) not in (None, "")
                                 )
-                                if not has_curr:
-                                    write_vals.append(None)
-                                    continue
+                                for ci in range(min(src_col, len(row_t)))
+                            )
+                            if not row_in_table:
+                                write_vals.append(None)
+                                continue
                         row_s = src_cells[i] if i < len(src_cells) else []
                         sv    = _cv(row_s[src_col]) if src_col < len(row_s) else None
                         nv    = sv if isinstance(sv, (int, float)) else None
