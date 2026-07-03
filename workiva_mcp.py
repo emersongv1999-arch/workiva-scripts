@@ -343,18 +343,58 @@ async def _poll_operation(location: str, max_attempts: int = 40) -> bool:
 
 async def _write_column(ss_id: str, sid: str, col_idx: int,
                          values: list, start_row: int = 0) -> bool:
+    """Escribe la columna col_idx en segmentos contiguos de valores no-None.
+    Si un segmento falla (p.ej. celda con link Workiva), reintenta celda a celda
+    dentro de ese segmento, salteando las celdas que fallen y loguéandolas.
+    Retorna True si al menos todos los segmentos con datos se escribieron
+    sin error irrecuperable (las celdas saltadas no son error)."""
     cl = _col_letter(col_idx)
-    r1 = start_row + 1
-    r2 = r1 + len(values) - 1
-    rng = f"{cl}{r1}:{cl}{r2}"
-    rp = await _wk.put(
-        f"{PLATFORM_URL}/spreadsheets/{ss_id}/sheets/{sid}/values/{rng}",
-        json={"values": [[v] for v in values]},
-    )
-    if rp.status_code == 202:
-        return await _poll_operation(rp.headers.get("Location", ""))
-    print(f"  [write_column] FALLO {rp.status_code} rng={rng}: {rp.text[:300]}")
-    return False
+    base_url = f"{PLATFORM_URL}/spreadsheets/{ss_id}/sheets/{sid}/values"
+
+    # Armar segmentos contiguos de valores non-None
+    segments: list[tuple[int, int]] = []  # (offset_inicio, offset_fin_exclusive)
+    i = 0
+    while i < len(values):
+        if values[i] is not None:
+            j = i + 1
+            while j < len(values) and values[j] is not None:
+                j += 1
+            segments.append((i, j))
+            i = j
+        else:
+            i += 1
+
+    all_ok = True
+    for seg_start, seg_end in segments:
+        seg_vals = values[seg_start:seg_end]
+        r1 = start_row + seg_start + 1
+        r2 = start_row + seg_end      # último fila 1-indexed = start_row + seg_end
+        rng = f"{cl}{r1}:{cl}{r2}"
+        rp = await _wk.put(
+            f"{base_url}/{rng}",
+            json={"values": [[v] for v in seg_vals]},
+        )
+        if rp.status_code == 202:
+            if not await _poll_operation(rp.headers.get("Location", "")):
+                all_ok = False
+            continue
+        # El segmento falló → intentar celda a celda
+        print(f"  [write_column] segmento {rng} ({rp.status_code}), reintentando celda a celda")
+        for k, v in enumerate(seg_vals):
+            row_1idx = r1 + k
+            cell_rng = f"{cl}{row_1idx}"
+            rp2 = await _wk.put(
+                f"{base_url}/{cell_rng}",
+                json={"values": [[v]]},
+            )
+            if rp2.status_code == 202:
+                if not await _poll_operation(rp2.headers.get("Location", "")):
+                    print(f"  [write_column] FALLO poll {cell_rng}")
+                    all_ok = False
+            else:
+                print(f"  [write_column] {rp2.status_code} {cell_rng} (link/protegida, se salta): {rp2.text[:200]}")
+                # Celda con link Workiva u otra protección: se salta, no es error de la columna
+    return all_ok
 
 
 async def _load_all_files() -> dict[str, str]:
