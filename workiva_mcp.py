@@ -267,6 +267,15 @@ def _is_formula(row: list, col: int) -> bool:
     return str(c.get("value", "") if isinstance(c, dict) else "").startswith("=")
 
 
+def _row_label(row: list, col_limit: int) -> str:
+    """Primera etiqueta de texto en columnas A..col_limit-1 de la fila."""
+    for ci in range(min(col_limit, len(row))):
+        v = _cv(row[ci]) if isinstance(row[ci], dict) else None
+        if v and isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
 async def _get_json(url: str, attempts: int = 4) -> dict:
     """GET con reintentos ante rate limits o respuestas no-JSON transitorias."""
     last_exc: Exception | None = None
@@ -843,6 +852,9 @@ class FillComparativesInput(BaseModel):
         default=True,
         description="Si True, solo reporta qué se escribiría sin modificar Workiva (recomendado para revisar primero)"
     )
+    sheet_offset:   int  = Field(default=0,     description="Índice de hoja inicial para paginación", ge=0)
+    max_sheets:     int  = Field(default=50,    description="Máximo de hojas a procesar en este lote", ge=1, le=500)
+    detalle_filas:  bool = Field(default=False, description="Si True, incluye detalle fila por fila (comparacion por hoja)")
 
 
 @mcp.tool(
@@ -933,6 +945,12 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             "current_end":    curr_end,
             "prior_end":      prior_end,
             "bases":          bases,
+            "sheet_offset":               params.sheet_offset,
+            "batch_size":                 0,
+            "has_more":                   False,
+            "next_offset":                None,
+            "total_candidate_sheets":     0,
+            "skipped_desglose_sociedad":  0,
             "sheets_processed": [],
             "sheets_skipped":   [],
             "sheets_failed":    [],
@@ -1066,10 +1084,28 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
         #      el bloque del año anterior se copia desde el archivo de
         #      diciembre del año anterior, donde ese movimiento es el bloque
         #      del año en curso (offset de filas, mismas columnas).
-        for sname, sid_t in tgt_sheets.items():
-            if sname in SKIP_SHEETS:
-                report["sheets_skipped"].append(sname)
-                continue
+
+        # Pre-pase: clasificar hojas en omitidas (fijas/desglose) y candidatas.
+        _DESGLOSE_RE = re.compile(r"desglose\s+(?:por\s+)?sociedad", re.IGNORECASE)
+        candidate_sheets: list[tuple[str, str]] = []
+        for sname_c, sid_c in tgt_sheets.items():
+            if sname_c in SKIP_SHEETS:
+                report["sheets_skipped"].append(sname_c)
+            elif _DESGLOSE_RE.search(sname_c):
+                report["skipped_desglose_sociedad"] += 1
+            else:
+                candidate_sheets.append((sname_c, sid_c))
+
+        total_cands = len(candidate_sheets)
+        report["total_candidate_sheets"] = total_cands
+        p_start = params.sheet_offset
+        p_end   = params.sheet_offset + params.max_sheets
+        page_sheets = candidate_sheets[p_start:p_end]
+        report["batch_size"] = len(page_sheets)
+        report["has_more"]   = total_cands > p_end
+        report["next_offset"] = p_end if report["has_more"] else None
+
+        for sname, sid_t in page_sheets:
 
             try:
                 tgt_cells = await _read_sheet_cells_retry(params.spreadsheet_id, sid_t)
@@ -1123,6 +1159,8 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     "cols_failed":  [],
                     "cols_skipped": [],
                 }
+                if params.detalle_filas:
+                    sheet_report["comparacion"] = []
                 src_data_cache: dict[str, Any] = {}
 
                 for dest_col, d_iso in sorted(comp_cols.items()):
@@ -1146,15 +1184,13 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             f"{letra} (hoja no está en fuente {mm_s}-{yy_s})")
                         continue
 
-                    if params.dry_run:
+                    # Camino rápido: dry_run sin detalle_filas → solo contar
+                    if params.dry_run and not params.detalle_filas:
                         sheet_report["cols_written"] += 1
                         report["total_cols_written"] += 1
                         continue
 
-                    if _col_filled(dest_col):
-                        sheet_report["cols_skipped"].append(f"{letra} (ya llenada)")
-                        continue
-
+                    # Para escritura real o para detalle_filas se necesitan celdas fuente
                     key = f"{mm_s}-{yy_s}"
                     if key not in src_data_cache:
                         try:
@@ -1171,14 +1207,69 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                         report["total_cols_failed"] += 1
                         continue
 
+                    # Idempotencia: solo en modo escritura real
+                    if not params.dry_run and _col_filled(dest_col):
+                        sheet_report["cols_skipped"].append(f"{letra} (ya llenada)")
+                        continue
+
                     write_vals: list[Any] = []
+                    comp_filas: list[dict] = []
                     for i, row_t in enumerate(tgt_cells):
                         if _is_formula(row_t, dest_col):
                             write_vals.append(None)
                             continue
+                        # Solo escribir en filas donde la columna del período actual
+                        # en el destino tiene un valor activo (número o fórmula).
+                        # Evita escribir en filas de cálculo fuera del cuadro de datos.
+                        if i >= 6:
+                            curr_col = dest_col - 2
+                            if curr_col >= 0:
+                                has_curr = (
+                                    _is_formula(row_t, curr_col)
+                                    or isinstance(
+                                        _cv(row_t[curr_col] if curr_col < len(row_t) else None),
+                                        (int, float),
+                                    )
+                                )
+                                if not has_curr:
+                                    write_vals.append(None)
+                                    continue
                         row_s = src_cells[i] if i < len(src_cells) else []
                         sv    = _cv(row_s[src_col]) if src_col < len(row_s) else None
-                        write_vals.append(sv if isinstance(sv, (int, float)) else None)
+                        nv    = sv if isinstance(sv, (int, float)) else None
+                        write_vals.append(nv)
+                        if params.detalle_filas and nv is not None:
+                            dest_v = _cv(row_t[dest_col] if dest_col < len(row_t) else None)
+                            etiq   = _row_label(row_t, src_col)
+                            if not isinstance(dest_v, (int, float)):
+                                estado = "NO PROCESADO"
+                            elif dest_v == nv:
+                                estado = "OK"
+                            else:
+                                estado = "HALLAZGO"
+                            comp_filas.append({
+                                "fila":     i + 1,
+                                "etiqueta": etiq,
+                                "destino":  dest_v,
+                                "fuente":   nv,
+                                "estado":   estado,
+                            })
+
+                    if params.detalle_filas:
+                        iguales   = sum(1 for f in comp_filas if f["estado"] == "OK")
+                        distintos = sum(1 for f in comp_filas if f["estado"] != "OK")
+                        sheet_report["comparacion"].append({
+                            "col":       letra,
+                            "contexto":  d_iso,
+                            "iguales":   iguales,
+                            "distintos": distintos,
+                            "filas":     comp_filas,
+                        })
+
+                    if params.dry_run:
+                        sheet_report["cols_written"] += 1
+                        report["total_cols_written"] += 1
+                        continue
 
                     if not any(v is not None for v in write_vals):
                         continue
