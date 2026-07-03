@@ -513,6 +513,7 @@ class FillComparativesInput(BaseModel):
     sheet_offset:            int       = Field(default=0, ge=0)
     max_sheets:              int       = Field(default=20, ge=1, le=100)
     exclude_sheets:          list[str] = Field(default_factory=list)
+    include_sheets:          list[str] = Field(default_factory=list)
     apply_default_excludes:  bool      = Field(default=True)
     max_ejemplos:            int       = Field(default=3, ge=1, le=1000)
     detalle_filas:           bool      = Field(default=False)
@@ -652,10 +653,13 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
         src_sheets_prev = await _get_sheets(src_prev_id) if src_prev_id else {}
 
         # 4. Candidatas
-        extra_excludes = set(params.exclude_sheets)
+        extra_excludes  = set(params.exclude_sheets)
+        include_only    = set(params.include_sheets) if params.include_sheets else None
         candidates: list[str] = []
         skipped_sociedad = 0
         for sname in tgt_sheets:
+            if include_only is not None and sname not in include_only:
+                continue
             if sname in SKIP_SHEETS or sname in extra_excludes:
                 if params.sheet_offset == 0:
                     report["sheets_skipped"].append(sname)

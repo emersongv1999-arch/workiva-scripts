@@ -101,7 +101,8 @@ def pedir_opciones() -> tuple[str, str, bool, str | None, int]:
 # ── Procesar un archivo completo (con paginación) ────────────────────────────
 
 async def _procesar_archivo(mcp, fid: str, nombre: str,
-                             dry_run: bool, lote: int) -> dict:
+                             dry_run: bool, lote: int,
+                             hoja: str | None = None) -> dict:
     offset      = 0
     total_cols  = 0
     total_hojas = 0
@@ -114,6 +115,7 @@ async def _procesar_archivo(mcp, fid: str, nombre: str,
             dry_run=dry_run,
             sheet_offset=offset,
             max_sheets=lote,
+            include_sheets=[hoja] if hoja else [],
         )
         raw = await mcp.workiva_fill_comparatives(params)
 
@@ -174,7 +176,8 @@ async def _procesar_archivo(mcp, fid: str, nombre: str,
 
 # ── Runner principal ──────────────────────────────────────────────────────────
 
-async def run(mes: str, anio: str, dry_run: bool, solo: str | None, lote: int) -> int:
+async def run(mes: str, anio: str, dry_run: bool, solo: str | None, lote: int,
+              hoja: str | None = None) -> int:
     mcp = _load_mcp()
 
     print("=" * 65)
@@ -183,6 +186,8 @@ async def run(mes: str, anio: str, dry_run: bool, solo: str | None, lote: int) -
     print(f"  Lote  : {lote} hojas por llamada")
     if solo:
         print(f"  Filtro: solo {solo}")
+    if hoja:
+        print(f"  Hoja  : solo '{hoja}'")
     print("=" * 65)
 
     print("\nBuscando archivos IND...")
@@ -231,7 +236,7 @@ async def run(mes: str, anio: str, dry_run: bool, solo: str | None, lote: int) -
                 await asyncio.sleep(espera)
 
             try:
-                resultado = await _procesar_archivo(mcp, fid, nombre, dry_run, lote)
+                resultado = await _procesar_archivo(mcp, fid, nombre, dry_run, lote, hoja)
             except Exception as e:
                 print(f"  ERROR intento {intento}: {e}")
                 continue
@@ -332,6 +337,8 @@ def main():
     parser.add_argument("--anio",    required=True)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--solo",    default=None)
+    parser.add_argument("--hoja",    default=None,
+                        help="Nombre exacto de la hoja a procesar (ej: 'C.- Estado de resultado')")
     parser.add_argument("--lote",    type=int, default=50)
     args = parser.parse_args()
 
@@ -346,6 +353,7 @@ def main():
             dry_run = args.dry_run,
             solo    = args.solo,
             lote    = max(1, min(args.lote, 100)),
+            hoja    = args.hoja,
         ))
     except KeyboardInterrupt:
         print("\nCancelado.")
