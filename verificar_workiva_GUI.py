@@ -1529,22 +1529,8 @@ class App(tk.Tk):
         left.pack(side="left", fill="y", padx=(0, 14))
         left.pack_propagate(False)
 
-        # Conexión
-        tk.Label(left, text="CONEXIÓN SQL SERVER", font=("Segoe UI", 8, "bold"),
-                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(6, 2))
-        cf = tk.Frame(left, bg=CGE_CARD, highlightbackground=CGE_BORDER, highlightthickness=1)
-        cf.pack(fill="x", pady=(0, 10))
-        ci = tk.Frame(cf, bg=CGE_CARD, padx=12, pady=10)
-        ci.pack(fill="x")
-
-        tk.Label(ci, text="Contraseña", font=FONT_SMALL, bg=CGE_CARD, fg=CGE_MUTED).grid(
-            row=0, column=0, sticky="w", pady=4)
+        # Contraseña hardcodeada — no se expone en UI
         self._flujo_pwd = tk.StringVar(value=os.environ.get("EFLUJO_PWD", "uscefect2014"))
-        tk.Entry(ci, textvariable=self._flujo_pwd, font=FONT_LABEL, show="*",
-                 bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=12,
-                 highlightbackground=CGE_BORDER, highlightthickness=1
-                 ).grid(row=0, column=1, sticky="ew", padx=(8,0), pady=4)
-        ci.columnconfigure(1, weight=1)
 
         # Período
         tk.Label(left, text="PERÍODO", font=("Segoe UI", 8, "bold"),
