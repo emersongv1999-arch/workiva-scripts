@@ -635,7 +635,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
         if not src_eerr_id:
             report["source_eerr"] = "No encontrado"
 
-        # Fuente PERÍODO ANTERIOR (prior_prev_period_end = ej. 06-2025 para Q3)
+        # Fuente PERÍODO ANTERIOR comparativo (prior_prev_period_end = ej. 06-2025 para Q3)
         src_prev_id: str | None = None
         if bases.get("prior_prev_period_end"):
             mm_p, yy_p = _date_parts(bases["prior_prev_period_end"])
@@ -648,9 +648,23 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
         if not src_prev_id:
             report["source_prev_period"] = "No encontrado"
 
-        src_sheets_bal  = await _get_sheets(src_balance_id)
-        src_sheets_eerr = await _get_sheets(src_eerr_id) if src_eerr_id else {}
-        src_sheets_prev = await _get_sheets(src_prev_id) if src_prev_id else {}
+        # Fuente PERÍODO ANTERIOR actual (prev_period_end = ej. 06-2026 para Q3)
+        src_curr_prev_id: str | None = None
+        if bases.get("prev_period_end"):
+            mm_cp, yy_cp = _date_parts(bases["prev_period_end"])
+            for sep in ["-", "_"]:
+                name = f"{prefix}{code}_{tipo}_{mm_cp}{sep}{yy_cp}_{suffix}"
+                if name in all_files:
+                    src_curr_prev_id = all_files[name]
+                    report["source_curr_prev"] = name
+                    break
+        if not src_curr_prev_id:
+            report["source_curr_prev"] = "No encontrado"
+
+        src_sheets_bal       = await _get_sheets(src_balance_id)
+        src_sheets_eerr      = await _get_sheets(src_eerr_id)       if src_eerr_id       else {}
+        src_sheets_prev      = await _get_sheets(src_prev_id)       if src_prev_id       else {}
+        src_sheets_curr_prev = await _get_sheets(src_curr_prev_id)  if src_curr_prev_id  else {}
 
         # 4. Candidatas
         extra_excludes  = set(params.exclude_sheets)
@@ -668,7 +682,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     report["sheets_skipped"].append(f"{sname} (auxiliar)")
             elif params.apply_default_excludes and SOCIEDAD_RE.search(sname):
                 skipped_sociedad += 1
-            elif sname not in src_sheets_bal and sname not in src_sheets_eerr and sname not in src_sheets_prev:
+            elif sname not in src_sheets_bal and sname not in src_sheets_eerr and sname not in src_sheets_prev and sname not in src_sheets_curr_prev:
                 if params.sheet_offset == 0:
                     report["sheets_skipped"].append(f"{sname} (no en fuente)")
             else:
@@ -714,20 +728,22 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
         #      "prev_period"→ prior_prev_period_end (col actual en fuente 06-aaaa)
         #      "bal"        → prior_end            (col actual en fuente 12-aaaa)
 
-        kw_bal     = str(bases.get("prior_end",             "")).lower()
-        kw_eerr    = str(bases.get("prior_eerr_end",        "")).lower()
-        kw_quarter = str(bases.get("prior_quarter_start",   "")).lower()
-        kw_prev    = str(bases.get("prior_prev_period_end", "")).lower()
+        kw_bal       = str(bases.get("prior_end",             "")).lower()
+        kw_eerr      = str(bases.get("prior_eerr_end",        "")).lower()
+        kw_quarter   = str(bases.get("prior_quarter_start",   "")).lower()
+        kw_prev      = str(bases.get("prior_prev_period_end", "")).lower()
+        kw_curr_prev = str(bases.get("prev_period_end",       "")).lower()
         # Para buscar en fuente: usar start del EERR (distingue EERR vs quarter)
         kw_eerr_src = str(bases.get("prior_eerr_start", "")).lower() or kw_eerr
 
         # Mapeo tipo → (keyword detección en destino, archivo fuente, keyword búsqueda en fuente)
         # Orden de prioridad: quarter primero (más específico), luego eerr, prev_period, bal
         TYPE_MAP = [
-            ("quarter",     kw_quarter, src_eerr_id,    src_sheets_eerr, kw_quarter),
-            ("eerr",        kw_eerr,    src_eerr_id,    src_sheets_eerr, kw_eerr_src),
-            ("prev_period", kw_prev,    src_prev_id,    src_sheets_prev, kw_prev),
-            ("bal",         kw_bal,     src_balance_id, src_sheets_bal,  kw_bal),
+            ("quarter",     kw_quarter,   src_eerr_id,       src_sheets_eerr,      kw_quarter),
+            ("eerr",        kw_eerr,      src_eerr_id,       src_sheets_eerr,      kw_eerr_src),
+            ("curr_prev",   kw_curr_prev, src_curr_prev_id,  src_sheets_curr_prev, kw_curr_prev),
+            ("prev_period", kw_prev,      src_prev_id,       src_sheets_prev,      kw_prev),
+            ("bal",         kw_bal,       src_balance_id,    src_sheets_bal,       kw_bal),
         ]
 
         def _find_src_col(src_cells: list[list], kw: str) -> int | None:
