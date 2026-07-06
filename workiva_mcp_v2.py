@@ -654,11 +654,11 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
 
         # 4. Candidatas
         extra_excludes  = set(params.exclude_sheets)
-        include_only    = set(params.include_sheets) if params.include_sheets else None
+        include_lower   = [s.lower() for s in params.include_sheets] if params.include_sheets else None
         candidates: list[str] = []
         skipped_sociedad = 0
         for sname in tgt_sheets:
-            if include_only is not None and sname not in include_only:
+            if include_lower is not None and not any(kw in sname.lower() for kw in include_lower):
                 continue
             if sname in SKIP_SHEETS or sname in extra_excludes:
                 if params.sheet_offset == 0:
