@@ -1066,18 +1066,20 @@ class App(tk.Tk):
         tk.Label(inner, text="Mes", font=FONT_SMALL,
                  bg=CGE_CARD, fg=CGE_MUTED).grid(row=0, column=0, sticky="w", pady=4)
         self._cmp_mes = tk.StringVar()
-        tk.Entry(inner, textvariable=self._cmp_mes, font=FONT_LABEL,
+        _e_cmp_mes = tk.Entry(inner, textvariable=self._cmp_mes, font=FONT_LABEL,
                  bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=12,
-                 highlightbackground=CGE_BORDER, highlightthickness=1
-                 ).grid(row=0, column=1, sticky="ew", padx=(8,0), pady=4)
+                 highlightbackground=CGE_BORDER, highlightthickness=1)
+        _e_cmp_mes.grid(row=0, column=1, sticky="ew", padx=(8,0), pady=4)
+        _e_cmp_mes.bind("<Return>", lambda e: self._cmp_on_buscar())
 
         tk.Label(inner, text="Año", font=FONT_SMALL,
                  bg=CGE_CARD, fg=CGE_MUTED).grid(row=1, column=0, sticky="w", pady=4)
         self._cmp_anio = tk.StringVar()
-        tk.Entry(inner, textvariable=self._cmp_anio, font=FONT_LABEL,
+        _e_cmp_anio = tk.Entry(inner, textvariable=self._cmp_anio, font=FONT_LABEL,
                  bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=12,
-                 highlightbackground=CGE_BORDER, highlightthickness=1
-                 ).grid(row=1, column=1, sticky="ew", padx=(8,0), pady=4)
+                 highlightbackground=CGE_BORDER, highlightthickness=1)
+        _e_cmp_anio.grid(row=1, column=1, sticky="ew", padx=(8,0), pady=4)
+        _e_cmp_anio.bind("<Return>", lambda e: self._cmp_on_buscar())
         inner.columnconfigure(1, weight=1)
 
         # Botones
@@ -1088,6 +1090,7 @@ class App(tk.Tk):
                   relief="flat", bd=0, padx=10, pady=9,
                   cursor="hand2", command=self._cmp_on_buscar)
         self._cmp_btn_buscar.pack(fill="x")
+        self._cmp_btn_buscar.bind("<Return>", lambda e: self._cmp_on_buscar())
         tk.Frame(left, bg=CGE_LIGHT, height=6).pack()
         self._cmp_btn_procesar = tk.Button(left, text="Procesar seleccionados",
                   font=FONT_BOLD, bg=CGE_GREEN, fg=CGE_WHITE,
@@ -1095,6 +1098,7 @@ class App(tk.Tk):
                   relief="flat", bd=0, padx=10, pady=9,
                   cursor="hand2", command=self._cmp_on_procesar, state="disabled")
         self._cmp_btn_procesar.pack(fill="x")
+        self._cmp_btn_procesar.bind("<Return>", lambda e: self._cmp_on_procesar())
 
         # Panel derecho
         right = tk.Frame(body, bg=CGE_LIGHT)
@@ -1553,18 +1557,20 @@ class App(tk.Tk):
         tk.Label(pi, text="Mes", font=FONT_SMALL, bg=CGE_CARD, fg=CGE_MUTED).grid(
             row=0, column=0, sticky="w", pady=4)
         self._flujo_mes = tk.StringVar()
-        tk.Entry(pi, textvariable=self._flujo_mes, font=FONT_LABEL,
+        _e_flujo_mes = tk.Entry(pi, textvariable=self._flujo_mes, font=FONT_LABEL,
                  bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=12,
-                 highlightbackground=CGE_BORDER, highlightthickness=1
-                 ).grid(row=0, column=1, sticky="ew", padx=(8,0), pady=4)
+                 highlightbackground=CGE_BORDER, highlightthickness=1)
+        _e_flujo_mes.grid(row=0, column=1, sticky="ew", padx=(8,0), pady=4)
+        _e_flujo_mes.bind("<Return>", lambda e: self._flujo_on_buscar())
 
         tk.Label(pi, text="Año", font=FONT_SMALL, bg=CGE_CARD, fg=CGE_MUTED).grid(
             row=1, column=0, sticky="w", pady=4)
         self._flujo_anio = tk.StringVar()
-        tk.Entry(pi, textvariable=self._flujo_anio, font=FONT_LABEL,
+        _e_flujo_anio = tk.Entry(pi, textvariable=self._flujo_anio, font=FONT_LABEL,
                  bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=12,
-                 highlightbackground=CGE_BORDER, highlightthickness=1
-                 ).grid(row=1, column=1, sticky="ew", padx=(8,0), pady=4)
+                 highlightbackground=CGE_BORDER, highlightthickness=1)
+        _e_flujo_anio.grid(row=1, column=1, sticky="ew", padx=(8,0), pady=4)
+        _e_flujo_anio.bind("<Return>", lambda e: self._flujo_on_buscar())
         pi.columnconfigure(1, weight=1)
 
         # Carpeta salida
@@ -1592,6 +1598,7 @@ class App(tk.Tk):
                   relief="flat", bd=0, padx=10, pady=9,
                   cursor="hand2", command=self._flujo_on_buscar)
         self._flujo_btn_buscar.pack(fill="x")
+        self._flujo_btn_buscar.bind("<Return>", lambda e: self._flujo_on_buscar())
         tk.Frame(left, bg=CGE_LIGHT, height=6).pack()
         self._flujo_btn_generar = tk.Button(left, text="Generar Excel",
                   font=FONT_BOLD, bg=CGE_GREEN, fg=CGE_WHITE,
@@ -1599,6 +1606,7 @@ class App(tk.Tk):
                   relief="flat", bd=0, padx=10, pady=9,
                   cursor="hand2", command=self._flujo_on_generar, state="disabled")
         self._flujo_btn_generar.pack(fill="x")
+        self._flujo_btn_generar.bind("<Return>", lambda e: self._flujo_on_generar())
 
         # Panel derecho ───────────────────────────────────────────────────────
         right = tk.Frame(body, bg=CGE_LIGHT)
@@ -2684,6 +2692,7 @@ class App(tk.Tk):
                          bg=CGE_LIGHT, fg=CGE_TEXT, relief="flat", bd=4, width=12,
                          highlightbackground=CGE_BORDER, highlightthickness=1)
             e.grid(row=i, column=1, sticky="ew", padx=(8, 0), pady=4)
+            e.bind("<Return>", lambda ev: self._val_on_run())
             vars_.append(v)
         inner.columnconfigure(1, weight=1)
         self._val_sociedad, self._val_anio, self._val_trim, self._val_tipo = vars_
@@ -2712,6 +2721,7 @@ class App(tk.Tk):
             padx=12, pady=8, cursor="hand2",
             command=self._val_on_run)
         self._val_btn_run.pack(fill="x", pady=(4, 0))
+        self._val_btn_run.bind("<Return>", lambda e: self._val_on_run())
 
         # Panel derecho – log
         right = tk.Frame(body, bg=CGE_LIGHT)
