@@ -136,6 +136,7 @@ async def _procesar_archivo(mcp, fid: str, nombre: str,
             print(f"  Período comp.   : {r.get('prior_end', '?')}")
             print(f"  Fuente balance  : {r.get('source_balance', '?')}")
             print(f"  Fuente EERR     : {r.get('source_eerr', 'No encontrado')}")
+            print(f"  Fuente prev per.: {r.get('source_prev_period', 'No encontrado')}")
             print(f"  Hojas candidatas: {candidatas}"
                   f" (excluidos {r.get('skipped_desglose_sociedad', 0)} desgloses)")
             encabezado = True
