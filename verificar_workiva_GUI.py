@@ -1592,9 +1592,22 @@ class App(tk.Tk):
         right = tk.Frame(body, bg=CGE_LIGHT)
         right.pack(side="left", fill="both", expand=True)
 
-        # Sociedades encontradas
-        tk.Label(right, text="SOCIEDADES ENCONTRADAS", font=("Segoe UI", 8, "bold"),
-                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(0, 4))
+        # Sociedades encontradas — header con botones marcar/desmarcar
+        soc_hdr = tk.Frame(right, bg=CGE_LIGHT)
+        soc_hdr.pack(fill="x", pady=(0, 4))
+        tk.Label(soc_hdr, text="SOCIEDADES ENCONTRADAS", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(side="left")
+        tk.Button(soc_hdr, text="Desmarcar todas", font=FONT_SMALL,
+                  bg=CGE_BORDER, fg=CGE_TEXT, relief="flat", bd=0,
+                  padx=8, pady=2, cursor="hand2",
+                  command=lambda: [v.set(False) for v in self._flujo_soc_vars]
+                  ).pack(side="right", padx=(4,0))
+        tk.Button(soc_hdr, text="Marcar todas", font=FONT_SMALL,
+                  bg=CGE_BLUE, fg=CGE_WHITE, relief="flat", bd=0,
+                  padx=8, pady=2, cursor="hand2",
+                  command=lambda: [v.set(True) for v in self._flujo_soc_vars]
+                  ).pack(side="right")
+
         soc_box = tk.Frame(right, bg=CGE_CARD,
                            highlightbackground=CGE_BORDER, highlightthickness=1)
         soc_box.pack(fill="x", pady=(0, 12))
@@ -1613,6 +1626,11 @@ class App(tk.Tk):
                 scrollregion=self._flujo_soc_canvas.bbox("all")))
         self._flujo_soc_canvas.bind("<Configure>", lambda e:
             self._flujo_soc_canvas.itemconfig(soc_win, width=e.width))
+        # MouseWheel scroll
+        def _flujo_scroll(e):
+            self._flujo_soc_canvas.yview_scroll(int(-1*(e.delta/120)), "units")
+        self._flujo_soc_canvas.bind("<MouseWheel>", _flujo_scroll)
+        self._flujo_soc_inner.bind("<MouseWheel>", _flujo_scroll)
         self._flujo_socs      = []
         self._flujo_soc_vars  = []
 
@@ -1720,10 +1738,16 @@ class App(tk.Tk):
             var = tk.BooleanVar(value=default)
             row = tk.Frame(self._flujo_soc_inner, bg=CGE_CARD)
             row.pack(fill="x", padx=8, pady=1)
-            tk.Checkbutton(row, variable=var, text=label,
+            cb = tk.Checkbutton(row, variable=var, text=label,
                            font=FONT_LABEL, bg=CGE_CARD, fg=CGE_TEXT,
                            activebackground=CGE_CARD,
-                           anchor="w", relief="flat").pack(side="left")
+                           anchor="w", relief="flat")
+            cb.pack(side="left")
+            # propagar scroll al canvas
+            cb.bind("<MouseWheel>", lambda e: self._flujo_soc_canvas.yview_scroll(
+                int(-1*(e.delta/120)), "units"))
+            row.bind("<MouseWheel>", lambda e: self._flujo_soc_canvas.yview_scroll(
+                int(-1*(e.delta/120)), "units"))
             self._flujo_socs.append(emp)
             self._flujo_soc_vars.append(var)
 
