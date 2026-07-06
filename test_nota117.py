@@ -77,6 +77,13 @@ async def main():
     print(f"\nUsando: {ss_name}")
     print(f"ID: {ss_id}")
 
+    # Listar TODAS las hojas del archivo para ver nombres reales
+    print("\nHojas en el archivo target:")
+    sheets = await mcp._get_sheets(ss_id)
+    for sname in sorted(sheets):
+        marker = " <-- contiene '117'" if "117" in sname else ""
+        print(f"  {sname}{marker}")
+
     # 2. Llamar fill_comparatives con include_sheets=[117]
     params = mcp.FillComparativesInput(
         spreadsheet_id=ss_id,
