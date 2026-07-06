@@ -1101,8 +1101,20 @@ class App(tk.Tk):
         right.pack(side="left", fill="both", expand=True)
 
         # Archivos encontrados
-        tk.Label(right, text="ARCHIVOS ENCONTRADOS", font=("Segoe UI", 8, "bold"),
-                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(0, 4))
+        arch_hdr = tk.Frame(right, bg=CGE_LIGHT)
+        arch_hdr.pack(fill="x", pady=(0, 4))
+        tk.Label(arch_hdr, text="ARCHIVOS ENCONTRADOS", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(side="left")
+        tk.Button(arch_hdr, text="Desmarcar todas", font=FONT_SMALL,
+                  bg=CGE_BORDER, fg=CGE_TEXT, relief="flat", bd=0,
+                  padx=8, pady=2, cursor="hand2",
+                  command=lambda: [v.set(False) for v in self._cmp_vars]
+                  ).pack(side="right", padx=(4,0))
+        tk.Button(arch_hdr, text="Marcar todas", font=FONT_SMALL,
+                  bg=CGE_BLUE, fg=CGE_WHITE, relief="flat", bd=0,
+                  padx=8, pady=2, cursor="hand2",
+                  command=lambda: [v.set(True) for v in self._cmp_vars]
+                  ).pack(side="right")
         doc_box = tk.Frame(right, bg=CGE_CARD,
                            highlightbackground=CGE_BORDER, highlightthickness=1)
         doc_box.pack(fill="x", pady=(0, 12))
