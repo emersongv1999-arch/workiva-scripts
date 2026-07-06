@@ -72,17 +72,35 @@ async def main():
             print(f"  {name}")
         return
 
-    # Tomar el primero (Base Notas)
-    ss_name, ss_id = next(iter(sorted(matches.items())))
-    print(f"\nUsando: {ss_name}")
+    # Mostrar todos los archivos encontrados y elegir el más reciente
+    print(f"\nTodos los archivos {SOCIEDAD} {TIPO} encontrados:")
+    for name in sorted(matches):
+        print(f"  {name}")
+
+    # Tomar el ÚLTIMO al ordenar (más reciente en nombre)
+    ss_name, ss_id = sorted(matches.items())[-1]
+    print(f"\nUsando (más reciente): {ss_name}")
     print(f"ID: {ss_id}")
 
-    # Listar TODAS las hojas del archivo para ver nombres reales
-    print("\nHojas en el archivo target:")
-    sheets = await mcp._get_sheets(ss_id)
-    for sname in sorted(sheets):
-        marker = " <-- contiene '117'" if "117" in sname else ""
-        print(f"  {sname}{marker}")
+    # Listar TODAS las hojas del archivo target
+    print("\nHojas en el archivo target (las que contienen '117' marcadas):")
+    tgt_sheets_dict = await mcp._get_sheets(ss_id)
+    sheet117 = None
+    for sname in sorted(tgt_sheets_dict):
+        marker = " <-- MATCH '117'" if "117" in sname.lower() else ""
+        print(f"  {repr(sname)}{marker}")
+        if "117" in sname.lower():
+            sheet117 = sname
+
+    # Verificar si la hoja 117 está en los archivos fuente
+    if sheet117:
+        print(f"\nVerificando '{sheet117}' en fuentes:")
+        src_bal_sheets = await mcp._get_sheets(
+            next((v for k, v in files.items() if "12-2025" in k and SOCIEDAD in k and TIPO in k), None) or ""
+        ) if any("12-2025" in k and SOCIEDAD in k and TIPO in k for k in files) else {}
+        print(f"  En balance (12-2025): {'SI' if sheet117 in src_bal_sheets else 'NO'}")
+    else:
+        print("\nNinguna hoja contiene '117' en su nombre en el archivo seleccionado.")
 
     # 2. Llamar fill_comparatives con include_sheets=[117]
     params = mcp.FillComparativesInput(
