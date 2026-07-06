@@ -13,7 +13,7 @@ Requisitos:
   pip install httpx mcp pydantic python-dotenv openpyxl
 """
 
-import asyncio, base64, importlib, os, pathlib, sys, tempfile, json
+import asyncio, base64, importlib, importlib.util, os, pathlib, sys, tempfile, json
 
 # ── Credenciales ───────────────────────────────────────────────────────────────
 CLIENT_ID     = "db2c551e-e18a-417e-8e52-d182716b8ef2"
