@@ -62,17 +62,20 @@ async def _get_token() -> str:
     return _token
 
 
+def _headers(token: str, content_type: str = "application/json", version: str = "2026-01-01") -> dict:
+    return {"Authorization": f"Bearer {token}", "Content-Type": content_type, "X-Version": version}
+
+
 async def _get(url: str) -> httpx.Response:
     c = await _get_client()
-    r = await c.get(url, headers={"Authorization": f"Bearer {await _get_token()}"})
+    r = await c.get(url, headers=_headers(await _get_token()))
     r.raise_for_status()
     return r
 
 
 async def _put(url: str, body: dict) -> httpx.Response:
     c = await _get_client()
-    r = await c.put(url, json=body,
-                    headers={"Authorization": f"Bearer {await _get_token()}"})
+    r = await c.put(url, json=body, headers=_headers(await _get_token()))
     return r
 
 
@@ -80,13 +83,10 @@ async def _patch(url: str, body) -> httpx.Response:
     c = await _get_client()
     token = await _get_token()
     if isinstance(body, list):
-        # JSON Patch (RFC 6902)
         r = await c.patch(url, json=body,
-                          headers={"Authorization": f"Bearer {token}",
-                                   "Content-Type": "application/json-patch+json"})
+                          headers=_headers(token, "application/json-patch+json"))
     else:
-        r = await c.patch(url, json=body,
-                          headers={"Authorization": f"Bearer {token}"})
+        r = await c.patch(url, json=body, headers=_headers(token))
     return r
 
 
@@ -118,29 +118,28 @@ async def unlock_sheet(ss_id: str, sheet_id: str, sheet_name: str) -> str:
     Retorna "OK ..." o descripción del error.
     """
     base = f"{PLATFORM_URL}/spreadsheets/{ss_id}/sheets/{sheet_id}"
+    rng  = "A1:ZZ100000"
 
-    # Intento 1: PUT /cells/{range}/cellFormats  (patrón igual a /cells/{range}/values)
-    url1 = f"{base}/cells/A1:ZZ100000/cellFormats"
-    r1 = await _put(url1, {"locked": False})
+    # Intento 1: PUT /cells/{range}/cellFormats  (requiere X-Version: 2026-01-01)
+    url_fmt = f"{base}/cells/{rng}/cellFormats"
+    r1 = await _put(url_fmt, {"locked": False})
     if r1.status_code in (200, 202, 204):
-        return f"OK cellFormats locked=false ({r1.status_code})"
+        return f"OK cellFormats locked ({r1.status_code})"
 
-    # Intento 2: mismo endpoint, cuerpo anidado
-    r2 = await _put(url1, {"protection": {"locked": False}})
+    # Intento 2: cuerpo alternativo
+    r2 = await _put(url_fmt, {"protection": {"locked": False}})
     if r2.status_code in (200, 202, 204):
         return f"OK cellFormats protection ({r2.status_code})"
 
-    # Intento 3: PATCH sheet JSON Patch — probar varios paths posibles
-    for path in ("/isProtected", "/data/isProtected", "/attributes/isProtected"):
-        r3 = await _patch(base, [{"op": "replace", "path": path, "value": False}])
-        if r3.status_code in (200, 202, 204):
-            return f"OK PATCH sheet path={path} ({r3.status_code})"
+    # Intento 3: PUT /cells/{range}/values con formato embebido
+    url_cells = f"{base}/cells/{rng}/values"
+    r3 = await _put(url_cells, {"cellFormat": {"locked": False}})
+    if r3.status_code in (200, 202, 204):
+        return f"OK values+cellFormat ({r3.status_code})"
 
-    # Ninguno funcionó — mostrar errores completos
     return (
-        f"ERROR: PUT cellFormats locked={r1.status_code} '{r1.text[:100]}' | "
-        f"PUT cellFormats protection={r2.status_code} '{r2.text[:100]}' | "
-        f"PATCH sheet={r3.status_code} '{r3.text[:100]}'"
+        f"ERROR: cellFormats={r1.status_code} '{r1.text[:120]}' | "
+        f"cellFormats2={r2.status_code} | values+fmt={r3.status_code} '{r3.text[:80]}'"
     )
 
 

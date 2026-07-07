@@ -53,10 +53,11 @@ async def _get_token():
     return _token
 
 
-async def req(method, url, body=None, content_type="application/json"):
+async def req(method, url, body=None, content_type="application/json", version="2026-01-01"):
     c = await _get_client()
     token = await _get_token()
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": content_type}
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": content_type,
+               "X-Version": version}
     if method == "GET":
         r = await c.get(url, headers=headers)
     elif method == "PUT":
