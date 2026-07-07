@@ -80,9 +80,17 @@ async def main():
             print(f"  {name}")
         return
 
-    # Tomar el más reciente
-    ss_name, ss_id = sorted(matches.items())[-1]
-    print(f"\nUsando: {ss_name}")
+    # Ordenar por fecha real (mm-yyyy o yyyy) extraída del nombre
+    def _fecha_key(name: str):
+        import re
+        m = re.search(r'(\d{2})-(\d{4})', name)
+        if m:
+            return (int(m.group(2)), int(m.group(1)))
+        m2 = re.search(r'(\d{4})', name)
+        return (int(m2.group(1)), 0) if m2 else (0, 0)
+
+    ss_name, ss_id = max(matches.items(), key=lambda x: _fecha_key(x[0]))
+    print(f"\nUsando (más reciente por fecha): {ss_name}")
     print(f"ID: {ss_id}")
 
     # Listar TODAS las hojas del archivo target
