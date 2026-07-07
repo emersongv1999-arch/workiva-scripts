@@ -896,13 +896,6 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     continue
 
                 if not params.dry_run:
-                    # Columnas de BALANCE: solo escribir en mes 03 (restricción contable)
-                    # EERR, quarter y prev_period se escriben en cualquier mes
-                    if col_type == "bal" and mm != "03":
-                        sheet_report.setdefault("cols_skipped_bal_restriction", []).append(
-                            _col_letter(dest_col)
-                        )
-                        continue
                     ok = await _write_column(
                         params.spreadsheet_id, sid_t, dest_col, write_vals
                     )
