@@ -53,33 +53,36 @@ async def main():
     mcp = _load_mcp_v2(tmpdir)
     mcp._wk._client = None  # reset httpx client
 
-    # 1. Buscar el archivo de E110 IND
+    # 1. Buscar el archivo de E110 IND (excluir prefijos CHN y LC — son fuentes, no targets)
     print("\nBuscando archivos en Workiva...")
     files = await mcp._load_all_files()
-    matches = {k: v for k, v in files.items() if SOCIEDAD in k and TIPO in k and "BASE" in k.upper()}
+
+    def _es_target(name: str) -> bool:
+        nl = name.strip().lower()
+        if nl.startswith("(chn)") or nl.startswith("(lc)"):
+            return False
+        return SOCIEDAD.lower() in nl and TIPO.lower() in nl and "base" in nl
+
+    matches = {k: v for k, v in files.items() if _es_target(k)}
     if not matches:
         # Intentar sin filtro BASE
-        matches = {k: v for k, v in files.items() if SOCIEDAD in k and TIPO in k}
-    
-    print(f"Archivos encontrados para {SOCIEDAD} {TIPO}:")
+        matches = {k: v for k, v in files.items()
+                   if not k.strip().lower().startswith(("(chn)", "(lc)"))
+                   and SOCIEDAD in k and TIPO in k}
+
+    print(f"\nArchivos target {SOCIEDAD} {TIPO} (sin prefijo CHN/LC):")
     for name in sorted(matches):
         print(f"  {name}")
-    
+
     if not matches:
-        print("\nERROR: No se encontró ningún archivo para {SOCIEDAD} {TIPO}")
-        print("Todos los archivos disponibles:")
-        for name in sorted(files)[:30]:
+        print("\nERROR: No se encontró archivo target. Todos los archivos con E110 IND:")
+        for name in sorted(k for k in files if SOCIEDAD in k and TIPO in k):
             print(f"  {name}")
         return
 
-    # Mostrar todos los archivos encontrados y elegir el más reciente
-    print(f"\nTodos los archivos {SOCIEDAD} {TIPO} encontrados:")
-    for name in sorted(matches):
-        print(f"  {name}")
-
-    # Tomar el ÚLTIMO al ordenar (más reciente en nombre)
+    # Tomar el más reciente
     ss_name, ss_id = sorted(matches.items())[-1]
-    print(f"\nUsando (más reciente): {ss_name}")
+    print(f"\nUsando: {ss_name}")
     print(f"ID: {ss_id}")
 
     # Listar TODAS las hojas del archivo target
