@@ -3,7 +3,7 @@ verificar_workiva_GUI.py
 Verificador de Sumas - EE.FF. Workiva
 Interfaz grafica con tkinter — colores corporativos CGE
 """
-import base64, io, json, re, shutil, ssl, sys, time, urllib.request, urllib.error, zipfile
+import base64, io, json, os, re, shutil, ssl, sys, time, urllib.request, urllib.error, zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from collections import defaultdict
