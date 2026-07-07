@@ -89,11 +89,12 @@ async def main():
         sys.exit(f"ADVERTENCIA: {r['warning']}")
 
     # 3. Mostrar fuentes
-    print(f"Período actual   : {r.get('current_end','?')}")
-    print(f"Comparativo bal  : {r.get('prior_end','?')}")
-    print(f"Fuente balance   : {r.get('source_balance','?')}   ← ¿es el Q anterior?")
-    print(f"Fuente EERR      : {r.get('source_eerr','?')}")
-    print(f"Fuente prev      : {r.get('source_curr_prev','?')}")
+    src_bal_efectiva = r.get('source_curr_prev') or r.get('source_balance','?')
+    print(f"Período actual        : {r.get('current_end','?')}")
+    print(f"Comparativo bal (Dic) : {r.get('prior_end','?')}")
+    print(f"Fuente bal EFECTIVA   : {src_bal_efectiva}   ← debe ser Q anterior")
+    print(f"  (Dic directo sería) : {r.get('source_balance','?')}")
+    print(f"Fuente EERR           : {r.get('source_eerr','?')}")
     print("-" * 60)
 
     hojas = r.get("sheets_processed", [])
