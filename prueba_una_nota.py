@@ -17,17 +17,21 @@ os.environ["WORKIVA_CLIENT_ID"]     = "db2c551e-e18a-417e-8e52-d182716b8ef2"
 os.environ["WORKIVA_CLIENT_SECRET"] = "wk_secret:oa2c:DzlUCmBQDv6raPxG09me"
 os.environ["WORKIVA_WORKSPACE_ID"]  = "w_34913aadaa38420eabd7e4d341b78a1a"
 
-# ── Cargar workiva_mcp_v2 desde la misma carpeta ──────────────────────────────
-import importlib.util, types
+# ── Cargar workiva_mcp_v2 sin activar el servidor FastMCP ────────────────────
+import importlib.util, types, unittest.mock
 
 def _load_mcp():
     here = Path(__file__).parent
     path = here / "workiva_mcp_v2.py"
     if not path.exists():
         sys.exit(f"ERROR: No se encuentra {path}")
-    spec = importlib.util.spec_from_file_location("workiva_mcp_v2", path)
-    mod  = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    # Sustituir FastMCP por un mock para que los decoradores @mcp.tool no fallen
+    noop = unittest.mock.MagicMock()
+    noop.tool = lambda **kw: (lambda f: f)
+    with unittest.mock.patch("mcp.server.fastmcp.FastMCP", return_value=noop):
+        spec = importlib.util.spec_from_file_location("workiva_mcp_v2", path)
+        mod  = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
     return mod
 
 w = _load_mcp()
