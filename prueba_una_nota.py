@@ -70,6 +70,15 @@ async def main():
     name, ss_id = next(iter(matches.items()))
     print(f"Archivo: {name}\n")
 
+    # 2. Debug: interceptar _read_sheet_cells para ver qué archivos se leen
+    id_to_name = {v: k for k, v in all_files.items()}
+    _orig_read = w._read_sheet_cells
+    async def _debug_read(ss_id, sheet_id):
+        nombre = id_to_name.get(ss_id, ss_id[:12])
+        print(f"  [DEBUG] leyendo hoja de: {nombre}")
+        return await _orig_read(ss_id, sheet_id)
+    w._read_sheet_cells = _debug_read
+
     # 2. Correr validación solo en la nota indicada
     w._wk._client = None
     raw = await w.workiva_fill_comparatives(
