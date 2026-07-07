@@ -119,28 +119,28 @@ async def unlock_sheet(ss_id: str, sheet_id: str, sheet_name: str) -> str:
     """
     base = f"{PLATFORM_URL}/spreadsheets/{ss_id}/sheets/{sheet_id}"
 
-    # Intento 1: PATCH sheet con JSON Patch (isProtected = false)
-    r1 = await _patch(base, [{"op": "replace", "path": "/isProtected", "value": False}])
+    # Intento 1: PUT /cells/{range}/cellFormats  (patrón igual a /cells/{range}/values)
+    url1 = f"{base}/cells/A1:ZZ100000/cellFormats"
+    r1 = await _put(url1, {"locked": False})
     if r1.status_code in (200, 202, 204):
-        return f"OK isProtected ({r1.status_code})"
+        return f"OK cellFormats locked=false ({r1.status_code})"
 
-    # Intento 2: PATCH cells range con protection
-    url2 = f"{base}/cells/A1:ZZ100000"
-    r2 = await _patch(url2, {"protection": {"locked": False}})
+    # Intento 2: mismo endpoint, cuerpo anidado
+    r2 = await _put(url1, {"protection": {"locked": False}})
     if r2.status_code in (200, 202, 204):
-        return f"OK cells protection ({r2.status_code})"
+        return f"OK cellFormats protection ({r2.status_code})"
 
-    # Intento 3: PUT cellFormats
-    url3 = f"{base}/cellFormats/A1:ZZ100000"
-    r3 = await _put(url3, {"protection": {"locked": False}})
-    if r3.status_code in (200, 202, 204):
-        return f"OK cellFormats ({r3.status_code})"
+    # Intento 3: PATCH sheet JSON Patch — probar varios paths posibles
+    for path in ("/isProtected", "/data/isProtected", "/attributes/isProtected"):
+        r3 = await _patch(base, [{"op": "replace", "path": path, "value": False}])
+        if r3.status_code in (200, 202, 204):
+            return f"OK PATCH sheet path={path} ({r3.status_code})"
 
-    # Ninguno funcionó — reportar para diagnóstico
+    # Ninguno funcionó — mostrar errores completos
     return (
-        f"ERROR: PATCH sheet={r1.status_code} | "
-        f"PATCH cells={r2.status_code} '{r2.text[:80]}' | "
-        f"PUT cellFormats={r3.status_code} '{r3.text[:80]}'"
+        f"ERROR: PUT cellFormats locked={r1.status_code} '{r1.text[:100]}' | "
+        f"PUT cellFormats protection={r2.status_code} '{r2.text[:100]}' | "
+        f"PATCH sheet={r3.status_code} '{r3.text[:100]}'"
     )
 
 
