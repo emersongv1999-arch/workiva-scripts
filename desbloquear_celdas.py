@@ -76,10 +76,17 @@ async def _put(url: str, body: dict) -> httpx.Response:
     return r
 
 
-async def _patch(url: str, body: dict) -> httpx.Response:
+async def _patch(url: str, body) -> httpx.Response:
     c = await _get_client()
-    r = await c.patch(url, json=body,
-                      headers={"Authorization": f"Bearer {await _get_token()}"})
+    token = await _get_token()
+    if isinstance(body, list):
+        # JSON Patch (RFC 6902)
+        r = await c.patch(url, json=body,
+                          headers={"Authorization": f"Bearer {token}",
+                                   "Content-Type": "application/json-patch+json"})
+    else:
+        r = await c.patch(url, json=body,
+                          headers={"Authorization": f"Bearer {token}"})
     return r
 
 
@@ -108,27 +115,32 @@ async def get_sheets(ss_id: str) -> dict[str, str]:
 async def unlock_sheet(ss_id: str, sheet_id: str, sheet_name: str) -> str:
     """
     Intenta desbloquear todas las celdas de una hoja.
-    Prueba el endpoint de cellFormats con rango completo.
-    Retorna "OK", "SKIP" o descripción del error.
+    Retorna "OK ..." o descripción del error.
     """
-    full_range = "A1:ZZ100000"
+    base = f"{PLATFORM_URL}/spreadsheets/{ss_id}/sheets/{sheet_id}"
 
-    # Intento 1: PUT cellFormats (formato de rango)
-    url1 = f"{PLATFORM_URL}/spreadsheets/{ss_id}/sheets/{sheet_id}/cellformats/{full_range}"
-    r1 = await _put(url1, {"format": {"protection": {"locked": False}}})
+    # Intento 1: PATCH sheet con JSON Patch (isProtected = false)
+    r1 = await _patch(base, [{"op": "replace", "path": "/isProtected", "value": False}])
     if r1.status_code in (200, 202, 204):
-        return f"OK ({r1.status_code})"
+        return f"OK isProtected ({r1.status_code})"
 
-    # Intento 2: PATCH al sheet completo (protección a nivel hoja)
-    url2 = f"{PLATFORM_URL}/spreadsheets/{ss_id}/sheets/{sheet_id}"
-    r2 = await _patch(url2, {"isProtected": False})
+    # Intento 2: PATCH cells range con protection
+    url2 = f"{base}/cells/A1:ZZ100000"
+    r2 = await _patch(url2, {"protection": {"locked": False}})
     if r2.status_code in (200, 202, 204):
-        return f"OK vía isProtected ({r2.status_code})"
+        return f"OK cells protection ({r2.status_code})"
 
-    # Ninguno funcionó — reportar respuesta para diagnóstico
+    # Intento 3: PUT cellFormats
+    url3 = f"{base}/cellFormats/A1:ZZ100000"
+    r3 = await _put(url3, {"protection": {"locked": False}})
+    if r3.status_code in (200, 202, 204):
+        return f"OK cellFormats ({r3.status_code})"
+
+    # Ninguno funcionó — reportar para diagnóstico
     return (
-        f"ERROR: PUT cellformats={r1.status_code} '{r1.text[:120]}' | "
-        f"PATCH sheet={r2.status_code} '{r2.text[:120]}'"
+        f"ERROR: PATCH sheet={r1.status_code} | "
+        f"PATCH cells={r2.status_code} '{r2.text[:80]}' | "
+        f"PUT cellFormats={r3.status_code} '{r3.text[:80]}'"
     )
 
 
