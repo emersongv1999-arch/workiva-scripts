@@ -113,6 +113,21 @@ async def main():
     else:
         print("\nNinguna hoja contiene '117' en su nombre en el archivo seleccionado.")
 
+    # DEBUG: imprimir valores exactos de las primeras 10 filas para la hoja 117
+    if sheet117:
+        print(f"\nDEBUG — valores exactos primeras 10 filas de '{sheet117}':")
+        sid117 = tgt_sheets_dict[sheet117]
+        cells117 = await mcp._read_sheet_cells(ss_id, sid117)
+        for i, row in enumerate(cells117[:10]):
+            row_vals = []
+            for j, cell in enumerate(row[:30]):  # primeras 30 columnas
+                if isinstance(cell, dict):
+                    v = cell.get("calculatedValue") or cell.get("value") or ""
+                    if str(v).strip():
+                        row_vals.append(f"[{j}]={repr(str(v).strip())}")
+            if row_vals:
+                print(f"  fila {i}: {', '.join(row_vals)}")
+
     # 2. Llamar fill_comparatives con include_sheets=[117]
     params = mcp.FillComparativesInput(
         spreadsheet_id=ss_id,
