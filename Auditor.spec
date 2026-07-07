@@ -6,11 +6,11 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=['pyodbc', 'httpx', 'httpx._transports.default', 'httpcore', 'mcp', 'pydantic', 'dotenv', 'openpyxl'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['cryptography'],
+    excludes=[],
     noarchive=False,
     optimize=0,
 )
