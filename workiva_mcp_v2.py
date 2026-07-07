@@ -742,14 +742,14 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             ("quarter",     kw_quarter,   src_eerr_id,       src_sheets_eerr,      kw_quarter),
             ("eerr",        kw_eerr,      src_eerr_id,       src_sheets_eerr,      kw_eerr_src),
             ("curr_prev",   kw_curr_prev, src_curr_prev_id,  src_sheets_curr_prev, kw_curr_prev),
-            ("prev_period", kw_prev,      src_prev_id,       src_sheets_prev,      kw_prev),
-            # Balance: usar el archivo del período anterior (Q1 para Q2, etc.);
-            # así se lee el comparativo Dic tal como quedó declarado en ese cierre.
-            # Fallback al archivo Dic directo si no existe período anterior (caso Q1).
+            # bal antes que prev_period: ambos usan "2025-12-31" como keyword;
+            # si prev_period va primero, reclama la columna Dic y bal nunca se procesa.
+            # Con bal primero, toma la columna y lee del período anterior (Q1 para Q2, etc.).
             ("bal",         kw_bal,
              src_curr_prev_id  or src_balance_id,
              src_sheets_curr_prev if src_curr_prev_id else src_sheets_bal,
              kw_bal),
+            ("prev_period", kw_prev,      src_prev_id,       src_sheets_prev,      kw_prev),
         ]
 
         def _find_src_col(src_cells: list[list], kw: str) -> int | None:
