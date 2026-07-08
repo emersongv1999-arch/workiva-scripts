@@ -812,12 +812,43 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                     if j < len(r)
                                 )
                                 if not is_pct:
+                                    # Detectar doble sub-tabla: buscar si la misma
+                                    # keyword aparece de nuevo en la misma columna j
+                                    # en filas posteriores (sub-tabla inferior).
+                                    sub2_header_row = None
+                                    sub2_data_start = None
+                                    for i2, row2 in enumerate(all_rows[i + 1:], start=i + 1):
+                                        cell2 = row2[j] if j < len(row2) else None
+                                        if not isinstance(cell2, dict):
+                                            continue
+                                        for vk2 in ("calculatedValue", "value"):
+                                            v2 = str(cell2.get(vk2, "") or "").lower()
+                                            if kw_detect in v2:
+                                                sub2_header_row = i2
+                                                break
+                                        if sub2_header_row is not None:
+                                            break
+                                    if sub2_header_row is not None:
+                                        # Encontrar primera fila de datos tras el encabezado inferior
+                                        for i3 in range(sub2_header_row + 1, len(all_rows)):
+                                            cell3 = all_rows[i3][j] if j < len(all_rows[i3]) else None
+                                            has_kw3 = isinstance(cell3, dict) and any(
+                                                kw_detect in str(cell3.get(vk3, "") or "").lower()
+                                                for vk3 in ("calculatedValue", "value")
+                                            )
+                                            if not has_kw3:
+                                                sub2_data_start = i3
+                                                break
                                     comp_cols.append({
-                                        "col":      j,
-                                        "type":     col_type,
-                                        "src_id":   src_id,
-                                        "src_sh":   src_sh,
-                                        "kw_src":   kw_src,
+                                        "col":              j,
+                                        "type":             col_type,
+                                        "src_id":           src_id,
+                                        "src_sh":           src_sh,
+                                        "kw_src":           kw_src,
+                                        "first_header_row": i,
+                                        "sub2_header_row":  sub2_header_row,
+                                        "sub2_data_start":  sub2_data_start,
+                                        "sub_table_offset": (sub2_header_row - i) if sub2_header_row else None,
                                     })
                                     seen.add(j)
                                 break
@@ -879,9 +910,18 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 if src_col is None:
                     continue
 
+                sub2_data_start  = col_info.get("sub2_data_start")
+                sub_table_offset = col_info.get("sub_table_offset")
+
                 src_vals: list[Any] = []
                 for i in range(len(tgt_cells)):
-                    row_s = src_cells[i] if i < len(src_cells) else []
+                    # Doble sub-tabla: filas de la sub-tabla inferior del destino
+                    # se remapean a las filas de la sub-tabla superior del fuente.
+                    if sub2_data_start and sub_table_offset and i >= sub2_data_start:
+                        src_row_i = i - sub_table_offset
+                    else:
+                        src_row_i = i
+                    row_s = src_cells[src_row_i] if 0 <= src_row_i < len(src_cells) else []
                     sv    = _cv(row_s[src_col]) if src_col < len(row_s) else None
                     src_vals.append(sv if isinstance(sv, (int, float)) else None)
 
