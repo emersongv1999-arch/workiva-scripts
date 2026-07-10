@@ -50,6 +50,17 @@ async def main():
     name, ss_id = next(iter(matches.items()))
     print(f"Archivo: {name}\n")
 
+    # Listar hojas para verificar nombre exacto
+    w._wk._client = None
+    async with w._wk as client:
+        sheets_resp = await client.get(f"/spreadsheets/{ss_id}/sheets")
+    all_sheet_names = [s["name"] for s in sheets_resp.get("data", [])]
+    print("Hojas que contienen '122':")
+    for n in all_sheet_names:
+        if "122" in n:
+            print(f"  >> {n!r}")
+    print()
+
     id_to_name = {v: k for k, v in all_files.items()}
     _orig_read = w._read_sheet_cells
     async def _debug_read(ss_id, sheet_id):
