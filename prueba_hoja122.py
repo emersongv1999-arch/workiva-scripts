@@ -13,7 +13,7 @@ SOCIEDAD  = "E514"
 ANIO      = "2026"
 TRIMESTRE = "Q3"
 TIPO      = "IND"
-NOTA      = "122.- Cuadros de resultados por seg..."
+NOTA      = "122.- Cuadros de resultados por segmento"
 MM        = "09"
 
 import importlib.util, unittest.mock
