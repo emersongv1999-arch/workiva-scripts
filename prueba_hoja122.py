@@ -109,6 +109,8 @@ async def main():
     for sh in hojas:
         print(f"\nHoja: {sh['sheet']}")
         print(f"Columnas detectadas: {sh.get('comp_cols', [])}")
+        for dbg in sh.get("_debug_src_cols", []):
+            print(f"  [SRC] {dbg}")
         for comp in sh.get("comparacion", []):
             print(f"\n  Tipo col : {comp.get('tipo','?')}")
             print(f"  iguales={comp['iguales']}  distintos={comp['distintos']}")

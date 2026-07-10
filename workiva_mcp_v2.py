@@ -996,7 +996,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             sheet_report: dict[str, Any] = {
                 "sheet": sname,
                 "comp_cols": [
-                    f"{_col_letter(c['col'])}({c['type']})"
+                    f"{_col_letter(c['col'])}({c['type']},seg={c.get('segment_label','')!r})"
                     for c in comp_cols_by_name[sname]
                 ],
                 "cols_written": 0,
@@ -1016,6 +1016,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 # Buscar columna fuente por segmento + keyword (para tablas multi-segmento)
                 seg_label = col_info.get("segment_label", "")
                 src_col = _find_src_col_by_segment(src_cells, kw_src, seg_label)
+                sheet_report.setdefault("_debug_src_cols", []).append(
+                    f"{_col_letter(dest_col)}({col_type}): seg={seg_label!r} kw={kw_src!r} -> src_col={src_col}"
+                )
                 if src_col is None:
                     continue
 
