@@ -766,6 +766,96 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             return j
             return None
 
+        def _find_segment_label(all_rows: list, col_j: int, header_row: int) -> str:
+            """
+            Detecta el nombre de segmento que "posee" la columna col_j.
+            Busca en las filas anteriores al header de fecha (header_row)
+            escaneando hacia la izquierda desde col_j hasta encontrar una
+            celda con texto no-vacío que no sea una fecha ni M$.
+            """
+            _skip = {"m$", "%", ""}
+            _date_re = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}-\d{4}|\d{4}/\d{2}/\d{2}")
+            for ri in range(header_row - 1, -1, -1):
+                row = all_rows[ri]
+                for jj in range(col_j, -1, -1):
+                    if jj >= len(row):
+                        continue
+                    cell = row[jj]
+                    if not isinstance(cell, dict):
+                        continue
+                    for vk in ("calculatedValue", "value"):
+                        raw = str(cell.get(vk, "") or "").strip()
+                        lo  = raw.lower()
+                        if lo in _skip or _date_re.search(lo):
+                            continue
+                        if len(raw) >= 3:
+                            return lo
+            return ""
+
+        def _find_src_col_by_segment(
+            src_cells: list[list], kw_src: str, segment_label: str
+        ) -> int | None:
+            """
+            Busca en el fuente la columna que (a) está bajo el mismo segmento
+            y (b) contiene kw_src en el encabezado.
+            Si no hay segmento o no se encuentra, cae al _find_src_col normal.
+            """
+            if not kw_src:
+                return None
+            if not segment_label:
+                return _find_src_col(src_cells, kw_src)
+
+            _date_re = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}-\d{4}|\d{4}/\d{2}/\d{2}")
+            _skip = {"m$", "%", ""}
+
+            # Paso 1: encontrar todas las columnas de inicio de segmento en el fuente
+            # Un "inicio de segmento" es una celda con texto no-fecha en las primeras 8 filas
+            seg_starts: list[tuple[int, int, str]] = []  # (fila, col, label)
+            for ri, row in enumerate(src_cells[:8]):
+                for jj, cell in enumerate(row):
+                    if not isinstance(cell, dict):
+                        continue
+                    for vk in ("calculatedValue", "value"):
+                        raw = str(cell.get(vk, "") or "").strip()
+                        lo  = raw.lower()
+                        if lo in _skip or _date_re.search(lo) or len(raw) < 3:
+                            continue
+                        seg_starts.append((ri, jj, lo))
+
+            if not seg_starts:
+                return _find_src_col(src_cells, kw_src)
+
+            # Paso 2: encontrar cuál segmento del fuente coincide con segment_label
+            # Buscar coincidencia exacta primero, luego parcial
+            matched_col: int | None = None
+            for _, jj, lbl in seg_starts:
+                if lbl == segment_label or segment_label in lbl or lbl in segment_label:
+                    matched_col = jj
+                    break
+
+            if matched_col is None:
+                return _find_src_col(src_cells, kw_src)
+
+            # Paso 3: dentro de las columnas desde matched_col hasta el próximo segmento,
+            # buscar kw_src
+            next_seg_col = min(
+                (jj for _, jj, _ in seg_starts if jj > matched_col),
+                default=9999
+            )
+
+            for row in src_cells[:8]:
+                for jj in range(matched_col, min(next_seg_col, len(row))):
+                    cell = row[jj]
+                    if not isinstance(cell, dict):
+                        continue
+                    for vk in ("calculatedValue", "value"):
+                        v = str(cell.get(vk, "") or "").lower()
+                        if kw_src in v:
+                            return jj
+
+            # No encontrado en el segmento → fallback global
+            return _find_src_col(src_cells, kw_src)
+
         comp_cols_by_name: dict[str, list[dict]] = {}
         for sname in batch:
             comp_cols: list[dict] = []
@@ -812,6 +902,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                     if j < len(r)
                                 )
                                 if not is_pct:
+                                    # Detectar segmento horizontal (tablas multi-segmento)
+                                    seg_label = _find_segment_label(all_rows, j, i)
+
                                     # Detectar doble sub-tabla: buscar si la misma
                                     # keyword aparece de nuevo en la misma columna j
                                     # en filas posteriores (sub-tabla inferior).
@@ -846,6 +939,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                         "src_sh":           src_sh,
                                         "kw_src":           kw_src,
                                         "first_header_row": i,
+                                        "segment_label":    seg_label,
                                         "sub2_header_row":  sub2_header_row,
                                         "sub2_data_start":  sub2_data_start,
                                         "sub_table_offset": (sub2_header_row - i) if sub2_header_row else None,
@@ -905,8 +999,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 if not src_cells:
                     continue
 
-                # Buscar columna fuente por keyword date-driven (sin offset fijo)
-                src_col = _find_src_col(src_cells, kw_src)
+                # Buscar columna fuente por segmento + keyword (para tablas multi-segmento)
+                seg_label = col_info.get("segment_label", "")
+                src_col = _find_src_col_by_segment(src_cells, kw_src, seg_label)
                 if src_col is None:
                     continue
 
