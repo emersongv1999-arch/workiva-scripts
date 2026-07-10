@@ -20,7 +20,7 @@ import importlib.util, unittest.mock
 
 def _load_mcp():
     here = Path(__file__).parent
-    path = here / "workiva_mcp_v2.py"
+    path = here / "workiva_mcp_v2 (1).py"
     if not path.exists():
         sys.exit(f"ERROR: No se encuentra {path}")
     noop = unittest.mock.MagicMock()
