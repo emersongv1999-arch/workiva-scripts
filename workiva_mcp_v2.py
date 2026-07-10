@@ -780,6 +780,24 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             return j
             return None
 
+        def _find_src_col_nth(src_cells: list[list], kw: str, n: int) -> int | None:
+            """Busca la N-ésima columna (0-based) cuyo header contenga kw en las primeras 8 filas."""
+            if not kw:
+                return None
+            seen_cols: list[int] = []
+            seen_set: set[int] = set()
+            for row in src_cells[:8]:
+                for j, cell in enumerate(row):
+                    if j in seen_set or not isinstance(cell, dict):
+                        continue
+                    for val_key in ("calculatedValue", "value"):
+                        v = str(cell.get(val_key, "") or "").lower()
+                        if kw in v:
+                            seen_cols.append(j)
+                            seen_set.add(j)
+                            break
+            return seen_cols[n] if n < len(seen_cols) else (seen_cols[-1] if seen_cols else None)
+
         def _find_segment_label(all_rows: list, col_j: int, header_row: int) -> str:
             """
             Detecta el nombre de segmento que "posee" la columna col_j.
@@ -807,12 +825,13 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             return ""
 
         def _find_src_col_by_segment(
-            src_cells: list[list], kw_src: str, segment_label: str
+            src_cells: list[list], kw_src: str, segment_label: str,
+            occurrence_index: int = 0
         ) -> int | None:
             """
             Busca en el fuente la columna que (a) está bajo el mismo segmento
             y (b) contiene kw_src en el encabezado.
-            Si no hay segmento o no se encuentra, cae al _find_src_col normal.
+            Si no hay segmento o no se encuentra, usa índice de ocurrencia (Nth match).
             """
             if not kw_src:
                 return None
@@ -836,44 +855,42 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             continue
                         seg_starts.append((ri, jj, lo))
 
-            if not seg_starts:
-                return _find_src_col(src_cells, kw_src)
-
             # Paso 2: encontrar cuál segmento del fuente coincide con segment_label
-            # Buscar coincidencia exacta primero, luego parcial
+            # Solo usar seg_starts si los valores son texto real (no fórmulas)
+            real_segs = [(ri, jj, lbl) for ri, jj, lbl in seg_starts
+                         if not lbl.startswith("=")]
+
             matched_col: int | None = None
-            for _, jj, lbl in seg_starts:
-                if lbl == segment_label or segment_label in lbl or lbl in segment_label:
-                    matched_col = jj
-                    break
+            if real_segs and segment_label and not segment_label.startswith("="):
+                for _, jj, lbl in real_segs:
+                    if lbl == segment_label or segment_label in lbl or lbl in segment_label:
+                        matched_col = jj
+                        break
 
-            if matched_col is None:
-                return _find_src_col(src_cells, kw_src)
+            if matched_col is not None:
+                # Paso 3: dentro del segmento, buscar kw_src
+                next_seg_col = min(
+                    (jj for _, jj, _ in real_segs if jj > matched_col),
+                    default=9999
+                )
+                for row in src_cells[:8]:
+                    for jj in range(matched_col, min(next_seg_col, len(row))):
+                        cell = row[jj]
+                        if not isinstance(cell, dict):
+                            continue
+                        for vk in ("calculatedValue", "value"):
+                            v = str(cell.get(vk, "") or "").lower()
+                            if kw_src in v:
+                                return jj
 
-            # Paso 3: dentro de las columnas desde matched_col hasta el próximo segmento,
-            # buscar kw_src
-            next_seg_col = min(
-                (jj for _, jj, _ in seg_starts if jj > matched_col),
-                default=9999
-            )
-
-            for row in src_cells[:8]:
-                for jj in range(matched_col, min(next_seg_col, len(row))):
-                    cell = row[jj]
-                    if not isinstance(cell, dict):
-                        continue
-                    for vk in ("calculatedValue", "value"):
-                        v = str(cell.get(vk, "") or "").lower()
-                        if kw_src in v:
-                            return jj
-
-            # No encontrado en el segmento → fallback global
-            return _find_src_col(src_cells, kw_src)
+            # Segmento no encontrado o sin texto real → usar índice de ocurrencia
+            return _find_src_col_nth(src_cells, kw_src, occurrence_index)
 
         comp_cols_by_name: dict[str, list[dict]] = {}
         for sname in batch:
             comp_cols: list[dict] = []
             seen: set[int] = set()
+            occurrence_counts: dict[tuple, int] = {}
             for col_type, kw_detect, src_id, src_sh, kw_src in TYPE_MAP:
                 if not kw_detect or not src_id:
                     continue
@@ -946,6 +963,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                             if not has_kw3:
                                                 sub2_data_start = i3
                                                 break
+                                    occ_key = (col_type, kw_detect)
+                                    occ_idx = occurrence_counts.get(occ_key, 0)
+                                    occurrence_counts[occ_key] = occ_idx + 1
                                     comp_cols.append({
                                         "col":              j,
                                         "type":             col_type,
@@ -954,6 +974,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                         "kw_src":           kw_src,
                                         "first_header_row": i,
                                         "segment_label":    seg_label,
+                                        "occurrence_index": occ_idx,
                                         "sub2_header_row":  sub2_header_row,
                                         "sub2_data_start":  sub2_data_start,
                                         "sub_table_offset": (sub2_header_row - i) if sub2_header_row else None,
@@ -1014,10 +1035,11 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     continue
 
                 # Buscar columna fuente por segmento + keyword (para tablas multi-segmento)
-                seg_label = col_info.get("segment_label", "")
-                src_col = _find_src_col_by_segment(src_cells, kw_src, seg_label)
+                seg_label       = col_info.get("segment_label", "")
+                occurrence_index = col_info.get("occurrence_index", 0)
+                src_col = _find_src_col_by_segment(src_cells, kw_src, seg_label, occurrence_index)
                 sheet_report.setdefault("_debug_src_cols", []).append(
-                    f"{_col_letter(dest_col)}({col_type}): seg={seg_label!r} kw={kw_src!r} -> src_col={src_col}"
+                    f"{_col_letter(dest_col)}({col_type}): seg={seg_label!r} occ={occurrence_index} kw={kw_src!r} -> src_col={src_col}"
                 )
                 if src_col is None:
                     continue
