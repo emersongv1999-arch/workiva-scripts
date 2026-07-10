@@ -607,14 +607,25 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             parts = str(d).split("-")
             return (parts[1], parts[0]) if len(parts) >= 2 else ("", "")
 
+        # Índice de all_files normalizado (espacios múltiples → uno)
+        _all_files_norm: dict[str, str] = {
+            re.sub(r"\s+", " ", k): v for k, v in all_files.items()
+        }
+
+        def _find_file(name: str) -> str | None:
+            """Busca en all_files normalizando espacios múltiples."""
+            norm = re.sub(r"\s+", " ", name)
+            return _all_files_norm.get(norm)
+
         # Fuente BALANCE (prior_end = dic año anterior)
         src_balance_id: str | None = None
         if bases.get("prior_end"):
             mm_b, yy_b = _date_parts(bases["prior_end"])
             for sep in ["-", "_"]:
                 name = f"{prefix}{code}_{tipo}_{mm_b}{sep}{yy_b}_{suffix}"
-                if name in all_files:
-                    src_balance_id = all_files[name]
+                fid  = _find_file(name)
+                if fid:
+                    src_balance_id = fid
                     report["source_balance"] = name
                     break
 
@@ -628,8 +639,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             mm_e, yy_e = _date_parts(bases["prior_eerr_end"])
             for sep in ["-", "_"]:
                 name = f"{prefix}{code}_{tipo}_{mm_e}{sep}{yy_e}_{suffix}"
-                if name in all_files:
-                    src_eerr_id = all_files[name]
+                fid  = _find_file(name)
+                if fid:
+                    src_eerr_id = fid
                     report["source_eerr"] = name
                     break
         if not src_eerr_id:
@@ -641,8 +653,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             mm_p, yy_p = _date_parts(bases["prior_prev_period_end"])
             for sep in ["-", "_"]:
                 name = f"{prefix}{code}_{tipo}_{mm_p}{sep}{yy_p}_{suffix}"
-                if name in all_files:
-                    src_prev_id = all_files[name]
+                fid  = _find_file(name)
+                if fid:
+                    src_prev_id = fid
                     report["source_prev_period"] = name
                     break
         if not src_prev_id:
@@ -654,8 +667,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             mm_cp, yy_cp = _date_parts(bases["prev_period_end"])
             for sep in ["-", "_"]:
                 name = f"{prefix}{code}_{tipo}_{mm_cp}{sep}{yy_cp}_{suffix}"
-                if name in all_files:
-                    src_curr_prev_id = all_files[name]
+                fid  = _find_file(name)
+                if fid:
+                    src_curr_prev_id = fid
                     report["source_curr_prev"] = name
                     break
         if not src_curr_prev_id:
