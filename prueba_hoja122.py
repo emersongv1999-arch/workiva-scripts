@@ -52,11 +52,9 @@ async def main():
 
     # Listar hojas para verificar nombre exacto
     w._wk._client = None
-    async with w._wk as client:
-        sheets_resp = await client.get(f"/spreadsheets/{ss_id}/sheets")
-    all_sheet_names = [s["name"] for s in sheets_resp.get("data", [])]
+    all_sheets = await w._get_sheets(ss_id)
     print("Hojas que contienen '122':")
-    for n in all_sheet_names:
+    for n in all_sheets:
         if "122" in n:
             print(f"  >> {n!r}")
     print()
