@@ -750,12 +750,23 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
         # Para buscar en fuente: usar start del EERR (distingue EERR vs quarter)
         kw_eerr_src = str(bases.get("prior_eerr_start", "")).lower() or kw_eerr
 
+        def _year_start(date_str: str) -> str:
+            """'2026-06-30' → '2026-01-01'  (inicio de año para filtrar columna YTD)"""
+            return (date_str[:4] + "-01-01") if date_str and len(date_str) >= 4 else date_str
+
+        # Para curr_prev y prev_period en la FUENTE, buscar por el inicio de año ('YYYY-01-01')
+        # en lugar del fin del período ('YYYY-06-30'). Así se distingue la columna acumulada YTD
+        # ("01-01-2026/30-06-2026") de la trimestral ("01-04-2026/30-06-2026"), que en el
+        # archivo fuente ambas terminan en la misma fecha pero solo la YTD contiene '01-01'.
+        kw_curr_prev_src = _year_start(kw_curr_prev)
+        kw_prev_src      = _year_start(kw_prev)
+
         # Mapeo tipo → (keyword detección en destino, archivo fuente, keyword búsqueda en fuente)
         # Orden de prioridad: quarter primero (más específico), luego eerr, prev_period, bal
         TYPE_MAP = [
             ("quarter",     kw_quarter,   src_eerr_id,       src_sheets_eerr,      kw_quarter),
             ("eerr",        kw_eerr,      src_eerr_id,       src_sheets_eerr,      kw_eerr_src),
-            ("curr_prev",   kw_curr_prev, src_curr_prev_id,  src_sheets_curr_prev, kw_curr_prev),
+            ("curr_prev",   kw_curr_prev, src_curr_prev_id,  src_sheets_curr_prev, kw_curr_prev_src),
             # bal antes que prev_period: ambos usan "2025-12-31" como keyword;
             # si prev_period va primero, reclama la columna Dic y bal nunca se procesa.
             # Con bal primero, toma la columna y lee del período anterior (Q1 para Q2, etc.).
@@ -763,7 +774,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
              src_curr_prev_id  or src_balance_id,
              src_sheets_curr_prev if src_curr_prev_id else src_sheets_bal,
              kw_bal),
-            ("prev_period", kw_prev,      src_prev_id,       src_sheets_prev,      kw_prev),
+            ("prev_period", kw_prev,      src_prev_id,       src_sheets_prev,      kw_prev_src),
         ]
 
         def _find_src_col(src_cells: list[list], kw: str) -> int | None:

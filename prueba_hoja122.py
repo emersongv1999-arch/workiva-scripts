@@ -76,16 +76,11 @@ async def main():
             print(f"  {n!r}")
     print()
 
-    confirm = input("\n¿Escribir en Workiva? (s/N): ").strip().lower()
-    if confirm != "s":
-        print("Cancelado.")
-        return
-
     w._wk._client = None
     raw = await w.workiva_fill_comparatives(
         w.FillComparativesInput(
             spreadsheet_id         = ss_id,
-            dry_run                = False,
+            dry_run                = True,
             include_sheets         = [NOTA],
             max_sheets             = 1,
             detalle_filas          = True,
@@ -105,19 +100,23 @@ async def main():
     print(f"Fuente EERR           : {r.get('source_eerr','?')}")
     print("-" * 60)
 
-    # Resultado de llenado (dry_run=False)
-    hojas = r.get("sheets_written", [])
+    hojas = r.get("sheets_processed", [])
     if not hojas:
-        print(f"Hoja '{NOTA}' no encontrada o sin columnas para llenar.")
+        print(f"Hoja '{NOTA}' no encontrada o sin columnas comparativas.")
         print(f"Hojas omitidas : {r.get('sheets_skipped', [])}")
         return
 
     for sh in hojas:
         print(f"\nHoja: {sh['sheet']}")
-        print(f"  Celdas escritas: {sh.get('cells_written', 0)}")
-        if sh.get("errors"):
-            for e in sh["errors"]:
-                print(f"  ERROR: {e}")
+        for dbg in sh.get("_debug_src_cols", []):
+            print(f"  [SRC] {dbg}")
+        for comp in sh.get("comparacion", []):
+            if comp.get("distintos", 0) > 0:
+                print(f"\n  Tipo col : {comp.get('tipo','?')}  iguales={comp['iguales']}  distintos={comp['distintos']}")
+                for f in comp.get("filas", []):
+                    if f["estado"] == "HALLAZGO":
+                        print(f"    ✗ fila {f['fila']:>3}  {str(f['etiqueta'])[:40]:<40}"
+                              f"  declarado={f['destino']}  fuente={f['fuente']}")
 
 
 if __name__ == "__main__":
