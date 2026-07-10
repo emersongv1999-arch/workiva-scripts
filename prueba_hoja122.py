@@ -67,6 +67,15 @@ async def main():
         return await _orig_read(ss_id, sheet_id)
     w._read_sheet_cells = _debug_read
 
+    # Debug: mostrar archivos E514 IND 09 disponibles y qué busca el código
+    w._wk._client = None
+    all_files_dbg = await w._load_all_files()
+    print("Archivos E514_IND_09 disponibles (sin prefijo):")
+    for n in sorted(all_files_dbg):
+        if "E514_IND_09" in n and not n.startswith("("):
+            print(f"  {n!r}")
+    print()
+
     w._wk._client = None
     raw = await w.workiva_fill_comparatives(
         w.FillComparativesInput(
