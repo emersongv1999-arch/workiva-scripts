@@ -46,11 +46,16 @@ async def main():
     name, ss_id = next(iter(matches.items()))
     print(f"Archivo: {name}\n")
 
+    confirm = input("\n¿Escribir en Workiva? (s/N): ").strip().lower()
+    if confirm != "s":
+        print("Cancelado.")
+        return
+
     w._wk._client = None
     raw = await w.workiva_fill_comparatives(
         w.FillComparativesInput(
             spreadsheet_id         = ss_id,
-            dry_run                = True,
+            dry_run                = False,
             include_sheets         = [NOTA],
             max_sheets             = 1,
             detalle_filas          = True,
@@ -69,25 +74,18 @@ async def main():
     print(f"Fuente prev_per  : {r.get('source_prev_period','?')}")
     print("-" * 60)
 
-    hojas = r.get("sheets_processed", [])
+    hojas = r.get("sheets_written", [])
     if not hojas:
-        print(f"Hoja '{NOTA}' no encontrada o sin columnas comparativas.")
+        print(f"Hoja '{NOTA}' no encontrada o sin columnas para llenar.")
         print(f"Hojas omitidas : {r.get('sheets_skipped', [])}")
         return
 
     for sh in hojas:
         print(f"\nHoja: {sh['sheet']}")
-        print(f"Columnas detectadas: {sh.get('comp_cols', [])}")
-        for dbg in sh.get("_debug_src_cols", []):
-            print(f"  [SRC] {dbg}")
-        for comp in sh.get("comparacion", []):
-            print(f"\n  Tipo col : {comp.get('tipo','?')}  "
-                  f"iguales={comp['iguales']}  distintos={comp['distintos']}")
-            for f in comp.get("filas", []):
-                estado = f["estado"]
-                marca  = "✓" if estado == "OK" else "✗" if estado == "HALLAZGO" else "?"
-                print(f"    {marca} fila {f['fila']:>3}  {str(f['etiqueta'])[:40]:<40}"
-                      f"  declarado={f['destino']}  fuente={f['fuente']}  [{estado}]")
+        print(f"  Celdas escritas: {sh.get('cells_written', 0)}")
+        if sh.get("errors"):
+            for e in sh["errors"]:
+                print(f"  ERROR: {e}")
 
 
 if __name__ == "__main__":
