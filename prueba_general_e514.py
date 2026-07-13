@@ -46,22 +46,40 @@ async def main():
     name, ss_id = next(iter(matches.items()))
     print(f"Archivo: {name}\n")
 
-    # ── DRY RUN completo ──────────────────────────────────────────────
-    print("Corriendo dry_run completo (esto puede tardar varios minutos)...")
-    w._wk._client = None
-    raw = await w.workiva_fill_comparatives(
-        w.FillComparativesInput(
-            spreadsheet_id         = ss_id,
-            dry_run                = True,
-            detalle_filas          = True,
-            apply_default_excludes = False,
+    # ── DRY RUN completo (con paginación) ────────────────────────────
+    print("Corriendo dry_run completo (paginado, puede tardar varios minutos)...")
+
+    all_processed: list = []
+    all_skipped:   list = []
+    r = {}
+    offset = 0
+    page   = 0
+    while True:
+        page += 1
+        print(f"  Página {page} (offset={offset})...")
+        w._wk._client = None
+        raw = await w.workiva_fill_comparatives(
+            w.FillComparativesInput(
+                spreadsheet_id         = ss_id,
+                dry_run                = True,
+                detalle_filas          = True,
+                apply_default_excludes = False,
+                max_sheets             = 100,
+                sheet_offset           = offset,
+            )
         )
-    )
+        r = json.loads(raw)
+        if "warning" in r:
+            sys.exit(f"ADVERTENCIA: {r['warning']}")
+        all_processed.extend(r.get("sheets_processed", []))
+        if offset == 0:
+            all_skipped = r.get("sheets_skipped", [])
+        if not r.get("has_more", False):
+            break
+        offset += r.get("batch_size", 100)
 
-    r = json.loads(raw)
-
-    if "warning" in r:
-        sys.exit(f"ADVERTENCIA: {r['warning']}")
+    r["sheets_processed"] = all_processed
+    r["sheets_skipped"]   = all_skipped
 
     print(f"\nFuentes detectadas:")
     print(f"  EERR      : {r.get('source_eerr','?')}")
@@ -135,20 +153,32 @@ async def main():
         print("Cancelado.")
         return
 
-    print("\nEscribiendo...")
-    w._wk._client = None
-    raw2 = await w.workiva_fill_comparatives(
-        w.FillComparativesInput(
-            spreadsheet_id         = ss_id,
-            dry_run                = False,
-            apply_default_excludes = False,
+    print("\nEscribiendo (paginado)...")
+    all_written: list = []
+    offset2 = 0
+    page2   = 0
+    while True:
+        page2 += 1
+        print(f"  Página {page2} (offset={offset2})...")
+        w._wk._client = None
+        raw2 = await w.workiva_fill_comparatives(
+            w.FillComparativesInput(
+                spreadsheet_id         = ss_id,
+                dry_run                = False,
+                apply_default_excludes = False,
+                max_sheets             = 100,
+                sheet_offset           = offset2,
+            )
         )
-    )
-    r2 = json.loads(raw2)
-    escritas = r2.get("sheets_written", [])
-    total_celdas = sum(s.get("cells_written", 0) for s in escritas)
-    print(f"\nHojas escritas: {len(escritas)}  |  Celdas totales: {total_celdas}")
-    for s in escritas:
+        r2 = json.loads(raw2)
+        all_written.extend(r2.get("sheets_written", []))
+        if not r2.get("has_more", False):
+            break
+        offset2 += r2.get("batch_size", 100)
+
+    total_celdas = sum(s.get("cells_written", 0) for s in all_written)
+    print(f"\nHojas escritas: {len(all_written)}  |  Celdas totales: {total_celdas}")
+    for s in all_written:
         if s.get("cells_written", 0) > 0 or s.get("errors"):
             print(f"  {s['sheet'][:55]:<55}  celdas={s.get('cells_written',0)}")
             for e in s.get("errors", []):
