@@ -73,43 +73,48 @@ async def main():
     hojas = r.get("sheets_processed", [])
     omitidas = r.get("sheets_skipped", [])
 
-    # ── Resumen por hoja ──────────────────────────────────────────────
-    print(f"{'─'*70}")
-    print(f"RESUMEN: {len(hojas)} hojas procesadas, {len(omitidas)} omitidas")
-    print(f"{'─'*70}")
-
-    hojas_con_hallazgo = []
-    for sh in hojas:
-        hallazgos_por_tipo: dict[str, int] = {}
+    # ── Clasificar hojas ──────────────────────────────────────────────
+    def _resumen_hoja(sh):
+        hallazgos: dict[str, int] = {}
         for comp in sh.get("comparacion", []):
             d = comp.get("distintos", 0)
             if d > 0:
                 t = comp.get("tipo", "?")
-                hallazgos_por_tipo[t] = hallazgos_por_tipo.get(t, 0) + d
-        if hallazgos_por_tipo:
-            hojas_con_hallazgo.append((sh["sheet"], hallazgos_por_tipo))
+                hallazgos[t] = hallazgos.get(t, 0) + d
+        return hallazgos
 
-    hojas_ok = [sh["sheet"] for sh in hojas if sh["sheet"] not in
-                {n for n, _ in hojas_con_hallazgo}]
+    print(f"{'─'*70}")
+    print(f"DIAGNÓSTICO COMPLETO: {len(hojas)} hojas procesadas, {len(omitidas)} omitidas")
+    print(f"{'─'*70}")
 
-    print(f"\nHojas OK (sin diferencias): {len(hojas_ok)}")
+    # ── Tabla resumen: TODAS las hojas procesadas ─────────────────────
+    print(f"\n{'HOJA':<55}  {'ESTADO':<10}  COLUMNAS DETECTADAS")
+    print(f"{'─'*70}")
+    for sh in hojas:
+        hallazgos = _resumen_hoja(sh)
+        if hallazgos:
+            estado = "HALLAZGO"
+            detalle = "  ".join(f"{t}:{n}" for t, n in sorted(hallazgos.items()))
+        else:
+            estado = "OK"
+            detalle = ""
+        cols = ", ".join(sh.get("comp_cols", []))
+        print(f"  {sh['sheet'][:53]:<53}  {estado:<10}  {detalle}")
+        print(f"    cols: {cols[:100]}")
 
-    print(f"\nHojas con HALLAZGOS ({len(hojas_con_hallazgo)}):")
-    for nombre, tipos in hojas_con_hallazgo:
-        detalle = "  ".join(f"{t}:{n}" for t, n in sorted(tipos.items()))
-        print(f"  {nombre[:55]:<55}  [{detalle}]")
-
-    if not hojas_con_hallazgo:
-        print("  (ninguna)")
-        return
+    # ── Hojas omitidas ────────────────────────────────────────────────
+    if omitidas:
+        print(f"\nHOJAS OMITIDAS ({len(omitidas)}):")
+        for o in omitidas:
+            print(f"  {o}")
 
     # ── Detalle de hallazgos por hoja ────────────────────────────────
     print(f"\n{'─'*70}")
-    mostrar_detalle = input("\n¿Mostrar detalle fila por fila de los hallazgos? (s/N): ").strip().lower()
+    mostrar_detalle = input("\n¿Mostrar detalle fila por fila de los HALLAZGOS? (s/N): ").strip().lower()
     if mostrar_detalle == "s":
         for sh in hojas:
-            tiene = any(comp.get("distintos", 0) > 0 for comp in sh.get("comparacion", []))
-            if not tiene:
+            hallazgos = _resumen_hoja(sh)
+            if not hallazgos:
                 continue
             print(f"\n{'='*60}")
             print(f"Hoja: {sh['sheet']}")
