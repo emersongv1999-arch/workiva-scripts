@@ -54,7 +54,7 @@ async def main():
             spreadsheet_id         = ss_id,
             dry_run                = True,
             detalle_filas          = True,
-            apply_default_excludes = True,
+            apply_default_excludes = False,
         )
     )
 
@@ -136,7 +136,7 @@ async def main():
         w.FillComparativesInput(
             spreadsheet_id         = ss_id,
             dry_run                = False,
-            apply_default_excludes = True,
+            apply_default_excludes = False,
         )
     )
     r2 = json.loads(raw2)
