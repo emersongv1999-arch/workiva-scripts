@@ -130,23 +130,25 @@ async def main():
         print(f"ADVERTENCIA: {r2['warning']}")
         return
 
-    all_written = r2.get("sheets_written", [])
-    total_celdas = sum(s.get("cells_written", 0) for s in all_written)
+    all_written = r2.get("sheets_processed", [])
+    total_cols = sum(s.get("cols_written", 0) for s in all_written)
+    hojas_con_escritura = [s for s in all_written if s.get("cols_written", 0) > 0 or s.get("errors")]
 
     print(f"\n{'─'*70}")
-    print(f"Hojas escritas : {len(all_written)}")
-    print(f"Celdas totales : {total_celdas}")
+    print(f"Hojas procesadas  : {len(all_written)}")
+    print(f"Hojas con cambios : {len(hojas_con_escritura)}")
+    print(f"Columnas escritas : {total_cols}")
     print(f"{'─'*70}")
     for s in all_written:
-        celdas = s.get("cells_written", 0)
+        cols = s.get("cols_written", 0)
         errores = s.get("errors", [])
-        if celdas > 0 or errores:
-            print(f"  {s['sheet'][:60]:<60}  celdas={celdas}")
+        if cols > 0 or errores:
+            print(f"  {s['sheet'][:60]:<60}  cols={cols}")
             for e in errores:
                 print(f"    ERROR: {e}")
 
-    if total_celdas == 0:
-        print("\nNo se escribió ninguna celda.")
+    if total_cols == 0:
+        print("\nNo se escribió ninguna columna.")
 
 
 if __name__ == "__main__":

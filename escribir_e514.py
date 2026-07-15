@@ -71,22 +71,25 @@ async def main():
         if "warning" in r:
             print(f"ADVERTENCIA: {r['warning']}")
             break
-        all_written.extend(r.get("sheets_written", []))
+        all_written.extend(r.get("sheets_processed", []))
         if not r.get("has_more", False):
             break
         offset += r.get("batch_size", 100)
 
+    total_cols = sum(s.get("cols_written", 0) for s in all_written)
+    hojas_con_cambios = [s for s in all_written if s.get("cols_written", 0) > 0 or s.get("errors")]
+
     print(f"\n{'─'*70}")
-    total_celdas = sum(s.get("cells_written", 0) for s in all_written)
-    print(f"Hojas escritas : {len(all_written)}")
-    print(f"Celdas totales : {total_celdas}")
+    print(f"Hojas procesadas  : {len(all_written)}")
+    print(f"Hojas con cambios : {len(hojas_con_cambios)}")
+    print(f"Columnas escritas : {total_cols}")
     print(f"{'─'*70}")
 
     for s in all_written:
-        celdas = s.get("cells_written", 0)
+        cols = s.get("cols_written", 0)
         errores = s.get("errors", [])
-        if celdas > 0 or errores:
-            print(f"  {s['sheet'][:60]:<60}  celdas={celdas}")
+        if cols > 0 or errores:
+            print(f"  {s['sheet'][:60]:<60}  cols={cols}")
             for e in errores:
                 print(f"    ERROR: {e}")
 
