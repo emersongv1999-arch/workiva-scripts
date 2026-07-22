@@ -864,8 +864,6 @@ RESTRICTED_MODULES = {}
 NAV_ITEMS = [
     ("Verificador de Sumas",   "verif"),
     ("Llenar Comparativos",    "mod2"),
-    ("Cruce de Notas",         "mod3"),
-    ("Extraer EEFF",           "mod4"),
     ("Flujo de Efectivo",      "mod5"),
     ("Validar Comparativos",   "mod6"),
 ]
@@ -928,8 +926,6 @@ class App(tk.Tk):
         self._views = {}
         self._build_view_verif()
         self._build_view_comparativos()
-        self._build_view_cruce_notas()
-        self._build_view_extraer_eeff()
         self._build_view_flujo_efectivo()
         self._build_view_validar_comparativos()
 
