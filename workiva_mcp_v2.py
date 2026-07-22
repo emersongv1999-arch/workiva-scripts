@@ -689,7 +689,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
         for sname in tgt_sheets:
             if include_lower is not None and not any(kw in sname.lower() for kw in include_lower):
                 continue
-            if sname in SKIP_SHEETS or sname in extra_excludes:
+            if sname in SKIP_SHEETS or any(sname.startswith(p) for p in SKIP_SHEETS) or sname in extra_excludes:
                 if params.sheet_offset == 0:
                     report["sheets_skipped"].append(sname)
             elif params.apply_default_excludes and sname in AUX_SKIP_SHEETS:
