@@ -1385,18 +1385,14 @@ class App(tk.Tk):
                 exec(compile(_LLENAR_V2_SRC, str(tmpdir_p / "llenado_comparativosV2_espejo.py"), "exec"), llenar_mod.__dict__)
                 llenar_mod._load_mcp = lambda: mcp_mod
 
-                # Un único event loop para todo el thread — evita "bound to a different event loop"
-                _loop = _aio.new_event_loop()
-                _aio.set_event_loop(_loop)
-                try:
-                  total_ok = total_err = 0
-                  resultados = []
-                  for t in seleccionados:
+                total_ok = total_err = 0
+                resultados = []
+                for t in seleccionados:
                     code = t.get("code", t["name"])
                     fid  = t["id"]
                     try:
                         mcp_mod._wk._client = None
-                        sheets_dict = _loop.run_until_complete(mcp_mod._get_sheets(fid))
+                        sheets_dict = _aio.run(mcp_mod._get_sheets(fid))
                         n_hojas = len(sheets_dict)
                     except Exception:
                         n_hojas = 1
@@ -1408,7 +1404,7 @@ class App(tk.Tk):
                     t_file = time.time()
                     try:
                         mcp_mod._wk._client = None
-                        resultado = _loop.run_until_complete(llenar_mod._procesar_archivo(
+                        resultado = _aio.run(llenar_mod._procesar_archivo(
                             mcp_mod, fid, t["name"], False, 50))
                         ok  = resultado.get("columnas", 0)
                         err = 1 if resultado.get("estado") in ("error","incompleto") else 0
@@ -1427,16 +1423,14 @@ class App(tk.Tk):
                     })
                     self._cmp_set_progress(n_hojas, n_hojas, f"{code}  listo ({dur_file})")
 
-                  elapsed    = time.time() - t0
-                  mins, secs = divmod(int(elapsed), 60)
-                  dur_str    = f"{mins}m {secs}s" if mins else f"{secs}s"
-                  self._cmp_log_write(f"\nRESUMEN: OK={total_ok}  ERR={total_err}  ({dur_str})",
-                                      "ok" if total_err == 0 else "warn")
-                  self._cmp_set_progress(0, 1, "Llenar Comparativos")
-                  self.after(0, lambda r=resultados, tok=total_ok, terr=total_err, d=dur_str:
-                             self._cmp_show_result_popup(r, tok, terr, d))
-                finally:
-                  _loop.close()
+                elapsed    = time.time() - t0
+                mins, secs = divmod(int(elapsed), 60)
+                dur_str    = f"{mins}m {secs}s" if mins else f"{secs}s"
+                self._cmp_log_write(f"\nRESUMEN: OK={total_ok}  ERR={total_err}  ({dur_str})",
+                                    "ok" if total_err == 0 else "warn")
+                self._cmp_set_progress(0, 1, "Llenar Comparativos")
+                self.after(0, lambda r=resultados, tok=total_ok, terr=total_err, d=dur_str:
+                           self._cmp_show_result_popup(r, tok, terr, d))
             finally:
                 builtins.print = _orig_print
         except Exception as e:
