@@ -1235,7 +1235,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             cur_num = float(cur)
                         else:
                             cur_num = None
-                        if cur_num is not None and abs(cur_num - float(v)) < 1e-6:
+                        # Tolerancia 1.000 pesos: montos se presentan en M$,
+                        # diferencias menores a 1.000 son insignificantes (redondeo)
+                        if cur_num is not None and abs(cur_num - float(v)) < 1000:
                             equal += 1
                             estado = "OK"
                         else:
