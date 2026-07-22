@@ -835,6 +835,20 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             return lo
             return ""
 
+        def _next_ms_col_in_src(src_cells: list[list], start_col: int, n: int = 1) -> int | None:
+            """Devuelve la N-ésima columna con M$ en encabezado a partir de start_col."""
+            found = 0
+            for col in range(start_col, start_col + 20):
+                for row in src_cells[:12]:
+                    if col < len(row):
+                        cv = str(row[col].get("calculatedValue") or row[col].get("value") or "").strip() if isinstance(row[col], dict) else ""
+                        if cv.lower() in ("m$", "$"):
+                            found += 1
+                            if found >= n:
+                                return col
+                            break
+            return None
+
         def _find_src_col_by_segment(
             src_cells: list[list], kw_src: str, segment_label: str,
             occurrence_index: int = 0
@@ -1010,6 +1024,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                     _date_pat = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}-\d{4}")
                                     jj = j + 1
                                     _skipped_sep = 0
+                                    _companion_idx = 0  # cuántas companions ya añadimos
                                     while jj < 500 and jj not in seen:
                                         # Parar si la col tiene cualquier fecha en encabezado
                                         def _col_has_date(col):
@@ -1039,22 +1054,26 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                         _skipped_sep = 0
                                         # Saltar columnas %
                                         if any(_cell_str(r[jj]) == "%" for r in all_rows[:10] if jj < len(r)):
-                                            break
+                                            jj += 1
+                                            continue
+                                        _companion_idx += 1
                                         occ_key_c = (col_type, kw_detect)
                                         occ_idx_c = occurrence_counts.get(occ_key_c, 0)
                                         occurrence_counts[occ_key_c] = occ_idx_c + 1
                                         comp_cols.append({
-                                            "col":              jj,
-                                            "type":             col_type,
-                                            "src_id":           src_id,
-                                            "src_sh":           src_sh,
-                                            "kw_src":           kw_src,
-                                            "first_header_row": i,
-                                            "segment_label":    seg_label,
-                                            "occurrence_index": occ_idx_c,
-                                            "sub2_header_row":  sub2_header_row,
-                                            "sub2_data_start":  sub2_data_start,
-                                            "sub_table_offset": (sub2_header_row - i) if sub2_header_row else None,
+                                            "col":                  jj,
+                                            "type":                 col_type,
+                                            "src_id":               src_id,
+                                            "src_sh":               src_sh,
+                                            "kw_src":               kw_src,
+                                            "first_header_row":     i,
+                                            "segment_label":        seg_label,
+                                            "occurrence_index":     occ_idx_c,
+                                            "sub2_header_row":      sub2_header_row,
+                                            "sub2_data_start":      sub2_data_start,
+                                            "sub_table_offset":     (sub2_header_row - i) if sub2_header_row else None,
+                                            "is_companion":         True,
+                                            "companion_src_offset": _companion_idx,  # saltar N cols M$ en fuente desde src_col
                                         })
                                         seen.add(jj)
                                         jj += 1
@@ -1116,8 +1135,12 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 seg_label       = col_info.get("segment_label", "")
                 occurrence_index = col_info.get("occurrence_index", 0)
                 src_col = _find_src_col_by_segment(src_cells, kw_src, seg_label, occurrence_index)
+                companion_offset = col_info.get("companion_src_offset", 0)
+                if companion_offset and src_col is not None:
+                    src_col = _next_ms_col_in_src(src_cells, src_col + 1, companion_offset)
                 sheet_report.setdefault("_debug_src_cols", []).append(
                     f"{_col_letter(dest_col)}({col_type}): seg={seg_label!r} occ={occurrence_index} kw={kw_src!r} -> src_col={src_col}"
+                    + (f" [companion+{companion_offset}]" if companion_offset else "")
                 )
                 if src_col is None:
                     continue
