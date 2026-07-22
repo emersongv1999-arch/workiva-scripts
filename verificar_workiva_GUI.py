@@ -2672,7 +2672,7 @@ class App(tk.Tk):
         inner = tk.Frame(pf, bg=CGE_CARD, padx=12, pady=10)
         inner.pack(fill="x")
 
-        labels = ["Sociedad", "Año", "Trimestre", "Tipo"]
+        labels = ["Sociedad", "Año", "Trimestre"]
         vars_  = []
         for i, lbl in enumerate(labels):
             tk.Label(inner, text=lbl, font=FONT_SMALL,
@@ -2684,9 +2684,20 @@ class App(tk.Tk):
             e.grid(row=i, column=1, sticky="ew", padx=(8, 0), pady=4)
             e.bind("<Return>", lambda ev: self._val_on_run())
             vars_.append(v)
+        # Tipo: dropdown CONSO / IND
+        tk.Label(inner, text="Tipo", font=FONT_SMALL,
+                 bg=CGE_CARD, fg=CGE_MUTED).grid(row=3, column=0, sticky="w", pady=4)
+        self._val_tipo = tk.StringVar(value="CONSO")
+        tipo_menu = tk.OptionMenu(inner, self._val_tipo, "CONSO", "IND")
+        tipo_menu.configure(font=FONT_LABEL, bg=CGE_LIGHT, fg=CGE_TEXT,
+                            activebackground=CGE_ACCENT, activeforeground="white",
+                            relief="flat", bd=0, highlightthickness=1,
+                            highlightbackground=CGE_BORDER, anchor="w")
+        tipo_menu["menu"].configure(font=FONT_LABEL, bg=CGE_LIGHT, fg=CGE_TEXT,
+                                    activebackground=CGE_ACCENT, activeforeground="white")
+        tipo_menu.grid(row=3, column=1, sticky="ew", padx=(8, 0), pady=4)
         inner.columnconfigure(1, weight=1)
-        self._val_sociedad, self._val_anio, self._val_trim, self._val_tipo = vars_
-        self._val_tipo.set("CONSO")
+        self._val_sociedad, self._val_anio, self._val_trim = vars_
 
         # Carpeta salida
         tk.Label(left, text="CARPETA SALIDA", font=("Segoe UI", 8, "bold"),
