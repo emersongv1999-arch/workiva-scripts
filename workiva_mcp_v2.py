@@ -539,6 +539,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
         "Query - HANA - Deudores", "A.- Activos PPT",
         "B.- Patrimonio y Pasivos PPT", "C.- Estado de resultado por función PPT",
         "E1 Res Acumulado", "F1 Cuadraje Hoja A.- Saldo Inicial de Caja",
+        "26.-",  # Transacciones con relacionadas — estructura especial, llenado manual
     }
     AUX_SKIP_SHEETS = {
         "Query HANA", "Reporte consolidado en $", "Plantilla consolidación",
