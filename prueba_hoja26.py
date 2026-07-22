@@ -63,6 +63,11 @@ async def main():
     if "warning" in r:
         sys.exit(f"ADVERTENCIA: {r['warning']}")
 
+    bases = r.get("bases", {})
+    print(f"Bases del archivo:")
+    for k, v in bases.items():
+        print(f"  {k} = {v!r}")
+    print()
     print(f"Fuente curr_prev : {r.get('source_curr_prev','?')}")
     print(f"Fuente EERR      : {r.get('source_eerr','?')}")
     print(f"Fuente prev_per  : {r.get('source_prev_period','?')}")
