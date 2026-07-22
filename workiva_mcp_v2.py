@@ -847,7 +847,13 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             if not kw_src:
                 return None
             if not segment_label:
-                return _find_src_col(src_cells, kw_src)
+                # Usar índice de ocurrencia (no ignorarlo como hacía _find_src_col)
+                result = _find_src_col_nth(src_cells, kw_src, occurrence_index)
+                if result is None and occurrence_index > 0:
+                    base_col = _find_src_col_nth(src_cells, kw_src, 0)
+                    if base_col is not None:
+                        result = base_col + occurrence_index
+                return result
 
             _date_re = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}-\d{4}|\d{4}/\d{2}/\d{2}")
             _skip = {"m$", "%", ""}
@@ -1003,6 +1009,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                     # las siguientes (ej. "Efecto en resultados") tienen fecha vacía.
                                     _date_pat = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}-\d{4}")
                                     jj = j + 1
+                                    _skipped_sep = 0
                                     while jj < 500 and jj not in seen:
                                         # Parar si la col tiene cualquier fecha en encabezado
                                         def _col_has_date(col):
@@ -1023,7 +1030,13 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                                     return True
                                             return False
                                         if not _col_has_ms(jj):
-                                            break
+                                            # Permitir hasta 2 cols separadoras vacías antes de rendirse
+                                            _skipped_sep += 1
+                                            if _skipped_sep > 2:
+                                                break
+                                            jj += 1
+                                            continue
+                                        _skipped_sep = 0
                                         # Saltar columnas %
                                         if any(_cell_str(r[jj]) == "%" for r in all_rows[:10] if jj < len(r)):
                                             break
@@ -1124,10 +1137,17 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     sv    = _cv(row_s[src_col]) if src_col < len(row_s) else None
                     src_vals.append(sv if isinstance(sv, (int, float)) else None)
 
-                write_vals: list[Any] = [
-                    None if _is_formula(tgt_cells[i], dest_col) else v
-                    for i, v in enumerate(src_vals)
-                ]
+                write_vals: list[Any] = []
+                for i, v in enumerate(src_vals):
+                    if _is_formula(tgt_cells[i], dest_col):
+                        write_vals.append(None)
+                    elif v is None:
+                        # Si la fuente es None pero el destino tiene valor numérico, escribir 0
+                        # para limpiar valores erróneos previos en Workiva
+                        dest_cv = _cv(tgt_cells[i][dest_col]) if dest_col < len(tgt_cells[i]) else None
+                        write_vals.append(0 if isinstance(dest_cv, (int, float)) and dest_cv != 0 else None)
+                    else:
+                        write_vals.append(v)
 
                 n = sum(1 for v in (src_vals if params.dry_run else write_vals)
                         if v is not None)
