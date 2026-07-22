@@ -836,22 +836,36 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             return ""
 
         def _next_companion_col_in_src(src_cells: list[list], parent_col: int, n: int = 1) -> int | None:
-            """Companion de fuente: M$ sin fecha propia (mismo merge de fecha que parent_col)."""
+            """Companion en fuente: siguiente col bajo el mismo período de fecha que parent_col.
+            Acepta cols sin fecha (merge) O con la misma fecha que el padre (no merge).
+            Para si hay una fecha DIFERENTE (nuevo período)."""
             _dp = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}-\d{4}")
+            def _col_dates(col):
+                dates = set()
+                for row in src_cells[:8]:
+                    if col < len(row):
+                        cv = str(row[col].get("calculatedValue") or row[col].get("value") or "") if isinstance(row[col], dict) else ""
+                        for m in _dp.findall(cv):
+                            dates.add(m)
+                return dates
+            parent_dates = _col_dates(parent_col)
             found = 0
             col = parent_col + 1
             while col < parent_col + 20:
-                has_date = any(
-                    _dp.search(str(row[col].get("calculatedValue") or row[col].get("value") or "") if isinstance(row[col], dict) else "")
-                    for row in src_cells[:8] if col < len(row)
-                )
-                if has_date:
+                col_dates = _col_dates(col)
+                # Si tiene fechas distintas al padre → nuevo período, parar
+                if col_dates and not col_dates.issubset(parent_dates):
                     break
+                # Companion: tiene M$ (o "efecto" en sub-encabezado)
                 has_ms = any(
                     str(row[col].get("calculatedValue") or row[col].get("value") or "").strip().lower() in ("m$", "$") if isinstance(row[col], dict) else False
                     for row in src_cells[:12] if col < len(row)
                 )
-                if has_ms:
+                has_efecto = any(
+                    "efecto" in str(row[col].get("calculatedValue") or row[col].get("value") or "").lower() if isinstance(row[col], dict) else False
+                    for row in src_cells[5:13] if col < len(row)
+                )
+                if has_ms or has_efecto:
                     found += 1
                     if found >= n:
                         return col
