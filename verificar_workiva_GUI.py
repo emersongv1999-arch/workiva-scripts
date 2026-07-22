@@ -1133,6 +1133,10 @@ class App(tk.Tk):
             lambda e: self._cmp_canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
         self._cmp_files  = []
         self._cmp_vars   = []
+        self._cmp_lbl_empty = tk.Label(self._cmp_inner,
+            text="Ingresa el periodo y presiona 'Buscar archivos'",
+            font=FONT_SMALL, bg=CGE_CARD, fg=CGE_MUTED, pady=20)
+        self._cmp_lbl_empty.pack()
 
         # Log actividad
         act_hdr = tk.Frame(right, bg=CGE_LIGHT)
@@ -1635,6 +1639,10 @@ class App(tk.Tk):
         self._flujo_soc_inner.bind("<MouseWheel>", _flujo_scroll)
         self._flujo_socs      = []
         self._flujo_soc_vars  = []
+        self._flujo_lbl_empty = tk.Label(self._flujo_soc_inner,
+            text="Ingresa el periodo y presiona 'Buscar sociedades'",
+            font=FONT_SMALL, bg=CGE_CARD, fg=CGE_MUTED, pady=20)
+        self._flujo_lbl_empty.pack()
 
         # Log
         act_hdr = tk.Frame(right, bg=CGE_LIGHT)
@@ -2729,6 +2737,7 @@ class App(tk.Tk):
         self._val_log.tag_config("warn", foreground=CGE_YELLOW)
         self._val_log.tag_config("blue", foreground=CGE_BLUE)
         self._val_log.tag_config("muted", foreground=CGE_MUTED)
+        self._val_log_write("Completa los parámetros y presiona 'Validar'.", "muted")
 
     def _val_log_write(self, msg, tag=None):
         def _do():
