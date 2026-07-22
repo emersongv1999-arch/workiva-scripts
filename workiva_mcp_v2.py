@@ -835,18 +835,27 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             return lo
             return ""
 
-        def _next_ms_col_in_src(src_cells: list[list], start_col: int, n: int = 1) -> int | None:
-            """Devuelve la N-ésima columna con M$ en encabezado a partir de start_col."""
+        def _next_companion_col_in_src(src_cells: list[list], parent_col: int, n: int = 1) -> int | None:
+            """Companion de fuente: M$ sin fecha propia (mismo merge de fecha que parent_col)."""
+            _dp = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}-\d{4}")
             found = 0
-            for col in range(start_col, start_col + 20):
-                for row in src_cells[:12]:
-                    if col < len(row):
-                        cv = str(row[col].get("calculatedValue") or row[col].get("value") or "").strip() if isinstance(row[col], dict) else ""
-                        if cv.lower() in ("m$", "$"):
-                            found += 1
-                            if found >= n:
-                                return col
-                            break
+            col = parent_col + 1
+            while col < parent_col + 20:
+                has_date = any(
+                    _dp.search(str(row[col].get("calculatedValue") or row[col].get("value") or "") if isinstance(row[col], dict) else "")
+                    for row in src_cells[:8] if col < len(row)
+                )
+                if has_date:
+                    break
+                has_ms = any(
+                    str(row[col].get("calculatedValue") or row[col].get("value") or "").strip().lower() in ("m$", "$") if isinstance(row[col], dict) else False
+                    for row in src_cells[:12] if col < len(row)
+                )
+                if has_ms:
+                    found += 1
+                    if found >= n:
+                        return col
+                col += 1
             return None
 
         def _find_src_col_by_segment(
@@ -1137,7 +1146,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 src_col = _find_src_col_by_segment(src_cells, kw_src, seg_label, occurrence_index)
                 companion_offset = col_info.get("companion_src_offset", 0)
                 if companion_offset and src_col is not None:
-                    src_col = _next_ms_col_in_src(src_cells, src_col + 1, companion_offset)
+                    src_col = _next_companion_col_in_src(src_cells, src_col, companion_offset)
                 sheet_report.setdefault("_debug_src_cols", []).append(
                     f"{_col_letter(dest_col)}({col_type}): seg={seg_label!r} occ={occurrence_index} kw={kw_src!r} -> src_col={src_col}"
                     + (f" [companion+{companion_offset}]" if companion_offset else "")
