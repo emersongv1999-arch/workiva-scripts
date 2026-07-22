@@ -282,6 +282,30 @@ def _row_is_blue(tr):
         return True
     return False
 
+def _row_is_hidden(tr):
+    """True si la fila viene marcada como oculta en el .docx exportado.
+    Workiva marca las filas ocultas del spreadsheet de dos formas posibles:
+      1) a nivel de fila:  <w:trPr><w:hidden/></w:trPr>
+      2) todo el texto con formato oculto: <w:rPr><w:vanish/></w:rPr>
+    El auditor NO ve estas filas, pero sus montos siguen sumando al total,
+    por eso el verificador las tomaba como filas normales y el total 'cuadraba'.
+    """
+    trPr = tr.find(_wtag("trPr"))
+    if trPr is not None and trPr.find(_wtag("hidden")) is not None:
+        return True
+    # ¿todo el texto de la fila está marcado como oculto (vanish)?
+    marcas = []
+    for r in tr.iter(_wtag("r")):
+        txt = "".join(t.text for t in r.findall(_wtag("t")) if t.text).strip()
+        if not txt:
+            continue
+        rPr = r.find(_wtag("rPr"))
+        oculto = (rPr is not None
+                  and (rPr.find(_wtag("vanish")) is not None
+                       or rPr.find(_wtag("specVanish")) is not None))
+        marcas.append(oculto)
+    return bool(marcas) and all(marcas)
+
 def es_titulo_seccion(texto):
     if len(texto) < 10:
         return False
@@ -323,7 +347,8 @@ def extraer_cuerpo_docx(ruta):
                     celdas.append(text)
                     for _ in range(span - 1):
                         celdas.append("")
-                filas.append({"cells": celdas, "blue": _row_is_blue(tr)})
+                filas.append({"cells": celdas, "blue": _row_is_blue(tr),
+                              "hidden": _row_is_hidden(tr)})
             if filas:
                 elementos.append({"tipo": "tabla", "filas": filas})
     return elementos
@@ -648,12 +673,33 @@ def verificar_docx(ruta):
 
     rows_ok = []
     rows_chk = []
+    hidden_recs = []
     tablas = []
 
     for i_tabla, (sec, filas) in enumerate(tablas_con_seccion, 1):
         cols, htxt = amount_cols(filas)
         if not cols:
             continue
+
+        # ── Filas ocultas con monto ≠ 0 ──────────────────────────────────────
+        # El auditor no las ve, pero sus montos suman al total impreso; por eso
+        # el total parecía "cuadrar". Se reportan siempre como hallazgo.
+        for r in filas:
+            if not r.get("hidden"):
+                continue
+            lab_h = re.sub(r'\s+', ' ', _row_label(r)).strip()[:80] or "(fila oculta)"
+            for j in cols:
+                v = parse_num(cell(r, j))
+                if v is None or v == 0:
+                    continue
+                hidden_recs.append({
+                    'n_tabla': i_tabla, 'seccion': sec[:80], 'tabla_idx': 0,
+                    'fila': lab_h, 'columna': colhdr(htxt, j),
+                    'impreso': v, 'calc': 0, 'dif': v,
+                    'metodo': 'Fila oculta', 'localizado': True,
+                    'causa': ('FILA OCULTA con monto != 0: no se ve en el estado '
+                              'pero suma al total impreso — REVISAR'),
+                })
         _saldo_en_header = any(
             re.search(r'saldo', h, re.I) and re.search(r'\d{2}-\d{2}-\d{4}', h)
             for h in htxt
@@ -730,7 +776,12 @@ def verificar_docx(ruta):
     hallazgos = [r for r in rows_chk
                  if r.get('localizado') or abs(r['dif']) <= UMBRAL]
 
-    return {'ok': rows_ok, 'hallazgos': hallazgos, 'revisar': rows_chk, 'indice': tablas}
+    # Las filas ocultas siempre son hallazgo (y quedan en 'revisar' para Workiva)
+    rows_chk.extend(hidden_recs)
+    hallazgos.extend(hidden_recs)
+
+    return {'ok': rows_ok, 'hallazgos': hallazgos, 'revisar': rows_chk,
+            'indice': tablas, 'ocultas': hidden_recs}
 
 # ── ESCRIBIR EN WORKIVA ───────────────────────────────────────────────────────
 HDR_HALL = ["Sociedad", "N tabla", "Cuadro / Nota", "Tabla",
@@ -2622,6 +2673,11 @@ class App(tk.Tk):
                 n_ok   = len(resultado["ok"])
                 n_hall = len(resultado["hallazgos"])
                 n_rev  = len(resultado["revisar"])
+                n_ocul = len(resultado.get("ocultas", []))
+                if n_ocul:
+                    self.log(f"  ⚠ {n_ocul} fila(s) OCULTA(s) con monto detectada(s):", "warn")
+                    for r in resultado["ocultas"]:
+                        self.log(f"      • {r['fila']} [{r['columna']}] = {r['impreso']:,}", "warn")
                 total_hall += n_hall
                 tag = "ok" if n_hall == 0 else "warn"
                 self.log(f"  OK: {n_ok}  |  Hallazgos: {n_hall}  |  Revisar: {n_rev}", tag)
