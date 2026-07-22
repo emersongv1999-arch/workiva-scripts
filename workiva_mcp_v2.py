@@ -894,8 +894,15 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             if kw_src in v:
                                 return jj
 
-            # Segmento no encontrado o sin texto real → usar índice de ocurrencia
-            return _find_src_col_nth(src_cells, kw_src, occurrence_index)
+            # Segmento no encontrado o sin texto real → usar índice de ocurrencia.
+            # Si la Nth ocurrencia no existe (celdas fusionadas: solo la 1ra tiene fecha),
+            # fallback: col de occ=0 + offset (columnas contiguas dentro del mismo merge).
+            result = _find_src_col_nth(src_cells, kw_src, occurrence_index)
+            if result is None and occurrence_index > 0:
+                base_col = _find_src_col_nth(src_cells, kw_src, 0)
+                if base_col is not None:
+                    result = base_col + occurrence_index
+            return result
 
         comp_cols_by_name: dict[str, list[dict]] = {}
         for sname in batch:
