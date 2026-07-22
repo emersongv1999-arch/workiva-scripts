@@ -2690,11 +2690,11 @@ class App(tk.Tk):
         self._val_tipo = tk.StringVar(value="CONSO")
         tipo_menu = tk.OptionMenu(inner, self._val_tipo, "CONSO", "IND")
         tipo_menu.configure(font=FONT_LABEL, bg=CGE_LIGHT, fg=CGE_TEXT,
-                            activebackground=CGE_ACCENT, activeforeground="white",
+                            activebackground=CGE_BLUE, activeforeground="white",
                             relief="flat", bd=0, highlightthickness=1,
                             highlightbackground=CGE_BORDER, anchor="w")
         tipo_menu["menu"].configure(font=FONT_LABEL, bg=CGE_LIGHT, fg=CGE_TEXT,
-                                    activebackground=CGE_ACCENT, activeforeground="white")
+                                    activebackground=CGE_BLUE, activeforeground="white")
         tipo_menu.grid(row=3, column=1, sticky="ew", padx=(8, 0), pady=4)
         inner.columnconfigure(1, weight=1)
         self._val_sociedad, self._val_anio, self._val_trim = vars_
