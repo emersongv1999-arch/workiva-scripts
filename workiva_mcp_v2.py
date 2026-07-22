@@ -998,6 +998,53 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                         "sub_table_offset": (sub2_header_row - i) if sub2_header_row else None,
                                     })
                                     seen.add(j)
+                                    # Columnas compañeras bajo el mismo merge de fecha:
+                                    # la celda de fecha solo existe en la 1ra col del merge;
+                                    # las siguientes (ej. "Efecto en resultados") tienen fecha vacía.
+                                    _date_pat = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}-\d{4}")
+                                    jj = j + 1
+                                    while jj < 500 and jj not in seen:
+                                        # Parar si la col tiene cualquier fecha en encabezado
+                                        def _col_has_date(col):
+                                            for rr in all_rows[:8]:
+                                                if col >= len(rr): continue
+                                                cv = str(rr[col].get("calculatedValue") or rr[col].get("value") or "") if isinstance(rr[col], dict) else ""
+                                                if _date_pat.search(cv):
+                                                    return True
+                                            return False
+                                        if _col_has_date(jj):
+                                            break
+                                        # Debe tener M$ en alguna fila de encabezado (col de datos)
+                                        def _col_has_ms(col):
+                                            for rr in all_rows[:12]:
+                                                if col >= len(rr): continue
+                                                cv = str(rr[col].get("calculatedValue") or rr[col].get("value") or "").strip() if isinstance(rr[col], dict) else ""
+                                                if cv.lower() in ("m$", "$"):
+                                                    return True
+                                            return False
+                                        if not _col_has_ms(jj):
+                                            break
+                                        # Saltar columnas %
+                                        if any(_cell_str(r[jj]) == "%" for r in all_rows[:10] if jj < len(r)):
+                                            break
+                                        occ_key_c = (col_type, kw_detect)
+                                        occ_idx_c = occurrence_counts.get(occ_key_c, 0)
+                                        occurrence_counts[occ_key_c] = occ_idx_c + 1
+                                        comp_cols.append({
+                                            "col":              jj,
+                                            "type":             col_type,
+                                            "src_id":           src_id,
+                                            "src_sh":           src_sh,
+                                            "kw_src":           kw_src,
+                                            "first_header_row": i,
+                                            "segment_label":    seg_label,
+                                            "occurrence_index": occ_idx_c,
+                                            "sub2_header_row":  sub2_header_row,
+                                            "sub2_data_start":  sub2_data_start,
+                                            "sub_table_offset": (sub2_header_row - i) if sub2_header_row else None,
+                                        })
+                                        seen.add(jj)
+                                        jj += 1
                                 break
             if comp_cols:
                 comp_cols_by_name[sname] = comp_cols
