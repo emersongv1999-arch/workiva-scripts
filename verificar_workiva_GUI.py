@@ -366,8 +366,8 @@ def parse_num(s):
         neg = True; t = t[1:-1]
     if t.startswith('-'):
         neg = True; t = t[1:]
-    if ',' in t:
-        return None
+    # Separador de miles: coma (ENG) o punto (ESP) — ambos se eliminan
+    t = t.replace(',', '')
     core = t.replace('.', '')
     if not re.fullmatch(r'\d+', core):
         return None
