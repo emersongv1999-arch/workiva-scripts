@@ -353,7 +353,7 @@ BAL    = re.compile(r'(saldo\b|patrimonio\s+al\b)', re.I)
 TOTMOV = re.compile(r'(total.*(increment|movimiento|disminuci|cambios|'
                     r'resultado\s+integral|del\s+per[ií]odo|patrimonio)'
                     r'|^cambios[,\s]+total)', re.I)
-REF_NOTA = re.compile(r'\(nota\s+\d+[\.\d]*\)', re.I)
+REF_NOTA = re.compile(r'\((nota|note)\s+\d+[\.\d]*\)', re.I)
 
 # Filas cuyo total NO es una suma lineal de lo inmediatamente anterior:
 # ratios/conteos por accion, o reconciliaciones (EBITDA) que combinan
