@@ -334,10 +334,20 @@ KW = re.compile(
     r'(total|totales|subtotal|sub-total|saldo\s+final|saldos?\s+al|'
     r'patrimonio\s+(total|al\s+final)|ganancia\s+bruta|'
     r'ganancia\s*\(p[eé]rdida\)\s*(bruta|antes|del|\b)|'
-    r'resultado\s+integral\s+total|incremento\s*\(disminuci[oó]n\))', re.I)
+    r'resultado\s+integral\s+total|incremento\s*\(disminuci[oó]n\)|'
+    # English equivalents
+    r'net\s+cash\s+(flows?|generated|used)|'
+    r'gross\s+profit|profit\s*(before|after|for)|'
+    r'total\s+comprehensive\s+income|'
+    r'net\s+(increase|decrease)\s+in\s+cash|'
+    r'equity\s+(total|at\s+end)|increase\s*\(decrease\))', re.I)
 
 KW_FLAG = re.compile(
-    r'(\b(total(?:es)?|sub-?total)\b|saldo\s+(final|al\b)|total\s+d[eo]l?\b|patrimonio\s+total)', re.I)
+    r'(\b(total(?:es)?|sub-?total)\b|saldo\s+(final|al\b)|total\s+d[eo]l?\b|patrimonio\s+total|'
+    # English equivalents
+    r'net\s+cash\s+(flows?|generated|used)|'
+    r'net\s+(increase|decrease)\s+in\s+cash|'
+    r'total\s+equity)', re.I)
 
 BAL    = re.compile(r'(saldo\b|patrimonio\s+al\b)', re.I)
 TOTMOV = re.compile(r'(total.*(increment|movimiento|disminuci|cambios|'
@@ -531,7 +541,11 @@ def verify(rows, cols):
                     if best in ('E_acum_total', 'C_subtotales'):
                         cum = 0
                         subs = [P]
-                elif (KW_FLAG.search(lab) or (r['blue'] and best == 'A_bloque')) and best is not None:
+                elif (KW_FLAG.search(lab) or (r['blue'] and 'A_bloque' in cands)) and best is not None:
+                    # Para filas azules con detalle arriba, usar siempre A_bloque
+                    # (evita que otro candidato coincidente enmascare un error real)
+                    if r['blue'] and 'A_bloque' in cands and not KW_FLAG.search(lab):
+                        best = 'A_bloque'
                     bd = difs[best]
                     if best == 'E_acum_total' and cum == 0:
                         res.append({'col': j, 'label': lab, 'printed': P,
