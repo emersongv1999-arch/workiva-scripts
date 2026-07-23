@@ -625,7 +625,8 @@ def verify_movement(rows, cols):
                     continue
                 d_sub = v - summov
                 d_close = (v - ((opening or 0) + summov)) if have_open else None
-                _is_close_candidate = BAL.search(lab) or TOTMOV.search(lab)
+                _is_close_candidate = (BAL.search(lab) or TOTMOV.search(lab)
+                                       or bool(re.fullmatch(r'total\.?', lab.strip(), re.I)))
                 if d_close == 0 and _is_close_candidate:
                     res.append({'col': j, 'label': lab, 'printed': v, 'dif': 0,
                                 'metodo': 'Movimiento: saldo final = inicial + movimientos',
