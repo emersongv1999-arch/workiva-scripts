@@ -355,6 +355,16 @@ TOTMOV = re.compile(r'(total.*(increment|movimiento|disminuci|cambios|'
                     r'|^cambios[,\s]+total)', re.I)
 REF_NOTA = re.compile(r'\(nota\s+\d+[\.\d]*\)', re.I)
 
+# Filas cuyo total NO es una suma lineal de lo inmediatamente anterior:
+# ratios/conteos por accion, o reconciliaciones (EBITDA) que combinan
+# lineas separadas por varios subtotales intermedios. Verificarlas como
+# si fueran un bloque-suma simple genera falsos hallazgos.
+NOLINEAL = re.compile(
+    r'(ebitda|'
+    r'n[uú]mero\s+de\s+acciones|number\s+of\s+shares|'
+    r'promedio\s+ponderado|weighted\s+average|'
+    r'por\s+acci[oó]n|per\s+share)', re.I)
+
 def parse_num(s):
     if s is None:
         return None
@@ -449,7 +459,15 @@ def verify(rows, cols):
             return True
         return False
 
-    klass = ['ckpt' if is_ckpt(r) else ('add' if numeric(r) else 'none') for r in rows]
+    def klass_of(r):
+        lab = _row_label(r)
+        if NOLINEAL.search(lab):
+            return 'none'  # no es suma lineal: se ignora, ni suma ni se verifica
+        if is_ckpt(r):
+            return 'ckpt'
+        return 'add' if numeric(r) else 'none'
+
+    klass = [klass_of(r) for r in rows]
     res = []
     for j in cols:
         fwd = {}
