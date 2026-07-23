@@ -632,23 +632,28 @@ def verify_movement(rows, cols):
     return res
 
 def causa_probable(label, dif, localizado, calc, tipo_tabla):
+    """Devuelve (texto_causa, es_estructural). es_estructural=True marca
+    patrones donde la fila NO es una suma lineal comparable (desagregacion,
+    esquema de saldo) o no hay detalle que sumar (calc==0) — esos casos se
+    excluyen de Hallazgos porque no representan un error de cuadre real."""
     lab = (label or '').lower()
     if localizado:
         return ('Diferencia LOCALIZADA: otras columnas del mismo cuadro cuadran '
-                '— probable error real, REVISAR')
+                '— probable error real, REVISAR'), False
     if tipo_tabla == 'movimiento':
         return ('Movimiento NO cuadra: saldo final != saldo inicial + '
-                'suma movimientos — REVISAR')
+                'suma movimientos — REVISAR'), False
     if calc == 0:
         return ('Fila rotulada "total" sin detalle sumable arriba '
-                '(posible cifra derivada/conciliacion) — revisar')
+                '(posible cifra derivada/conciliacion) — revisar'), True
     if 'atribuible a' in lab:
-        return 'Desagregacion (propietarios / no controladoras): no es suma lineal'
+        return 'Desagregacion (propietarios / no controladoras): no es suma lineal', True
     if 'comienzo' in lab or 'al final' in lab or lab.startswith('saldo'):
-        return 'Esquema de movimiento (saldo inicial + movimientos = saldo final)'
+        return 'Esquema de movimiento (saldo inicial + movimientos = saldo final)', True
     if abs(dif) <= UMBRAL:
-        return 'DIFERENCIA PEQUENA: posible redondeo o error real — REVISAR'
-    return 'Total que combina secciones, estado matricial o estructura no estandar — revisar'
+        return 'DIFERENCIA PEQUENA: posible redondeo o error real — REVISAR', False
+    return ('Total que combina secciones, estado matricial o estructura no estandar '
+            '— revisar'), False
 
 def verificar_docx(ruta):
     elementos = extraer_cuerpo_docx(ruta)
@@ -717,7 +722,9 @@ def verificar_docx(ruta):
                               and bool(fully_ok_cols)
                               and r['printed'] != 0)
                 rec['localizado'] = localizado
-                rec['causa'] = causa_probable(label, dif, localizado, calc, tipo)
+                causa, estructural = causa_probable(label, dif, localizado, calc, tipo)
+                rec['causa'] = causa
+                rec['estructural'] = estructural
                 rows_chk.append(rec)
 
         tablas.append({
@@ -742,8 +749,11 @@ def verificar_docx(ruta):
                 r['causa'] = ('Columnas de segmento NO cuadran (el consolidado si): '
                               'el desglose difiere en +-igual monto que se compensa — REVISAR')
 
-    hallazgos = [r for r in rows_chk
-                 if r.get('localizado') or abs(r['dif']) <= UMBRAL]
+    # Va a Hallazgos cualquier diferencia real de cuadre (>UMBRAL incluido),
+    # salvo los patrones estructuralmente no-lineales (desagregacion, esquema
+    # de saldo, fila sin detalle) que no dependen de si hay o no una "columna
+    # testigo" limpia en el mismo cuadro.
+    hallazgos = [r for r in rows_chk if not r.get('estructural')]
 
     return {'ok': rows_ok, 'hallazgos': hallazgos, 'revisar': rows_chk, 'indice': tablas}
 
