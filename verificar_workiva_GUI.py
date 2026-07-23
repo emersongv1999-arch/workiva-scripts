@@ -531,7 +531,7 @@ def verify(rows, cols):
                     if best in ('E_acum_total', 'C_subtotales'):
                         cum = 0
                         subs = [P]
-                elif (KW_FLAG.search(lab) or r['blue']) and best is not None:
+                elif (KW_FLAG.search(lab) or (r['blue'] and best == 'A_bloque')) and best is not None:
                     bd = difs[best]
                     if best == 'E_acum_total' and cum == 0:
                         res.append({'col': j, 'label': lab, 'printed': P,
