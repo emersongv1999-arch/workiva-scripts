@@ -2659,6 +2659,18 @@ class App(tk.Tk):
                 try:
                     ruta = exportar_docx(doc, self._docx_dir)
                     self.log(f"  Exportado ({ruta.stat().st_size // 1024} KB)", "ok")
+                    # ── DIAGNÓSTICO: guardar copia del .docx para inspección ──
+                    try:
+                        diag_dir = Path.home() / "Desktop"
+                        if not diag_dir.exists():
+                            diag_dir = Path.home()
+                        diag_dir = diag_dir / "docx_diagnostico"
+                        diag_dir.mkdir(exist_ok=True)
+                        copia = diag_dir / ruta.name
+                        shutil.copy2(ruta, copia)
+                        self.log(f"  [DIAG] copia guardada en: {copia}", "warn")
+                    except Exception as _de:
+                        self.log(f"  [DIAG] no se pudo copiar: {_de}", "muted")
                 except Exception as e:
                     self.log(f"  ERROR: {e}", "err")
                     continue
