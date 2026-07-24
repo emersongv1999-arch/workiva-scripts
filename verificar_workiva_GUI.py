@@ -537,10 +537,19 @@ def verify(rows, cols):
                     cands['F_bloque_abajo'] = fwd[i]
                 if fwd_sub.get(i) is not None:
                     cands['G_subitem'] = fwd_sub[i]
-                if prev is not None:
+                if prev is not None and block:
+                    # Solo tiene sentido si hay detalle real entre el ckpt
+                    # anterior y este; si block esta vacio, esto degenera en
+                    # "prev" a secas — comparar contra una fila anterior sin
+                    # relacion (ej. filas consecutivas "operating/investing/
+                    # financing" sin detalle entre medio) da falsos positivos.
                     cands['B_acumulativo'] = prev + sum(block)
                 cands['E_acum_total'] = cum
-                if subs:
+                if len(subs) >= 2:
+                    # Con un solo subtotal previo, "sum(subs)" es literalmente
+                    # ese mismo valor — comparar contra el ckpt anterior sin
+                    # relacion (filas consecutivas sin detalle entre medio,
+                    # ej. operating/investing/financing) da falsos positivos.
                     cands['C_subtotales'] = sum(subs)
                 if stack_ok.get(i):
                     cands['S_jerarquia'] = P
