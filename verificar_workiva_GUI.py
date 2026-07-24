@@ -1390,6 +1390,17 @@ class App(tk.Tk):
         if not seleccionados:
             messagebox.showwarning("Aviso", "Selecciona al menos un archivo.")
             return
+        nombres = "\n".join(f"  • {t.get('name', t.get('code',''))}" for t in seleccionados)
+        confirmado = messagebox.askyesno(
+            "Confirmar procesamiento",
+            f"Esto va a ESCRIBIR datos directamente en Workiva para "
+            f"{len(seleccionados)} archivo(s):\n\n{nombres}\n\n"
+            "Esta acción no se puede deshacer automáticamente. "
+            "¿Confirmas que quieres continuar?",
+            icon="warning",
+        )
+        if not confirmado:
+            return
         self._cmp_btn_buscar.configure(state="disabled")
         self._cmp_btn_procesar.configure(state="disabled")
         self._progress.configure(mode="indeterminate")
