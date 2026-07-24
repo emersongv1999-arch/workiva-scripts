@@ -1343,6 +1343,8 @@ class App(tk.Tk):
         self._cmp_clear_log()
         self._cmp_btn_buscar.configure(state="disabled")
         self._cmp_btn_procesar.configure(state="disabled")
+        self._progress.configure(mode="indeterminate")
+        self._progress.start(10)
         self._cmp_log_write(f"Buscando archivos IND para {mes}-{anio}...", "blue")
         threading.Thread(target=self._cmp_thread_buscar,
                          args=(mes, anio), daemon=True).start()
@@ -1381,6 +1383,7 @@ class App(tk.Tk):
             self._cmp_log_write(f"ERROR: {e}", "err")
         finally:
             self.after(0, lambda: self._cmp_btn_buscar.configure(state="normal"))
+            self.after(0, self._progress.stop)
 
     def _cmp_on_procesar(self):
         seleccionados = [f for f, v in zip(self._cmp_files, self._cmp_vars) if v.get()]
@@ -1389,6 +1392,8 @@ class App(tk.Tk):
             return
         self._cmp_btn_buscar.configure(state="disabled")
         self._cmp_btn_procesar.configure(state="disabled")
+        self._progress.configure(mode="indeterminate")
+        self._progress.start(10)
         self._cmp_log_write(f"\nProcesando {len(seleccionados)} archivo(s)...", "blue")
         threading.Thread(target=self._cmp_thread_procesar,
                          args=(seleccionados,), daemon=True).start()
@@ -1748,6 +1753,8 @@ class App(tk.Tk):
         self._flujo_log_clear()
         self._flujo_btn_buscar.configure(state="disabled")
         self._flujo_btn_generar.configure(state="disabled")
+        self._progress.configure(mode="indeterminate")
+        self._progress.start(10)
         threading.Thread(target=self._flujo_thread_buscar,
                          args=(mes, anio), daemon=True).start()
 
@@ -1790,6 +1797,7 @@ class App(tk.Tk):
             self._flujo_log_write(f"ERROR: {e}", "err")
         finally:
             self.after(0, lambda: self._flujo_btn_buscar.configure(state="normal"))
+            self.after(0, self._progress.stop)
 
     def _flujo_build_soc_list(self):
         for w in self._flujo_soc_inner.winfo_children():
@@ -1841,6 +1849,8 @@ class App(tk.Tk):
             return
         self._flujo_btn_buscar.configure(state="disabled")
         self._flujo_btn_generar.configure(state="disabled")
+        self._progress.configure(mode="indeterminate")
+        self._progress.start(10)
         threading.Thread(target=self._flujo_thread_generar,
                          args=(seleccionados,), daemon=True).start()
 
@@ -1906,6 +1916,7 @@ class App(tk.Tk):
         finally:
             self.after(0, lambda: self._flujo_btn_buscar.configure(state="normal"))
             self.after(0, lambda: self._flujo_btn_generar.configure(state="normal"))
+            self.after(0, self._progress.stop)
 
     # ── Módulo 4: Extraer EEFF ────────────────────────────────────────────────
 
@@ -2584,6 +2595,7 @@ class App(tk.Tk):
         self._btn_buscar.configure(state="disabled")
         self._btn_verificar.configure(state="disabled")
         self._btn_detener.pack(side="right", padx=(0, 4))
+        self._progress.configure(mode="indeterminate")
         self._progress.start(10)
 
     def _unlock(self):
@@ -2832,6 +2844,8 @@ class App(tk.Tk):
             messagebox.showwarning("Aviso", "Completa Sociedad, Año y Trimestre.")
             return
         self._val_btn_run.configure(state="disabled")
+        self._progress.configure(mode="indeterminate")
+        self._progress.start(10)
         self._val_log_write(f"Validando {soc} {tipo} {trim}-{anio}...", "blue")
         threading.Thread(
             target=self._val_thread_run,
@@ -2894,6 +2908,7 @@ class App(tk.Tk):
             self._val_log_write(f"ERROR: {e}", "err")
         finally:
             self.after(0, lambda: self._val_btn_run.configure(state="normal"))
+            self.after(0, self._progress.stop)
 
 
 if __name__ == "__main__":
