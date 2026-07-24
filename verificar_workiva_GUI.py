@@ -2941,14 +2941,22 @@ class App(tk.Tk):
             finally:
                 loop.close()
 
+            # Mismo patrón de nombre que usa validar_comparativos_v2.py
+            m = re.match(r"(E\d+)_(IND|CONSO)_(\d{2})[-_](\d{4})", etiqueta)
+            if m:
+                base = f"{m.group(1)}_{m.group(2)}_{m.group(3)}-{m.group(4)}"
+            else:
+                base = re.sub(r'[\\/:*?"<>|\s]+', "_", etiqueta)
+            xlsx_path = os.path.join(carpeta, f"detalle_filas_{base}_v2.xlsx")
+
             if code == 0:
                 self._val_log_write("Validación completa: sin hallazgos.", "ok")
-                self.after(0, lambda c=carpeta: self._abrir_si_confirma(
-                    "Validación completa", "Sin hallazgos.\n\n¿Abrir la carpeta de salida?", c))
+                self.after(0, lambda p=xlsx_path: self._abrir_si_confirma(
+                    "Validación completa", "Sin hallazgos.\n\n¿Abrir el Excel generado?", p))
             elif code == 2:
                 self._val_log_write("Validación completa: hay hallazgos (ver Excel).", "warn")
-                self.after(0, lambda c=carpeta: self._abrir_si_confirma(
-                    "Validación completa", "Hay hallazgos — revisa el Excel.\n\n¿Abrir la carpeta de salida?", c))
+                self.after(0, lambda p=xlsx_path: self._abrir_si_confirma(
+                    "Validación completa", "Hay hallazgos — revisa el Excel.\n\n¿Abrir el Excel generado?", p))
             else:
                 self._val_log_write("Validación terminó con advertencias.", "warn")
         except Exception as e:
