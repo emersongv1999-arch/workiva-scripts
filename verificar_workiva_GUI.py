@@ -2658,6 +2658,10 @@ class App(tk.Tk):
         if not seleccionados:
             messagebox.showwarning("Aviso", "Selecciona al menos un documento.")
             return
+        # Limpiar solo si esta es una corrida nueva (no si ya hay una en curso,
+        # para no perder resultados de un lote todavia procesandose).
+        if not self._running:
+            self._clear_log()
         self._lock()
         threading.Thread(target=self._thread_verificar,
                          args=(seleccionados,), daemon=True).start()
