@@ -2427,6 +2427,7 @@ class App(tk.Tk):
                      highlightbackground=CGE_BORDER, highlightthickness=1)
         e.grid(row=row, column=1, sticky="ew", padx=(8, 0), pady=4)
         parent.columnconfigure(1, weight=1)
+        e.bind("<Return>", lambda ev: self._on_buscar())
         return var
 
     def _make_btn(self, parent, text, cmd, color):
