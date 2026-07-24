@@ -1168,6 +1168,9 @@ class App(tk.Tk):
                   padx=8, pady=2, cursor="hand2",
                   command=lambda: [v.set(True) for v in self._cmp_vars]
                   ).pack(side="right")
+        self._cmp_sel_count_lbl = tk.Label(arch_hdr, text="", font=FONT_SMALL,
+                                           bg=CGE_LIGHT, fg=CGE_MUTED)
+        self._cmp_sel_count_lbl.pack(side="right", padx=(0, 8))
         doc_box = tk.Frame(right, bg=CGE_CARD,
                            highlightbackground=CGE_BORDER, highlightthickness=1)
         doc_box.pack(fill="x", pady=(0, 12))
@@ -1318,9 +1321,11 @@ class App(tk.Tk):
         if not files:
             tk.Label(self._cmp_inner, text="No se encontraron archivos.",
                      font=FONT_SMALL, bg=CGE_CARD, fg=CGE_RED, pady=14).pack()
+            self._cmp_sel_count_lbl.configure(text="")
             return
         for i, f in enumerate(files):
             var = tk.BooleanVar(value=True)
+            var.trace_add("write", lambda *a: self._cmp_update_sel_count())
             self._cmp_vars.append(var)
             bg = CGE_ROWALT if i % 2 == 0 else CGE_CARD
             row = tk.Frame(self._cmp_inner, bg=bg)
@@ -1333,6 +1338,11 @@ class App(tk.Tk):
             for w in (row, cb):
                 w.bind("<MouseWheel>",
                     lambda e: self._cmp_canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+        self._cmp_update_sel_count()
+
+    def _cmp_update_sel_count(self):
+        marcados = sum(1 for v in self._cmp_vars if v.get())
+        self._cmp_sel_count_lbl.configure(text=f"{marcados} de {len(self._cmp_vars)} marcados")
 
     def _cmp_on_buscar(self):
         mes  = self._cmp_mes.get().strip().zfill(2)
@@ -1682,6 +1692,9 @@ class App(tk.Tk):
                   padx=8, pady=2, cursor="hand2",
                   command=lambda: [v.set(True) for v in self._flujo_soc_vars]
                   ).pack(side="right")
+        self._flujo_sel_count_lbl = tk.Label(soc_hdr, text="", font=FONT_SMALL,
+                                             bg=CGE_LIGHT, fg=CGE_MUTED)
+        self._flujo_sel_count_lbl.pack(side="right", padx=(0, 8))
 
         soc_box = tk.Frame(right, bg=CGE_CARD,
                            highlightbackground=CGE_BORDER, highlightthickness=1)
@@ -1818,6 +1831,7 @@ class App(tk.Tk):
 
         def add_soc(emp, label, default=True):
             var = tk.BooleanVar(value=default)
+            var.trace_add("write", lambda *a: self._flujo_update_sel_count())
             row = tk.Frame(self._flujo_soc_inner, bg=CGE_CARD)
             row.pack(fill="x", padx=8, pady=1)
             cb = tk.Checkbutton(row, variable=var, text=label,
@@ -1851,6 +1865,11 @@ class App(tk.Tk):
         self._flujo_btn_generar.configure(
             state="normal" if (self._flujo_oficiales or self._flujo_preliminares)
             else "disabled")
+        self._flujo_update_sel_count()
+
+    def _flujo_update_sel_count(self):
+        marcados = sum(1 for v in self._flujo_soc_vars if v.get())
+        self._flujo_sel_count_lbl.configure(text=f"{marcados} de {len(self._flujo_soc_vars)} marcados")
 
     def _flujo_on_generar(self):
         seleccionados = [e for e, v in zip(self._flujo_socs, self._flujo_soc_vars)
@@ -1918,9 +1937,8 @@ class App(tk.Tk):
             mod.tabla_dinamica(salida, ultima, fecha_ini, fecha_fin)
             self._flujo_log_write("Listo.", "ok")
 
-            self.after(0, lambda s=salida: messagebox.showinfo(
-                "Flujo generado",
-                f"Archivo generado correctamente:\n\n{s}"))
+            self.after(0, lambda s=salida: self._abrir_si_confirma(
+                "Flujo generado", f"Archivo generado correctamente:\n\n{s}", s))
         except Exception as e:
             self._flujo_log_write(f"ERROR: {e}", "err")
             self.after(0, lambda err=str(e): messagebox.showerror("Error", err))
@@ -2471,6 +2489,9 @@ class App(tk.Tk):
 
         sel_frame = tk.Frame(doc_header, bg=CGE_LIGHT)
         sel_frame.pack(side="right")
+        self._sel_count_lbl = tk.Label(sel_frame, text="", font=FONT_SMALL,
+                                       bg=CGE_LIGHT, fg=CGE_MUTED)
+        self._sel_count_lbl.pack(side="left", padx=(0, 8))
         tk.Button(sel_frame, text="Todos", font=FONT_SMALL,
                   bg=CGE_BORDER, fg=CGE_TEXT, relief="flat", bd=0,
                   padx=8, pady=2, cursor="hand2",
@@ -2573,9 +2594,11 @@ class App(tk.Tk):
             tk.Label(self._doc_inner,
                      text="No se encontraron documentos para el periodo indicado.",
                      font=FONT_SMALL, bg=CGE_CARD, fg=CGE_RED, pady=14).pack()
+            self._sel_count_lbl.configure(text="")
             return
         for i, doc in enumerate(docs):
             var = tk.BooleanVar(value=True)
+            var.trace_add("write", lambda *a: self._update_sel_count())
             self._doc_vars.append(var)
             bg = CGE_ROWALT if i % 2 == 0 else CGE_CARD
             row = tk.Frame(self._doc_inner, bg=bg)
@@ -2590,6 +2613,11 @@ class App(tk.Tk):
             for w in (row, cb):
                 w.bind("<MouseWheel>",
                     lambda e: self._doc_canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+        self._update_sel_count()
+
+    def _update_sel_count(self):
+        marcados = sum(1 for v in self._doc_vars if v.get())
+        self._sel_count_lbl.configure(text=f"{marcados} de {len(self._doc_vars)} marcados")
 
     def _sel_todos(self):
         for v in self._doc_vars:
@@ -2915,8 +2943,12 @@ class App(tk.Tk):
 
             if code == 0:
                 self._val_log_write("Validación completa: sin hallazgos.", "ok")
+                self.after(0, lambda c=carpeta: self._abrir_si_confirma(
+                    "Validación completa", "Sin hallazgos.\n\n¿Abrir la carpeta de salida?", c))
             elif code == 2:
                 self._val_log_write("Validación completa: hay hallazgos (ver Excel).", "warn")
+                self.after(0, lambda c=carpeta: self._abrir_si_confirma(
+                    "Validación completa", "Hay hallazgos — revisa el Excel.\n\n¿Abrir la carpeta de salida?", c))
             else:
                 self._val_log_write("Validación terminó con advertencias.", "warn")
         except Exception as e:
@@ -2924,6 +2956,13 @@ class App(tk.Tk):
         finally:
             self.after(0, lambda: self._val_btn_run.configure(state="normal"))
             self.after(0, self._progress.stop)
+
+    def _abrir_si_confirma(self, titulo, mensaje, ruta):
+        if messagebox.askyesno(titulo, mensaje):
+            try:
+                os.startfile(ruta)
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo abrir:\n{ruta}\n\n{e}")
 
 
 if __name__ == "__main__":
