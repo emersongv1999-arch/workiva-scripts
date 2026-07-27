@@ -1148,6 +1148,14 @@ class App(tk.Tk):
                   cursor="hand2", command=self._cmp_on_procesar, state="disabled")
         self._cmp_btn_procesar.pack(fill="x")
         self._cmp_btn_procesar.bind("<Return>", lambda e: self._cmp_on_procesar())
+        tk.Frame(left, bg=CGE_LIGHT, height=4).pack()
+        self._cmp_btn_reintentar = tk.Button(left, text="Reintentar fallidos",
+                  font=FONT_BOLD, bg=CGE_YELLOW, fg="#1a1a1a",
+                  activebackground="#c88a00", activeforeground="#1a1a1a",
+                  relief="flat", bd=0, padx=10, pady=9,
+                  cursor="hand2", command=self._cmp_on_reintentar)
+        # starts hidden — only shown after a run that has failures
+        self._cmp_failed = []
 
         # Panel derecho
         right = tk.Frame(body, bg=CGE_LIGHT)
@@ -1217,8 +1225,23 @@ class App(tk.Tk):
         self._cmp_log.tag_config("bold", font=("Consolas", 9, "bold"))
         self._cmp_log.tag_config("muted",foreground=CGE_MUTED)
 
+    def _cmp_on_reintentar(self):
+        if not self._cmp_failed:
+            return
+        failed_ids = {f["id"] for f in self._cmp_failed}
+        for f, v in zip(self._cmp_files, self._cmp_vars):
+            v.set(f["id"] in failed_ids)
+        self._cmp_on_procesar()
+
     def _cmp_show_result_popup(self, resultados, total_ok, total_err, dur_str):
         hay_err = total_err > 0
+        # Track which files failed for the retry button
+        failed_names = {r["name"] for r in resultados if r["err"] > 0}
+        self._cmp_failed = [f for f in self._cmp_files if f["name"] in failed_names]
+        if self._cmp_failed:
+            self._cmp_btn_reintentar.pack(fill="x")
+        else:
+            self._cmp_btn_reintentar.pack_forget()
         top = tk.Toplevel(self)
         top.title("Completado sin errores" if not hay_err else f"Completado con {total_err} ERR")
         top.resizable(False, False)
@@ -1290,6 +1313,13 @@ class App(tk.Tk):
                       font=("Segoe UI", 9, "bold"), bg=CGE_RED, fg=CGE_WHITE,
                       relief="flat", padx=14, pady=4, cursor="hand2",
                       command=ver_errores).pack(side="left")
+            def _reintentar():
+                top.destroy()
+                self._cmp_on_reintentar()
+            tk.Button(btn_row, text=f"Reintentar fallidos ({total_err})",
+                      font=("Segoe UI", 9, "bold"), bg=CGE_YELLOW, fg="#1a1a1a",
+                      relief="flat", padx=14, pady=4, cursor="hand2",
+                      command=_reintentar).pack(side="left", padx=(8, 0))
 
         tk.Button(btn_row, text="Aceptar", font=("Segoe UI", 9),
                   relief="solid", bd=1, padx=14, pady=4,
@@ -1315,6 +1345,8 @@ class App(tk.Tk):
         self._cmp_log.configure(state="disabled")
 
     def _cmp_render_files(self, files):
+        self._cmp_failed = []
+        self._cmp_btn_reintentar.pack_forget()
         for w in self._cmp_inner.winfo_children():
             w.destroy()
         self._cmp_vars = []
