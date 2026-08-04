@@ -192,7 +192,8 @@ async def _poll_operation(location: str, max_attempts: int = 40) -> bool:
 
 
 async def _write_column(ss_id: str, sid: str, col_idx: int,
-                         values: list, start_row: int = 0) -> bool:
+                         values: list, start_row: int = 0) -> tuple[bool, str | None]:
+    """Escribe una columna. Retorna (ok, motivo_error) — motivo_error es None si ok."""
     cl = _col_letter(col_idx)
     r1 = start_row + 1
     r2 = r1 + len(values) - 1
@@ -202,8 +203,20 @@ async def _write_column(ss_id: str, sid: str, col_idx: int,
         json={"values": [[v] for v in values]},
     )
     if rp.status_code == 202:
-        return await _poll_operation(rp.headers.get("Location", ""))
-    return False
+        ok = await _poll_operation(rp.headers.get("Location", ""))
+        return ok, (None if ok else f"La operación de escritura en {rng} falló (timeout u operación cancelada).")
+
+    try:
+        body = rp.json()
+        msg  = body.get("message") or body.get("error") or str(body)
+    except Exception:
+        msg = rp.text[:300]
+
+    if rp.status_code in (400, 403, 409, 422) and re.search(r'lock|protect|bloque', msg, re.I):
+        motivo = f"Celda(s) {rng} BLOQUEADA(S)/PROTEGIDA(S) en Workiva: {msg[:200]}"
+    else:
+        motivo = f"Error HTTP {rp.status_code} al escribir {rng}: {msg[:200]}"
+    return False, motivo
 
 
 async def _load_all_files() -> dict[str, str]:
@@ -370,7 +383,7 @@ async def workiva_write_column(params: WriteColumnInput) -> str:
         sid    = sheets.get(params.sheet_name)
         if not sid:
             return f"Error: Hoja '{params.sheet_name}' no encontrada."
-        ok = await _write_column(
+        ok, motivo = await _write_column(
             params.spreadsheet_id, sid,
             params.col_index, params.values, params.start_row
         )
@@ -381,6 +394,7 @@ async def workiva_write_column(params: WriteColumnInput) -> str:
             "start_row": params.start_row + 1,
             "end_row":   params.start_row + len(params.values),
             "n_values":  n_written,
+            "error":     motivo,
         }, indent=2, ensure_ascii=False)
     except Exception as e:
         return _handle_error(e)
@@ -585,7 +599,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             "bases":            bases,
             "sheets_processed": [],
             "sheets_skipped":   [],
+            "sheets_failed":    [],
             "total_cols_written": 0,
+            "total_cols_failed":  0,
         }
 
         # 3. Buscar archivos fuente
@@ -1209,10 +1225,22 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             _col_letter(dest_col)
                         )
                         continue
-                    ok = await _write_column(
+                    ok, motivo = await _write_column(
                         params.spreadsheet_id, sid_t, dest_col, write_vals
                     )
-                    sheet_report["cols_written"] += (1 if ok else 0)
+                    if ok:
+                        sheet_report["cols_written"] += 1
+                        report["total_cols_written"] += 1
+                    else:
+                        sheet_report.setdefault("cols_failed", []).append({
+                            "col": _col_letter(dest_col), "motivo": motivo,
+                        })
+                        report["sheets_failed"].append({
+                            "sheet": sname,
+                            "error": f"Col {_col_letter(dest_col)}: {motivo}",
+                        })
+                        report["total_cols_failed"] += 1
+                    continue
                 else:
                     # Modo validación
                     def _etiqueta_fila(row_e: list) -> str:
@@ -1287,8 +1315,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     sheet_report["cols_written"] += 1
                     report["total_cells_equal"] = report.get("total_cells_equal", 0) + equal
                     report["total_cells_diff"]  = report.get("total_cells_diff", 0) + diff
-
-                report["total_cols_written"] += 1
+                    report["total_cols_written"] += 1
 
             report["sheets_processed"].append(sheet_report)
 
