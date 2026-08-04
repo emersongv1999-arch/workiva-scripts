@@ -121,7 +121,16 @@ async def main():
     r2 = json.loads(raw2)
     for sh in r2.get("sheets_processed", []):
         print(f"Hoja: {sh['sheet']}  |  columnas escritas: {sh.get('cols_written',0)}")
-    print("\nLlenado completado.")
+        for cf in sh.get("cols_failed", []):
+            print(f"  ✗ FALLÓ col {cf['col']}: {cf['motivo']}")
+
+    fallidas = r2.get("sheets_failed", [])
+    if fallidas:
+        print(f"\n✗ {len(fallidas)} error(es) al escribir ({r2.get('total_cols_failed',0)} col(s)):")
+        for f in fallidas:
+            print(f"  · {f['sheet']}: {f['error']}")
+    else:
+        print("\nLlenado completado sin errores.")
 
 
 if __name__ == "__main__":
