@@ -195,24 +195,36 @@ async def _verify_write(ss_id: str, sid: str, rng: str, cl: str, r1: int,
                          values: list) -> list[str]:
     """Relee el rango recién escrito y devuelve las celdas cuyo valor NO
     coincide con lo que se intentó escribir (indicio de celda bloqueada/
-    protegida que Workiva ignoró en silencio al completar el PUT)."""
-    url = f"{PLATFORM_URL}/spreadsheets/{ss_id}/sheets/{sid}/values/{rng}"
-    try:
-        rr = await _wk.get(url)
-        if rr.status_code != 200:
-            return []
-        read_vals = [row[0] if row else None for row in rr.json().get("values", [])]
-    except Exception:
-        return []
+    protegida que Workiva ignoró en silencio al completar el PUT).
 
+    Reintenta con espera porque Workiva puede tardar en propagar la
+    escritura a la lectura (consistencia eventual) — sin esto, celdas
+    recién escritas correctamente se reportaban como falsos positivos.
+    """
+    url = f"{PLATFORM_URL}/spreadsheets/{ss_id}/sheets/{sid}/values/{rng}"
     mismatches: list[str] = []
-    for i, want in enumerate(values):
-        if want is None:
-            continue
-        got = read_vals[i] if i < len(read_vals) else None
-        got_num = got if isinstance(got, (int, float)) else None
-        if got_num is None or abs(got_num - float(want)) > 0.5:
-            mismatches.append(f"{cl}{r1 + i}")
+    for intento in range(3):
+        if intento > 0:
+            await asyncio.sleep(2 * intento)
+        try:
+            rr = await _wk.get(url)
+            if rr.status_code != 200:
+                return []
+            read_vals = [row[0] if row else None for row in rr.json().get("values", [])]
+        except Exception:
+            return []
+
+        mismatches = []
+        for i, want in enumerate(values):
+            if want is None:
+                continue
+            got = read_vals[i] if i < len(read_vals) else None
+            got_num = got if isinstance(got, (int, float)) else None
+            if got_num is None or abs(got_num - float(want)) > 0.5:
+                mismatches.append(f"{cl}{r1 + i}")
+
+        if not mismatches:
+            return []
     return mismatches
 
 
