@@ -192,7 +192,8 @@ async def _poll_operation(location: str, max_attempts: int = 40) -> bool:
 
 
 async def _write_column(ss_id: str, sid: str, col_idx: int,
-                         values: list, start_row: int = 0) -> bool:
+                         values: list, start_row: int = 0) -> tuple[bool, str | None]:
+    """Escribe una columna. Retorna (ok, motivo_error) — motivo_error es None si ok."""
     cl = _col_letter(col_idx)
     r1 = start_row + 1
     r2 = r1 + len(values) - 1
@@ -202,8 +203,20 @@ async def _write_column(ss_id: str, sid: str, col_idx: int,
         json={"values": [[v] for v in values]},
     )
     if rp.status_code == 202:
-        return await _poll_operation(rp.headers.get("Location", ""))
-    return False
+        ok = await _poll_operation(rp.headers.get("Location", ""))
+        return ok, (None if ok else f"La operación de escritura en {rng} falló (timeout u operación cancelada).")
+
+    try:
+        body = rp.json()
+        msg  = body.get("message") or body.get("error") or str(body)
+    except Exception:
+        msg = rp.text[:300]
+
+    if rp.status_code in (400, 403, 409, 422) and re.search(r'lock|protect|bloque', msg, re.I):
+        motivo = f"Celda(s) {rng} BLOQUEADA(S)/PROTEGIDA(S) en Workiva: {msg[:200]}"
+    else:
+        motivo = f"Error HTTP {rp.status_code} al escribir {rng}: {msg[:200]}"
+    return False, motivo
 
 
 async def _load_all_files() -> dict[str, str]:
@@ -370,7 +383,7 @@ async def workiva_write_column(params: WriteColumnInput) -> str:
         sid    = sheets.get(params.sheet_name)
         if not sid:
             return f"Error: Hoja '{params.sheet_name}' no encontrada."
-        ok = await _write_column(
+        ok, motivo = await _write_column(
             params.spreadsheet_id, sid,
             params.col_index, params.values, params.start_row
         )
@@ -381,6 +394,7 @@ async def workiva_write_column(params: WriteColumnInput) -> str:
             "start_row": params.start_row + 1,
             "end_row":   params.start_row + len(params.values),
             "n_values":  n_written,
+            "error":     motivo,
         }, indent=2, ensure_ascii=False)
     except Exception as e:
         return _handle_error(e)
@@ -539,6 +553,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
         "Query - HANA - Deudores", "A.- Activos PPT",
         "B.- Patrimonio y Pasivos PPT", "C.- Estado de resultado por función PPT",
         "E1 Res Acumulado", "F1 Cuadraje Hoja A.- Saldo Inicial de Caja",
+        "26.-",  # Transacciones con relacionadas — estructura especial, llenado manual
     }
     AUX_SKIP_SHEETS = {
         "Query HANA", "Reporte consolidado en $", "Plantilla consolidación",
@@ -584,7 +599,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             "bases":            bases,
             "sheets_processed": [],
             "sheets_skipped":   [],
+            "sheets_failed":    [],
             "total_cols_written": 0,
+            "total_cols_failed":  0,
         }
 
         # 3. Buscar archivos fuente
@@ -607,14 +624,25 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             parts = str(d).split("-")
             return (parts[1], parts[0]) if len(parts) >= 2 else ("", "")
 
+        # Índice de all_files normalizado (espacios múltiples → uno)
+        _all_files_norm: dict[str, str] = {
+            re.sub(r"\s+", " ", k): v for k, v in all_files.items()
+        }
+
+        def _find_file(name: str) -> str | None:
+            """Busca en all_files normalizando espacios múltiples."""
+            norm = re.sub(r"\s+", " ", name)
+            return _all_files_norm.get(norm)
+
         # Fuente BALANCE (prior_end = dic año anterior)
         src_balance_id: str | None = None
         if bases.get("prior_end"):
             mm_b, yy_b = _date_parts(bases["prior_end"])
             for sep in ["-", "_"]:
                 name = f"{prefix}{code}_{tipo}_{mm_b}{sep}{yy_b}_{suffix}"
-                if name in all_files:
-                    src_balance_id = all_files[name]
+                fid  = _find_file(name)
+                if fid:
+                    src_balance_id = fid
                     report["source_balance"] = name
                     break
 
@@ -628,8 +656,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             mm_e, yy_e = _date_parts(bases["prior_eerr_end"])
             for sep in ["-", "_"]:
                 name = f"{prefix}{code}_{tipo}_{mm_e}{sep}{yy_e}_{suffix}"
-                if name in all_files:
-                    src_eerr_id = all_files[name]
+                fid  = _find_file(name)
+                if fid:
+                    src_eerr_id = fid
                     report["source_eerr"] = name
                     break
         if not src_eerr_id:
@@ -641,8 +670,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             mm_p, yy_p = _date_parts(bases["prior_prev_period_end"])
             for sep in ["-", "_"]:
                 name = f"{prefix}{code}_{tipo}_{mm_p}{sep}{yy_p}_{suffix}"
-                if name in all_files:
-                    src_prev_id = all_files[name]
+                fid  = _find_file(name)
+                if fid:
+                    src_prev_id = fid
                     report["source_prev_period"] = name
                     break
         if not src_prev_id:
@@ -654,8 +684,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             mm_cp, yy_cp = _date_parts(bases["prev_period_end"])
             for sep in ["-", "_"]:
                 name = f"{prefix}{code}_{tipo}_{mm_cp}{sep}{yy_cp}_{suffix}"
-                if name in all_files:
-                    src_curr_prev_id = all_files[name]
+                fid  = _find_file(name)
+                if fid:
+                    src_curr_prev_id = fid
                     report["source_curr_prev"] = name
                     break
         if not src_curr_prev_id:
@@ -674,7 +705,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
         for sname in tgt_sheets:
             if include_lower is not None and not any(kw in sname.lower() for kw in include_lower):
                 continue
-            if sname in SKIP_SHEETS or sname in extra_excludes:
+            if sname in SKIP_SHEETS or any(sname.startswith(p) for p in SKIP_SHEETS) or sname in extra_excludes:
                 if params.sheet_offset == 0:
                     report["sheets_skipped"].append(sname)
             elif params.apply_default_excludes and sname in AUX_SKIP_SHEETS:
@@ -736,20 +767,31 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
         # Para buscar en fuente: usar start del EERR (distingue EERR vs quarter)
         kw_eerr_src = str(bases.get("prior_eerr_start", "")).lower() or kw_eerr
 
+        def _year_start(date_str: str) -> str:
+            """'2026-06-30' → '2026-01-01'  (inicio de año para filtrar columna YTD)"""
+            return (date_str[:4] + "-01-01") if date_str and len(date_str) >= 4 else date_str
+
+        # Para curr_prev y prev_period en la FUENTE, buscar por el inicio de año ('YYYY-01-01')
+        # en lugar del fin del período ('YYYY-06-30'). Así se distingue la columna acumulada YTD
+        # ("01-01-2026/30-06-2026") de la trimestral ("01-04-2026/30-06-2026"), que en el
+        # archivo fuente ambas terminan en la misma fecha pero solo la YTD contiene '01-01'.
+        kw_curr_prev_src = _year_start(kw_curr_prev)
+        kw_prev_src      = _year_start(kw_prev)
+
         # Mapeo tipo → (keyword detección en destino, archivo fuente, keyword búsqueda en fuente)
         # Orden de prioridad: quarter primero (más específico), luego eerr, prev_period, bal
         TYPE_MAP = [
             ("quarter",     kw_quarter,   src_eerr_id,       src_sheets_eerr,      kw_quarter),
             ("eerr",        kw_eerr,      src_eerr_id,       src_sheets_eerr,      kw_eerr_src),
-            ("curr_prev",   kw_curr_prev, src_curr_prev_id,  src_sheets_curr_prev, kw_curr_prev),
-            ("prev_period", kw_prev,      src_prev_id,       src_sheets_prev,      kw_prev),
-            # Balance: usar el archivo del período anterior (Q1 para Q2, etc.);
-            # así se lee el comparativo Dic tal como quedó declarado en ese cierre.
-            # Fallback al archivo Dic directo si no existe período anterior (caso Q1).
+            ("curr_prev",   kw_curr_prev, src_curr_prev_id,  src_sheets_curr_prev, kw_curr_prev_src),
+            # bal antes que prev_period: ambos usan "2025-12-31" como keyword;
+            # si prev_period va primero, reclama la columna Dic y bal nunca se procesa.
+            # Con bal primero, toma la columna y lee del período anterior (Q1 para Q2, etc.).
             ("bal",         kw_bal,
              src_curr_prev_id  or src_balance_id,
              src_sheets_curr_prev if src_curr_prev_id else src_sheets_bal,
              kw_bal),
+            ("prev_period", kw_prev,      src_prev_id,       src_sheets_prev,      kw_prev_src),
         ]
 
         def _find_src_col(src_cells: list[list], kw: str) -> int | None:
@@ -766,10 +808,167 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             return j
             return None
 
+        def _find_src_col_nth(src_cells: list[list], kw: str, n: int) -> int | None:
+            """Busca la N-ésima columna (0-based) cuyo header contenga kw en las primeras 8 filas."""
+            if not kw:
+                return None
+            seen_cols: list[int] = []
+            seen_set: set[int] = set()
+            for row in src_cells[:8]:
+                for j, cell in enumerate(row):
+                    if j in seen_set or not isinstance(cell, dict):
+                        continue
+                    for val_key in ("calculatedValue", "value"):
+                        v = str(cell.get(val_key, "") or "").lower()
+                        if kw in v:
+                            seen_cols.append(j)
+                            seen_set.add(j)
+                            break
+            return seen_cols[n] if n < len(seen_cols) else (seen_cols[-1] if seen_cols else None)
+
+        def _find_segment_label(all_rows: list, col_j: int, header_row: int) -> str:
+            """
+            Detecta el nombre de segmento que "posee" la columna col_j.
+            Busca en las filas anteriores al header de fecha (header_row)
+            escaneando hacia la izquierda desde col_j hasta encontrar una
+            celda con texto no-vacío que no sea una fecha ni M$.
+            """
+            _skip = {"m$", "%", ""}
+            _date_re = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}-\d{4}|\d{4}/\d{2}/\d{2}")
+            for ri in range(header_row - 1, -1, -1):
+                row = all_rows[ri]
+                for jj in range(col_j, -1, -1):
+                    if jj >= len(row):
+                        continue
+                    cell = row[jj]
+                    if not isinstance(cell, dict):
+                        continue
+                    for vk in ("calculatedValue", "value"):
+                        raw = str(cell.get(vk, "") or "").strip()
+                        lo  = raw.lower()
+                        if lo in _skip or _date_re.search(lo):
+                            continue
+                        if len(raw) >= 3:
+                            return lo
+            return ""
+
+        def _next_companion_col_in_src(src_cells: list[list], parent_col: int, n: int = 1) -> int | None:
+            """Companion en fuente: siguiente col bajo el mismo período de fecha que parent_col.
+            Acepta cols sin fecha (merge) O con la misma fecha que el padre (no merge).
+            Para si hay una fecha DIFERENTE (nuevo período)."""
+            _dp = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}-\d{4}")
+            def _col_dates(col):
+                dates = set()
+                for row in src_cells[:8]:
+                    if col < len(row):
+                        cv = str(row[col].get("calculatedValue") or row[col].get("value") or "") if isinstance(row[col], dict) else ""
+                        for m in _dp.findall(cv):
+                            dates.add(m)
+                return dates
+            parent_dates = _col_dates(parent_col)
+            found = 0
+            col = parent_col + 1
+            while col < parent_col + 20:
+                col_dates = _col_dates(col)
+                # Si tiene fechas distintas al padre → nuevo período, parar
+                if col_dates and not col_dates.issubset(parent_dates):
+                    break
+                # Companion: tiene M$ (o "efecto" en sub-encabezado)
+                has_ms = any(
+                    str(row[col].get("calculatedValue") or row[col].get("value") or "").strip().lower() in ("m$", "$") if isinstance(row[col], dict) else False
+                    for row in src_cells[:12] if col < len(row)
+                )
+                has_efecto = any(
+                    "efecto" in str(row[col].get("calculatedValue") or row[col].get("value") or "").lower() if isinstance(row[col], dict) else False
+                    for row in src_cells[5:13] if col < len(row)
+                )
+                if has_ms or has_efecto:
+                    found += 1
+                    if found >= n:
+                        return col
+                col += 1
+            return None
+
+        def _find_src_col_by_segment(
+            src_cells: list[list], kw_src: str, segment_label: str,
+            occurrence_index: int = 0
+        ) -> int | None:
+            """
+            Busca en el fuente la columna que (a) está bajo el mismo segmento
+            y (b) contiene kw_src en el encabezado.
+            Si no hay segmento o no se encuentra, usa índice de ocurrencia (Nth match).
+            """
+            if not kw_src:
+                return None
+            if not segment_label:
+                # Usar índice de ocurrencia (no ignorarlo como hacía _find_src_col)
+                result = _find_src_col_nth(src_cells, kw_src, occurrence_index)
+                if result is None and occurrence_index > 0:
+                    base_col = _find_src_col_nth(src_cells, kw_src, 0)
+                    if base_col is not None:
+                        result = base_col + occurrence_index
+                return result
+
+            _date_re = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}-\d{4}|\d{4}/\d{2}/\d{2}")
+            _skip = {"m$", "%", ""}
+
+            # Paso 1: encontrar todas las columnas de inicio de segmento en el fuente
+            # Un "inicio de segmento" es una celda con texto no-fecha en las primeras 8 filas
+            seg_starts: list[tuple[int, int, str]] = []  # (fila, col, label)
+            for ri, row in enumerate(src_cells[:8]):
+                for jj, cell in enumerate(row):
+                    if not isinstance(cell, dict):
+                        continue
+                    for vk in ("calculatedValue", "value"):
+                        raw = str(cell.get(vk, "") or "").strip()
+                        lo  = raw.lower()
+                        if lo in _skip or _date_re.search(lo) or len(raw) < 3:
+                            continue
+                        seg_starts.append((ri, jj, lo))
+
+            # Paso 2: encontrar cuál segmento del fuente coincide con segment_label
+            # Solo usar seg_starts si los valores son texto real (no fórmulas)
+            real_segs = [(ri, jj, lbl) for ri, jj, lbl in seg_starts
+                         if not lbl.startswith("=")]
+
+            matched_col: int | None = None
+            if real_segs and segment_label and not segment_label.startswith("="):
+                for _, jj, lbl in real_segs:
+                    if lbl == segment_label or segment_label in lbl or lbl in segment_label:
+                        matched_col = jj
+                        break
+
+            if matched_col is not None:
+                # Paso 3: dentro del segmento, buscar kw_src
+                next_seg_col = min(
+                    (jj for _, jj, _ in real_segs if jj > matched_col),
+                    default=9999
+                )
+                for row in src_cells[:8]:
+                    for jj in range(matched_col, min(next_seg_col, len(row))):
+                        cell = row[jj]
+                        if not isinstance(cell, dict):
+                            continue
+                        for vk in ("calculatedValue", "value"):
+                            v = str(cell.get(vk, "") or "").lower()
+                            if kw_src in v:
+                                return jj
+
+            # Segmento no encontrado o sin texto real → usar índice de ocurrencia.
+            # Si la Nth ocurrencia no existe (celdas fusionadas: solo la 1ra tiene fecha),
+            # fallback: col de occ=0 + offset (columnas contiguas dentro del mismo merge).
+            result = _find_src_col_nth(src_cells, kw_src, occurrence_index)
+            if result is None and occurrence_index > 0:
+                base_col = _find_src_col_nth(src_cells, kw_src, 0)
+                if base_col is not None:
+                    result = base_col + occurrence_index
+            return result
+
         comp_cols_by_name: dict[str, list[dict]] = {}
         for sname in batch:
             comp_cols: list[dict] = []
             seen: set[int] = set()
+            occurrence_counts: dict[tuple, int] = {}
             for col_type, kw_detect, src_id, src_sh, kw_src in TYPE_MAP:
                 if not kw_detect or not src_id:
                     continue
@@ -812,14 +1011,112 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                     if j < len(r)
                                 )
                                 if not is_pct:
+                                    # Detectar segmento horizontal (tablas multi-segmento)
+                                    seg_label = _find_segment_label(all_rows, j, i)
+
+                                    # Detectar doble sub-tabla: buscar si la misma
+                                    # keyword aparece de nuevo en la misma columna j
+                                    # en filas posteriores (sub-tabla inferior).
+                                    sub2_header_row = None
+                                    sub2_data_start = None
+                                    for i2, row2 in enumerate(all_rows[i + 1:], start=i + 1):
+                                        cell2 = row2[j] if j < len(row2) else None
+                                        if not isinstance(cell2, dict):
+                                            continue
+                                        for vk2 in ("calculatedValue", "value"):
+                                            v2 = str(cell2.get(vk2, "") or "").lower()
+                                            if kw_detect in v2:
+                                                sub2_header_row = i2
+                                                break
+                                        if sub2_header_row is not None:
+                                            break
+                                    if sub2_header_row is not None:
+                                        # Encontrar primera fila de datos tras el encabezado inferior
+                                        for i3 in range(sub2_header_row + 1, len(all_rows)):
+                                            cell3 = all_rows[i3][j] if j < len(all_rows[i3]) else None
+                                            has_kw3 = isinstance(cell3, dict) and any(
+                                                kw_detect in str(cell3.get(vk3, "") or "").lower()
+                                                for vk3 in ("calculatedValue", "value")
+                                            )
+                                            if not has_kw3:
+                                                sub2_data_start = i3
+                                                break
+                                    occ_key = (col_type, kw_detect)
+                                    occ_idx = occurrence_counts.get(occ_key, 0)
+                                    occurrence_counts[occ_key] = occ_idx + 1
                                     comp_cols.append({
-                                        "col":      j,
-                                        "type":     col_type,
-                                        "src_id":   src_id,
-                                        "src_sh":   src_sh,
-                                        "kw_src":   kw_src,
+                                        "col":              j,
+                                        "type":             col_type,
+                                        "src_id":           src_id,
+                                        "src_sh":           src_sh,
+                                        "kw_src":           kw_src,
+                                        "first_header_row": i,
+                                        "segment_label":    seg_label,
+                                        "occurrence_index": occ_idx,
+                                        "sub2_header_row":  sub2_header_row,
+                                        "sub2_data_start":  sub2_data_start,
+                                        "sub_table_offset": (sub2_header_row - i) if sub2_header_row else None,
                                     })
                                     seen.add(j)
+                                    # Columnas compañeras bajo el mismo merge de fecha:
+                                    # la celda de fecha solo existe en la 1ra col del merge;
+                                    # las siguientes (ej. "Efecto en resultados") tienen fecha vacía.
+                                    _date_pat = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}-\d{4}")
+                                    jj = j + 1
+                                    _skipped_sep = 0
+                                    _companion_idx = 0  # cuántas companions ya añadimos
+                                    while jj < 500 and jj not in seen:
+                                        # Parar si la col tiene cualquier fecha en encabezado
+                                        def _col_has_date(col):
+                                            for rr in all_rows[:8]:
+                                                if col >= len(rr): continue
+                                                cv = str(rr[col].get("calculatedValue") or rr[col].get("value") or "") if isinstance(rr[col], dict) else ""
+                                                if _date_pat.search(cv):
+                                                    return True
+                                            return False
+                                        if _col_has_date(jj):
+                                            break
+                                        # Debe tener M$ en alguna fila de encabezado (col de datos)
+                                        def _col_has_ms(col):
+                                            for rr in all_rows[:12]:
+                                                if col >= len(rr): continue
+                                                cv = str(rr[col].get("calculatedValue") or rr[col].get("value") or "").strip() if isinstance(rr[col], dict) else ""
+                                                if cv.lower() in ("m$", "$"):
+                                                    return True
+                                            return False
+                                        if not _col_has_ms(jj):
+                                            # Permitir hasta 2 cols separadoras vacías antes de rendirse
+                                            _skipped_sep += 1
+                                            if _skipped_sep > 2:
+                                                break
+                                            jj += 1
+                                            continue
+                                        _skipped_sep = 0
+                                        # Saltar columnas %
+                                        if any(_cell_str(r[jj]) == "%" for r in all_rows[:10] if jj < len(r)):
+                                            jj += 1
+                                            continue
+                                        _companion_idx += 1
+                                        occ_key_c = (col_type, kw_detect)
+                                        occ_idx_c = occurrence_counts.get(occ_key_c, 0)
+                                        occurrence_counts[occ_key_c] = occ_idx_c + 1
+                                        comp_cols.append({
+                                            "col":                  jj,
+                                            "type":                 col_type,
+                                            "src_id":               src_id,
+                                            "src_sh":               src_sh,
+                                            "kw_src":               kw_src,
+                                            "first_header_row":     i,
+                                            "segment_label":        seg_label,
+                                            "occurrence_index":     occ_idx_c,
+                                            "sub2_header_row":      sub2_header_row,
+                                            "sub2_data_start":      sub2_data_start,
+                                            "sub_table_offset":     (sub2_header_row - i) if sub2_header_row else None,
+                                            "is_companion":         True,
+                                            "companion_src_offset": _companion_idx,  # saltar N cols M$ en fuente desde src_col
+                                        })
+                                        seen.add(jj)
+                                        jj += 1
                                 break
             if comp_cols:
                 comp_cols_by_name[sname] = comp_cols
@@ -857,7 +1154,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             sheet_report: dict[str, Any] = {
                 "sheet": sname,
                 "comp_cols": [
-                    f"{_col_letter(c['col'])}({c['type']})"
+                    f"{_col_letter(c['col'])}({c['type']},seg={c.get('segment_label','')!r})"
                     for c in comp_cols_by_name[sname]
                 ],
                 "cols_written": 0,
@@ -874,21 +1171,46 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 if not src_cells:
                     continue
 
-                # Buscar columna fuente por keyword date-driven (sin offset fijo)
-                src_col = _find_src_col(src_cells, kw_src)
+                # Buscar columna fuente por segmento + keyword (para tablas multi-segmento)
+                seg_label       = col_info.get("segment_label", "")
+                occurrence_index = col_info.get("occurrence_index", 0)
+                src_col = _find_src_col_by_segment(src_cells, kw_src, seg_label, occurrence_index)
+                companion_offset = col_info.get("companion_src_offset", 0)
+                if companion_offset and src_col is not None:
+                    src_col = _next_companion_col_in_src(src_cells, src_col, companion_offset)
+                sheet_report.setdefault("_debug_src_cols", []).append(
+                    f"{_col_letter(dest_col)}({col_type}): seg={seg_label!r} occ={occurrence_index} kw={kw_src!r} -> src_col={src_col}"
+                    + (f" [companion+{companion_offset}]" if companion_offset else "")
+                )
                 if src_col is None:
                     continue
 
+                sub2_data_start  = col_info.get("sub2_data_start")
+                sub_table_offset = col_info.get("sub_table_offset")
+
                 src_vals: list[Any] = []
                 for i in range(len(tgt_cells)):
-                    row_s = src_cells[i] if i < len(src_cells) else []
+                    # Doble sub-tabla: filas de la sub-tabla inferior del destino
+                    # se remapean a las filas de la sub-tabla superior del fuente.
+                    if sub2_data_start and sub_table_offset and i >= sub2_data_start:
+                        src_row_i = i - sub_table_offset
+                    else:
+                        src_row_i = i
+                    row_s = src_cells[src_row_i] if 0 <= src_row_i < len(src_cells) else []
                     sv    = _cv(row_s[src_col]) if src_col < len(row_s) else None
                     src_vals.append(sv if isinstance(sv, (int, float)) else None)
 
-                write_vals: list[Any] = [
-                    None if _is_formula(tgt_cells[i], dest_col) else v
-                    for i, v in enumerate(src_vals)
-                ]
+                write_vals: list[Any] = []
+                for i, v in enumerate(src_vals):
+                    if _is_formula(tgt_cells[i], dest_col):
+                        write_vals.append(None)
+                    elif v is None:
+                        # Si la fuente es None pero el destino tiene valor numérico, escribir 0
+                        # para limpiar valores erróneos previos en Workiva
+                        dest_cv = _cv(tgt_cells[i][dest_col]) if dest_col < len(tgt_cells[i]) else None
+                        write_vals.append(0 if isinstance(dest_cv, (int, float)) and dest_cv != 0 else None)
+                    else:
+                        write_vals.append(v)
 
                 n = sum(1 for v in (src_vals if params.dry_run else write_vals)
                         if v is not None)
@@ -903,10 +1225,22 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             _col_letter(dest_col)
                         )
                         continue
-                    ok = await _write_column(
+                    ok, motivo = await _write_column(
                         params.spreadsheet_id, sid_t, dest_col, write_vals
                     )
-                    sheet_report["cols_written"] += (1 if ok else 0)
+                    if ok:
+                        sheet_report["cols_written"] += 1
+                        report["total_cols_written"] += 1
+                    else:
+                        sheet_report.setdefault("cols_failed", []).append({
+                            "col": _col_letter(dest_col), "motivo": motivo,
+                        })
+                        report["sheets_failed"].append({
+                            "sheet": sname,
+                            "error": f"Col {_col_letter(dest_col)}: {motivo}",
+                        })
+                        report["total_cols_failed"] += 1
+                    continue
                 else:
                     # Modo validación
                     def _etiqueta_fila(row_e: list) -> str:
@@ -929,7 +1263,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             cur_num = float(cur)
                         else:
                             cur_num = None
-                        if cur_num is not None and abs(cur_num - float(v)) < 1e-6:
+                        # Tolerancia 1.000 pesos: montos se presentan en M$,
+                        # diferencias menores a 1.000 son insignificantes (redondeo)
+                        if cur_num is not None and abs(cur_num - float(v)) < 1000:
                             equal += 1
                             estado = "OK"
                         else:
@@ -979,8 +1315,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     sheet_report["cols_written"] += 1
                     report["total_cells_equal"] = report.get("total_cells_equal", 0) + equal
                     report["total_cells_diff"]  = report.get("total_cells_diff", 0) + diff
-
-                report["total_cols_written"] += 1
+                    report["total_cols_written"] += 1
 
             report["sheets_processed"].append(sheet_report)
 

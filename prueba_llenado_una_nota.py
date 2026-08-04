@@ -17,7 +17,7 @@ os.environ["WORKIVA_WORKSPACE_ID"]  = "w_34913aadaa38420eabd7e4d341b78a1a"
 
 def _load_mcp():
     here = Path(__file__).parent
-    path = here / "workiva_mcp_v2.py"
+    path = here / "workiva_mcp_v2_PRUEBA.py"
     if not path.exists():
         sys.exit(f"ERROR: No se encuentra {path}")
     noop = unittest.mock.MagicMock()
