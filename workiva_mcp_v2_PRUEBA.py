@@ -191,6 +191,31 @@ async def _poll_operation(location: str, max_attempts: int = 40) -> bool:
     return False
 
 
+async def _verify_write(ss_id: str, sid: str, rng: str, cl: str, r1: int,
+                         values: list) -> list[str]:
+    """Relee el rango recién escrito y devuelve las celdas cuyo valor NO
+    coincide con lo que se intentó escribir (indicio de celda bloqueada/
+    protegida que Workiva ignoró en silencio al completar el PUT)."""
+    url = f"{PLATFORM_URL}/spreadsheets/{ss_id}/sheets/{sid}/values/{rng}"
+    try:
+        rr = await _wk.get(url)
+        if rr.status_code != 200:
+            return []
+        read_vals = [row[0] if row else None for row in rr.json().get("values", [])]
+    except Exception:
+        return []
+
+    mismatches: list[str] = []
+    for i, want in enumerate(values):
+        if want is None:
+            continue
+        got = read_vals[i] if i < len(read_vals) else None
+        got_num = got if isinstance(got, (int, float)) else None
+        if got_num is None or abs(got_num - float(want)) > 0.5:
+            mismatches.append(f"{cl}{r1 + i}")
+    return mismatches
+
+
 async def _write_column(ss_id: str, sid: str, col_idx: int,
                          values: list, start_row: int = 0) -> tuple[bool, str | None]:
     """Escribe una columna. Retorna (ok, motivo_error) — motivo_error es None si ok."""
@@ -204,7 +229,19 @@ async def _write_column(ss_id: str, sid: str, col_idx: int,
     )
     if rp.status_code == 202:
         ok = await _poll_operation(rp.headers.get("Location", ""))
-        return ok, (None if ok else f"La operación de escritura en {rng} falló (timeout u operación cancelada).")
+        if not ok:
+            return False, f"La operación de escritura en {rng} falló (timeout u operación cancelada)."
+
+        # Workiva puede responder "completed" e ignorar en silencio las
+        # celdas bloqueadas/protegidas dentro del rango — se verifica releyendo.
+        mismatches = await _verify_write(ss_id, sid, rng, cl, r1, values)
+        if mismatches:
+            motivo = (
+                f"Celda(s) {', '.join(mismatches[:10])} no se actualizaron tras escribir "
+                f"(probablemente BLOQUEADA(S)/PROTEGIDA(S) en Workiva)"
+            )
+            return False, motivo
+        return True, None
 
     try:
         body = rp.json()
