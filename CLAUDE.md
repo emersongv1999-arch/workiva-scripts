@@ -5,8 +5,9 @@ Aplicación GUI en tkinter para automatizar tareas de auditoría en Workiva para
 ## Archivo principal
 `verificar_workiva_GUI.py` — GUI completa (~2800 líneas). Compilar con PyInstaller (ver abajo).
 
-## Credenciales (hardcodeadas, líneas 15-17)
+## Credenciales (hardcodeadas, líneas 15-18)
 - `CLIENT_ID`, `CLIENT_SECRET`, `WORKSPACE_ID` para Workiva CGE
+- `AUDITOR_NAME` — nombre del auditor dueño de las credenciales, se muestra en el header del GUI junto al título "Auditor". Cada usuario (Emerson, Violeta, Rodrigo, etc.) tiene su propio `CLIENT_ID`/`CLIENT_SECRET`/`AUDITOR_NAME` y su propio .exe compilado — nunca compartir credenciales entre compilaciones.
 
 ## Módulos del GUI (NAV_ITEMS)
 | ID | Nombre |

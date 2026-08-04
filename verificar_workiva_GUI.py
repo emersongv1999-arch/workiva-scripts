@@ -15,6 +15,7 @@ import threading
 CLIENT_ID     = "db2c551e-e18a-417e-8e52-d182716b8ef2"
 CLIENT_SECRET = "wk_secret:oa2c:DzlUCmBQDv6raPxG09me"
 WORKSPACE_ID  = "w_34913aadaa38420eabd7e4d341b78a1a"
+AUDITOR_NAME  = "Emerson Garrido"
 
 TOKEN_URL  = "https://api.app.wdesk.com/iam/v1/oauth2/token"
 WDESK_BASE = "https://api.app.wdesk.com"
@@ -2422,9 +2423,14 @@ class App(tk.Tk):
 
         title_frame = tk.Frame(logo_frame, bg=CGE_BLUE)
         title_frame.pack(side="left")
-        tk.Label(title_frame, text="Auditor",
+        title_row = tk.Frame(title_frame, bg=CGE_BLUE)
+        title_row.pack(anchor="w")
+        tk.Label(title_row, text="Auditor",
                  font=("Segoe UI", 15, "bold"),
-                 bg=CGE_BLUE, fg=CGE_WHITE).pack(anchor="w")
+                 bg=CGE_BLUE, fg=CGE_WHITE).pack(side="left")
+        tk.Label(title_row, text=f"  ({AUDITOR_NAME})",
+                 font=("Segoe UI", 9),
+                 bg=CGE_BLUE, fg="#8aaaf5").pack(side="left", pady=(5, 0))
         self._header_subtitle = tk.Label(title_frame, text="",
                  font=("Segoe UI", 9),
                  bg=CGE_BLUE, fg="#8aaaf5")
@@ -2461,19 +2467,8 @@ class App(tk.Tk):
         self._v_mes  = self._field(inner, "Mes", 0)
         self._v_anio = self._field(inner, "Año", 1)
 
-        # ── Card idioma ──
-        self._card_title(parent, "Idioma")
-        idf = tk.Frame(parent, bg=CGE_CARD,
-                       highlightbackground=CGE_BORDER, highlightthickness=1)
-        idf.pack(fill="x", pady=(0, 10))
-        iinner = tk.Frame(idf, bg=CGE_CARD, padx=12, pady=8)
-        iinner.pack(fill="x")
-        self._v_idioma = tk.StringVar(value="AMBOS")
-        for txt in ("ESP", "ENG", "AMBOS"):
-            tk.Radiobutton(iinner, text=txt, variable=self._v_idioma, value=txt,
-                           font=FONT_SMALL, bg=CGE_CARD, fg=CGE_TEXT,
-                           selectcolor=CGE_LIGHT, activebackground=CGE_CARD,
-                           activeforeground=CGE_BLUE).pack(anchor="w", pady=1)
+        # Idioma fijo — este módulo solo procesa documentos en español
+        self._v_idioma = tk.StringVar(value="ESP")
 
         # ── Botones ──
         tk.Frame(parent, bg=CGE_LIGHT, height=4).pack()
