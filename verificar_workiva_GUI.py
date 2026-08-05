@@ -1243,10 +1243,17 @@ class App(tk.Tk):
             self._cmp_btn_reintentar.pack(fill="x")
         else:
             self._cmp_btn_reintentar.pack_forget()
+        # Si la ventana principal estaba minimizada, restaurarla — si no, el
+        # popup se crea "detrás" y queda invisible hasta restaurar a mano.
+        try:
+            self.deiconify()
+            self.state("normal")
+        except Exception:
+            pass
+
         top = tk.Toplevel(self)
         top.title("Completado sin errores" if not hay_err else f"Completado con {total_err} ERR")
         top.resizable(False, False)
-        top.grab_set()
         top.configure(bg="white")
 
         # ── Zona de icono + contenido ──────────────────────────────────────
@@ -1372,6 +1379,14 @@ class App(tk.Tk):
         x = self.winfo_rootx() + (self.winfo_width()  - w) // 2
         y = self.winfo_rooty() + (self.winfo_height() - h) // 2
         top.geometry(f"+{x}+{y}")
+
+        # Forzar que el popup pase al frente aunque la app estuviera minimizada
+        # o con otra ventana encima (Excel, navegador, etc.).
+        top.grab_set()
+        top.lift()
+        top.attributes("-topmost", True)
+        top.after(300, lambda: top.attributes("-topmost", False))
+        top.focus_force()
 
     def _cmp_log_write(self, msg, tag=None):
         def _do():
@@ -3036,6 +3051,13 @@ class App(tk.Tk):
             self.after(0, self._progress.stop)
 
     def _abrir_si_confirma(self, titulo, mensaje, ruta):
+        # Restaurar la ventana si estaba minimizada, si no el popup queda invisible.
+        try:
+            self.deiconify()
+            self.state("normal")
+            self.lift()
+        except Exception:
+            pass
         if messagebox.askyesno(titulo, mensaje):
             try:
                 os.startfile(ruta)
