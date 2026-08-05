@@ -15,7 +15,7 @@ import threading
 CLIENT_ID     = "4b2a183e-c783-4d8c-8034-eed9c049c978"
 CLIENT_SECRET = "wk_secret:oa2c:ScJsGbbpKHcKcpmSzhft"
 WORKSPACE_ID  = "w_34913aadaa38420eabd7e4d341b78a1a"
-AUDITOR_NAME  = "Violeta"
+AUDITOR_NAME  = "Violeta Rangel"
 
 TOKEN_URL  = "https://api.app.wdesk.com/iam/v1/oauth2/token"
 WDESK_BASE = "https://api.app.wdesk.com"
