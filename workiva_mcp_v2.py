@@ -191,26 +191,23 @@ async def _poll_operation(location: str, max_attempts: int = 40) -> bool:
     return False
 
 
-async def _verify_write(ss_id: str, sid: str, rng: str, cl: str, r1: int,
-                         values: list) -> list[str]:
-    """Relee el rango recién escrito y devuelve las celdas cuyo valor NO
-    coincide con lo que se intentó escribir (indicio de celda bloqueada/
-    protegida que Workiva ignoró en silencio al completar el PUT).
+async def _verify_write(ss_id: str, sid: str, col_idx: int, start_row: int,
+                         values: list, cl: str) -> list[str]:
+    """Relee la hoja completa (mismo camino ya probado que usa el resto de
+    la app para leer celdas: _read_sheet_cells + calculatedValue) y devuelve
+    las celdas cuyo valor NO coincide con lo que se intentó escribir
+    (indicio de celda bloqueada/protegida que Workiva ignoró en silencio
+    al completar el PUT).
 
     Reintenta con espera porque Workiva puede tardar en propagar la
-    escritura a la lectura (consistencia eventual) — sin esto, celdas
-    recién escritas correctamente se reportaban como falsos positivos.
+    escritura a la lectura (consistencia eventual).
     """
-    url = f"{PLATFORM_URL}/spreadsheets/{ss_id}/sheets/{sid}/values/{rng}"
     mismatches: list[str] = []
     for intento in range(3):
         if intento > 0:
             await asyncio.sleep(2 * intento)
         try:
-            rr = await _wk.get(url)
-            if rr.status_code != 200:
-                return []
-            read_vals = [row[0] if row else None for row in rr.json().get("values", [])]
+            cells = await _read_sheet_cells(ss_id, sid)
         except Exception:
             return []
 
@@ -218,10 +215,12 @@ async def _verify_write(ss_id: str, sid: str, rng: str, cl: str, r1: int,
         for i, want in enumerate(values):
             if want is None:
                 continue
-            got = read_vals[i] if i < len(read_vals) else None
+            row_i = start_row + i
+            row   = cells[row_i] if row_i < len(cells) else []
+            got   = _cv(row[col_idx]) if col_idx < len(row) else None
             got_num = got if isinstance(got, (int, float)) else None
             if got_num is None or abs(got_num - float(want)) > 0.5:
-                mismatches.append(f"{cl}{r1 + i}")
+                mismatches.append(f"{cl}{start_row + i + 1}")
 
         if not mismatches:
             return []
@@ -246,7 +245,7 @@ async def _write_column(ss_id: str, sid: str, col_idx: int,
 
         # Workiva puede responder "completed" e ignorar en silencio las
         # celdas bloqueadas/protegidas dentro del rango — se verifica releyendo.
-        mismatches = await _verify_write(ss_id, sid, rng, cl, r1, values)
+        mismatches = await _verify_write(ss_id, sid, col_idx, start_row, values, cl)
         if mismatches:
             motivo = (
                 f"Celda(s) {', '.join(mismatches[:10])} no se actualizaron tras escribir "
