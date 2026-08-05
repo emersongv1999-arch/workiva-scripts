@@ -1033,6 +1033,7 @@ class App(tk.Tk):
 
     def _pedir_clave(self, key):
         popup = tk.Toplevel(self)
+        popup.transient(self)
         popup.title("Acceso restringido")
         popup.resizable(False, False)
         popup.grab_set()
@@ -1254,6 +1255,7 @@ class App(tk.Tk):
             pass
 
         top = tk.Toplevel(self)
+        top.transient(self)
         top.title("Completado sin errores" if not hay_err else f"Completado con {total_err} ERR")
         top.resizable(False, False)
         top.configure(bg="white")
@@ -1313,6 +1315,7 @@ class App(tk.Tk):
         if hay_err:
             def ver_errores():
                 err_top = tk.Toplevel(top)
+                err_top.transient(top)
                 err_top.title("Detalle de errores")
                 err_top.configure(bg="white")
                 err_top.grab_set()
