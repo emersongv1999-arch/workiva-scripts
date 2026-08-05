@@ -1318,18 +1318,19 @@ class App(tk.Tk):
                 err_top.transient(top)
                 err_top.title("Detalle de errores")
                 err_top.configure(bg="white")
-                err_top.grab_set()
-                err_top.geometry("620x420")
+                err_top.minsize(560, 320)
 
                 hdr = tk.Frame(err_top, bg="white", padx=14, pady=10)
                 hdr.pack(fill="x")
                 tk.Label(hdr, text="⚠  Sociedades con errores", font=("Segoe UI", 11, "bold"),
                          bg="white", fg="#1a1a1a").pack(anchor="w")
 
+                box_frame = tk.Frame(err_top, bg="white")
+                box_frame.pack(fill="both", expand=True, padx=14, pady=(0, 8))
                 box = scrolledtext.ScrolledText(
-                    err_top, font=("Consolas", 9), wrap="word",
-                    relief="flat", bd=0, padx=14, pady=4)
-                box.pack(fill="both", expand=True, padx=14, pady=(0, 10))
+                    box_frame, font=("Consolas", 9), wrap="word",
+                    relief="flat", bd=0, padx=8, pady=4, height=16)
+                box.pack(fill="both", expand=True)
                 box.tag_config("code", font=("Segoe UI", 10, "bold"), foreground=CGE_BLUE)
                 box.tag_config("bloq", foreground=CGE_RED)
                 box.tag_config("cell", font=("Consolas", 9, "bold"))
@@ -1341,7 +1342,7 @@ class App(tk.Tk):
                     box.insert("end", f"{r['code']}\n", "code")
                     detalle = r.get("detalle", "")
                     if "BLOQUEADA" in detalle or "PROTEGIDA" in detalle:
-                        # detalle = "N celda(s) BLOQUEADA(S)... en Workiva: hoja1 -> Col X: Celda(s) A1, A2 no se ... | hoja2 -> ..."
+                        # detalle = "N celda(s) en M columna(s) BLOQUEADA(S)... en Workiva: hoja1 -> Col X: Celda(s) A1, A2 no se ... | hoja2 -> ..."
                         resumen, _, resto = detalle.partition(": ")
                         box.insert("end", f"  ⚠ {resumen}\n", "bloq")
                         for parte in resto.split(" | "):
@@ -1360,9 +1361,21 @@ class App(tk.Tk):
                     box.insert("end", "\n")
                 box.configure(state="disabled")
 
-                tk.Button(err_top, text="Cerrar", font=("Segoe UI", 9),
-                          relief="solid", bd=1, padx=14, pady=4, cursor="hand2",
-                          command=err_top.destroy).pack(pady=(0, 12))
+                tk.Frame(err_top, bg="#D0D0D0", height=1).pack(fill="x")
+                btn_frame = tk.Frame(err_top, bg="white", pady=10)
+                btn_frame.pack(fill="x")
+                tk.Button(btn_frame, text="Cerrar", font=("Segoe UI", 9),
+                          relief="solid", bd=1, padx=18, pady=5, cursor="hand2",
+                          command=err_top.destroy).pack()
+
+                err_top.update_idletasks()
+                w, h = err_top.winfo_width(), err_top.winfo_height()
+                x = top.winfo_rootx() + (top.winfo_width()  - w) // 2
+                y = top.winfo_rooty() + (top.winfo_height() - h) // 2
+                err_top.geometry(f"+{max(x,0)}+{max(y,0)}")
+                err_top.grab_set()
+                err_top.lift()
+                err_top.focus_force()
             tk.Button(btn_row, text=f"Ver errores ({total_err})",
                       font=("Segoe UI", 9, "bold"), bg=CGE_RED, fg=CGE_WHITE,
                       relief="flat", padx=14, pady=4, cursor="hand2",
