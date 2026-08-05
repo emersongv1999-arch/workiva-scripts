@@ -1144,7 +1144,7 @@ class App(tk.Tk):
         self._cmp_btn_buscar.bind("<Return>", lambda e: self._cmp_on_buscar())
         tk.Frame(left, bg=CGE_LIGHT, height=6).pack()
         self._cmp_btn_procesar = tk.Button(left, text="Procesar seleccionados",
-                  font=FONT_BOLD, bg=CGE_GREEN, fg=CGE_WHITE,
+                  font=FONT_BOLD, bg=CGE_GREEN, fg=CGE_WHITE, disabledforeground="#E4E9F5",
                   activebackground="#076b45", activeforeground=CGE_WHITE,
                   relief="flat", bd=0, padx=10, pady=9,
                   cursor="hand2", command=self._cmp_on_procesar, state="disabled")
@@ -1756,7 +1756,7 @@ class App(tk.Tk):
         self._flujo_btn_buscar.bind("<Return>", lambda e: self._flujo_on_buscar())
         tk.Frame(left, bg=CGE_LIGHT, height=6).pack()
         self._flujo_btn_generar = tk.Button(left, text="Generar Excel",
-                  font=FONT_BOLD, bg=CGE_GREEN, fg=CGE_WHITE,
+                  font=FONT_BOLD, bg=CGE_GREEN, fg=CGE_WHITE, disabledforeground="#E4E9F5",
                   activebackground="#076b45", activeforeground=CGE_WHITE,
                   relief="flat", bd=0, padx=10, pady=9,
                   cursor="hand2", command=self._flujo_on_generar, state="disabled")
@@ -2556,7 +2556,7 @@ class App(tk.Tk):
 
     def _make_btn(self, parent, text, cmd, color):
         b = tk.Button(parent, text=text, font=FONT_BOLD,
-                      bg=color, fg=CGE_WHITE,
+                      bg=color, fg=CGE_WHITE, disabledforeground="#E4E9F5",
                       activebackground=CGE_BLUE2, activeforeground=CGE_WHITE,
                       relief="flat", bd=0, padx=10, pady=9,
                       cursor="hand2", command=cmd)
