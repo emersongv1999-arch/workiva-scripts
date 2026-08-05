@@ -1245,9 +1245,11 @@ class App(tk.Tk):
             self._cmp_btn_reintentar.pack_forget()
         # Si la ventana principal estaba minimizada, restaurarla — si no, el
         # popup se crea "detrás" y queda invisible hasta restaurar a mano.
+        # OJO: solo tocar el estado si estaba "iconic" (minimizada); si no,
+        # esto pisaría una ventana maximizada ("zoomed") y la achicaría sola.
         try:
-            self.deiconify()
-            self.state("normal")
+            if self.state() == "iconic":
+                self.deiconify()
         except Exception:
             pass
 
@@ -3052,9 +3054,10 @@ class App(tk.Tk):
 
     def _abrir_si_confirma(self, titulo, mensaje, ruta):
         # Restaurar la ventana si estaba minimizada, si no el popup queda invisible.
+        # OJO: solo si estaba "iconic" — no pisar una ventana maximizada.
         try:
-            self.deiconify()
-            self.state("normal")
+            if self.state() == "iconic":
+                self.deiconify()
             self.lift()
         except Exception:
             pass
