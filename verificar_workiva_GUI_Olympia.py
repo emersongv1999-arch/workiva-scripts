@@ -11,6 +11,13 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 import threading
 
+# Import a nivel de modulo (no dentro de la funcion) para que PyInstaller lo
+# detecte en el analisis estatico y lo empaquete en el .exe.
+try:
+    import winsound
+except Exception:
+    winsound = None
+
 # ── CREDENCIALES ──────────────────────────────────────────────────────────────
 CLIENT_ID     = "7e17a008-c1b2-4eea-b4e4-7669b8d46628"
 CLIENT_SECRET = "wk_secret:oa2c:atzqZtXd6dUxsIOczwlP"
@@ -1242,14 +1249,30 @@ class App(tk.Tk):
 
     def _beep(self):
         """Aviso sonoro al terminar un proceso largo."""
-        try:
-            import winsound
-            winsound.MessageBeep(winsound.MB_ICONASTERISK)
-        except Exception:
+        if winsound is None:
             try:
                 self.bell()
             except Exception:
                 pass
+            return
+
+        def _play():
+            # Beep() genera un tono real por la placa de sonido y NO depende
+            # del esquema de sonidos de Windows — que en equipos corporativos
+            # suele estar en "Sin sonidos", dejando MessageBeep completamente
+            # muda. Se corre en un hilo porque Beep() es bloqueante.
+            try:
+                winsound.Beep(880, 180)
+                winsound.Beep(1175, 260)
+                return
+            except Exception:
+                pass
+            try:
+                winsound.MessageBeep(winsound.MB_ICONASTERISK)
+            except Exception:
+                pass
+
+        threading.Thread(target=_play, daemon=True).start()
 
     def _cmp_on_reintentar(self):
         if not self._cmp_failed:
