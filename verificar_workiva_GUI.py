@@ -1303,10 +1303,18 @@ class App(tk.Tk):
 
         if hay_err:
             def ver_errores():
-                lines = "\n".join(
-                    f"  {r['code']}:  {r['err']} ERR"
-                    for r in resultados if r["err"] > 0
-                )
+                partes = []
+                for r in resultados:
+                    if r["err"] <= 0:
+                        continue
+                    detalle = r.get("detalle", "")
+                    if "BLOQUEADA" in detalle or "PROTEGIDA" in detalle:
+                        partes.append(f"  {r['code']}:  ⚠ CELDA(S) BLOQUEADA(S)/PROTEGIDA(S)\n      {detalle}")
+                    elif detalle:
+                        partes.append(f"  {r['code']}:  {detalle}")
+                    else:
+                        partes.append(f"  {r['code']}:  {r['err']} ERR")
+                lines = "\n\n".join(partes)
                 messagebox.showwarning("Detalle de errores",
                                        f"Sociedades con errores:\n\n{lines}",
                                        parent=top)
@@ -1518,11 +1526,12 @@ class App(tk.Tk):
                         mcp_mod._wk._client = None
                         resultado = _aio.run(llenar_mod._procesar_archivo(
                             mcp_mod, fid, t["name"], False, 50))
-                        ok  = resultado.get("columnas", 0)
-                        err = 1 if resultado.get("estado") in ("error","incompleto") else 0
+                        ok      = resultado.get("columnas", 0)
+                        err     = 1 if resultado.get("estado") in ("error","incompleto") else 0
+                        detalle = resultado.get("detalle", "")
                     except Exception as e_proc:
                         self._cmp_log_write(f"  ERROR {code}: {e_proc}", "err")
-                        ok, err = 0, 1
+                        ok, err, detalle = 0, 1, str(e_proc)
                     elapsed_file = time.time() - t_file
                     mf, sf = divmod(int(elapsed_file), 60)
                     dur_file = f"{mf}m {sf}s" if mf else f"{sf}s"
@@ -1532,6 +1541,7 @@ class App(tk.Tk):
                     resultados.append({
                         "name": t["name"], "code": code,
                         "ok": ok, "err": err, "dur": dur_file,
+                        "detalle": detalle,
                     })
                     self._cmp_set_progress(n_hojas, n_hojas, f"{code}  listo ({dur_file})")
 
