@@ -3,7 +3,7 @@ verificar_workiva_GUI.py
 Verificador de Sumas - EE.FF. Workiva
 Interfaz grafica con tkinter — colores corporativos CGE
 """
-import base64, io, json, os, re, shutil, ssl, sys, time, urllib.request, urllib.error, zipfile
+import base64, io, json, math, os, re, shutil, ssl, struct, sys, time, urllib.request, urllib.error, wave, zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from collections import defaultdict
@@ -1247,6 +1247,28 @@ class App(tk.Tk):
             "\n⏹ Deteniendo... se completara el lote en curso para no dejar "
             "una escritura parcial en Workiva.", "warn")
 
+    @staticmethod
+    def _wav_aviso(tonos=((880, 0.16), (1175, 0.24)), fr=44100, vol=0.45):
+        """Genera en memoria un WAV con un par de tonos. Se reproduce por la
+        ruta de audio normal (waveOut), que es la unica que no depende ni del
+        esquema de sonidos de Windows ni de la API Beep — ambas pueden quedar
+        mudas en equipos corporativos y en sesiones RDP/VDI."""
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(fr)
+            frames = bytearray()
+            for freq, dur in tonos:
+                n = int(fr * dur)
+                for i in range(n):
+                    # Envolvente de ataque/caida para que no suene un "clic".
+                    env = min(1.0, i / 400.0, (n - i) / 400.0)
+                    frames += struct.pack(
+                        "<h", int(32767 * vol * env * math.sin(2 * math.pi * freq * i / fr)))
+            w.writeframes(bytes(frames))
+        return buf.getvalue()
+
     def _beep(self):
         """Aviso sonoro al terminar un proceso largo."""
         if winsound is None:
@@ -1256,11 +1278,22 @@ class App(tk.Tk):
                 pass
             return
 
+        if not hasattr(self, "_wav_cache"):
+            try:
+                self._wav_cache = self._wav_aviso()
+            except Exception:
+                self._wav_cache = None
+
         def _play():
-            # Beep() genera un tono real por la placa de sonido y NO depende
-            # del esquema de sonidos de Windows — que en equipos corporativos
-            # suele estar en "Sin sonidos", dejando MessageBeep completamente
-            # muda. Se corre en un hilo porque Beep() es bloqueante.
+            # Se prueban de mas a menos confiable. PlaySound con SND_MEMORY es
+            # sincronico a proposito (sin SND_ASYNC): asi el buffer sigue vivo
+            # durante toda la reproduccion.
+            if self._wav_cache:
+                try:
+                    winsound.PlaySound(self._wav_cache, winsound.SND_MEMORY)
+                    return
+                except Exception:
+                    pass
             try:
                 winsound.Beep(880, 180)
                 winsound.Beep(1175, 260)
