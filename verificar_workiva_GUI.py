@@ -1526,22 +1526,17 @@ class App(tk.Tk):
         threading.Thread(target=self._cmp_thread_procesar,
                          args=(seleccionados,), daemon=True).start()
 
-    def _cmp_set_progress(self, value, maximum, label=""):
-        def _do():
-            self._progress.stop()
-            self._progress.configure(mode="determinate")
-            self._progress["maximum"] = maximum or 1
-            self._progress["value"]   = value
-            self._header_subtitle.configure(text=label)
-        self.after(0, _do)
+    def _cmp_set_label(self, label):
+        # Solo actualiza el texto del subtitulo — la barra de progreso queda
+        # en modo indeterminado (animandose) durante todo el proceso, ya que
+        # el llenado real no reporta avance por hoja de forma confiable
+        # (puede tardar 15-20 min sin ninguna señal intermedia).
+        self.after(0, lambda: self._header_subtitle.configure(text=label))
 
     def _cmp_thread_procesar(self, seleccionados):
         try:
             import builtins, types
             _orig_print = builtins.print
-
-            # Estado de progreso por hojas — se actualiza desde _gui_print
-            prog_state = {"total": 0, "done": 0, "code": ""}
 
             def _gui_print(*args, **kwargs):
                 msg = " ".join(str(a) for a in args)
@@ -1549,12 +1544,6 @@ class App(tk.Tk):
                       "ok"  if "OK" in msg or "✓" in msg else \
                       "bold" if msg.startswith("===") or msg.startswith("───") else None
                 self._cmp_log_write(msg, tag)
-                # Detectar inicio de hoja ("=== N.- Nombre")
-                if msg.startswith("===") and prog_state["total"] > 0:
-                    prog_state["done"] += 1
-                    d, t = prog_state["done"], prog_state["total"]
-                    lbl = f"{prog_state['code']}  hoja {d}/{t}"
-                    self._cmp_set_progress(d, t, lbl)
 
             builtins.print = _gui_print
             t0 = time.time()
@@ -1576,16 +1565,7 @@ class App(tk.Tk):
                 for t in seleccionados:
                     code = t.get("code", t["name"])
                     fid  = t["id"]
-                    try:
-                        mcp_mod._wk._client = None
-                        sheets_dict = _aio.run(mcp_mod._get_sheets(fid))
-                        n_hojas = len(sheets_dict)
-                    except Exception:
-                        n_hojas = 1
-                    prog_state["total"] = n_hojas
-                    prog_state["done"]  = 0
-                    prog_state["code"]  = code
-                    self._cmp_set_progress(0, n_hojas, f"{code}  0/{n_hojas}")
+                    self._cmp_set_label(f"{code}  —  escribiendo en Workiva... (puede tardar varios minutos)")
 
                     t_file = time.time()
                     try:
@@ -1609,14 +1589,14 @@ class App(tk.Tk):
                         "ok": ok, "err": err, "dur": dur_file,
                         "detalle": detalle,
                     })
-                    self._cmp_set_progress(n_hojas, n_hojas, f"{code}  listo ({dur_file})")
+                    self._cmp_set_label(f"{code}  —  listo ({dur_file})")
 
                 elapsed    = time.time() - t0
                 mins, secs = divmod(int(elapsed), 60)
                 dur_str    = f"{mins}m {secs}s" if mins else f"{secs}s"
                 self._cmp_log_write(f"\nRESUMEN: OK={total_ok}  ERR={total_err}  ({dur_str})",
                                     "ok" if total_err == 0 else "warn")
-                self._cmp_set_progress(0, 1, "Llenar Comparativos")
+                self._cmp_set_label("Llenar Comparativos")
                 self.after(0, lambda r=resultados, tok=total_ok, terr=total_err, d=dur_str:
                            self._cmp_show_result_popup(r, tok, terr, d))
             finally:
@@ -1624,6 +1604,7 @@ class App(tk.Tk):
         except Exception as e:
             self._cmp_log_write(f"ERROR inesperado: {e}", "err")
         finally:
+            self.after(0, self._progress.stop)
             self.after(0, lambda: self._cmp_btn_buscar.configure(state="normal"))
             self.after(0, lambda: self._cmp_btn_procesar.configure(state="normal"))
             self.after(0, lambda: self._header_subtitle.configure(text="Llenar Comparativos"))
