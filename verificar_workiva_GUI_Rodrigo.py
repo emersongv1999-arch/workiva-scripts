@@ -1269,6 +1269,39 @@ class App(tk.Tk):
             w.writeframes(bytes(frames))
         return buf.getvalue()
 
+    def _flash_taskbar(self):
+        """Hace parpadear el boton de la app en la barra de tareas hasta que
+        el usuario la mira. No depende del stack de audio, asi que sirve de
+        aviso aunque el sonido no funcione (RDP/VDI, esquema sin sonidos)."""
+        try:
+            import ctypes
+
+            class FLASHWINFO(ctypes.Structure):
+                _fields_ = [("cbSize",    ctypes.c_uint),
+                            ("hwnd",      ctypes.c_void_p),
+                            ("dwFlags",   ctypes.c_uint),
+                            ("uCount",    ctypes.c_uint),
+                            ("dwTimeout", ctypes.c_uint)]
+
+            user32 = ctypes.windll.user32
+            GA_ROOT          = 2
+            FLASHW_ALL       = 0x00000003   # titulo + boton de la barra
+            FLASHW_TIMERNOFG = 0x0000000C   # parpadea hasta que pase a primer plano
+
+            hwnd = user32.GetAncestor(self.winfo_id(), GA_ROOT)
+            if not hwnd:
+                return
+            info = FLASHWINFO(ctypes.sizeof(FLASHWINFO), hwnd,
+                              FLASHW_ALL | FLASHW_TIMERNOFG, 0, 0)
+            user32.FlashWindowEx(ctypes.byref(info))
+        except Exception:
+            pass
+
+    def _avisar_fin(self):
+        """Aviso de proceso terminado: visual (barra de tareas) + sonoro."""
+        self._flash_taskbar()
+        self._beep()
+
     def _beep(self):
         """Aviso sonoro al terminar un proceso largo."""
         if winsound is None:
@@ -1691,7 +1724,7 @@ class App(tk.Tk):
                     f"\n{prefijo}RESUMEN: OK={total_ok}  ERR={total_err}  ({dur_str})",
                     "warn" if (detenido or total_err) else "ok")
                 self._cmp_set_label("Llenar Comparativos")
-                self.after(0, self._beep)
+                self.after(0, self._avisar_fin)
                 self.after(0, lambda r=resultados, tok=total_ok, terr=total_err, d=dur_str:
                            self._cmp_show_result_popup(r, tok, terr, d))
             finally:
@@ -2129,7 +2162,7 @@ class App(tk.Tk):
             self._flujo_log_write(f"ERROR: {e}", "err")
             self.after(0, lambda err=str(e): messagebox.showerror("Error", err))
         finally:
-            self.after(0, self._beep)
+            self.after(0, self._avisar_fin)
             self.after(0, lambda: self._flujo_btn_buscar.configure(state="normal"))
             self.after(0, lambda: self._flujo_btn_generar.configure(state="normal"))
             self.after(0, self._progress.stop)
@@ -2539,7 +2572,7 @@ class App(tk.Tk):
         finally:
             builtins.print = _orig_print
             self._eeff_running = False
-            self.after(0, self._beep)
+            self.after(0, self._avisar_fin)
             def _restore():
                 self._eeff_btn_stop.pack_forget()
                 self._eeff_btn.pack(fill="x")
@@ -2938,7 +2971,7 @@ class App(tk.Tk):
         finally:
             if self._docx_dir.exists():
                 shutil.rmtree(self._docx_dir, ignore_errors=True)
-            self.after(0, self._beep)
+            self.after(0, self._avisar_fin)
             self.after(0, self._unlock)
 
 
@@ -3145,7 +3178,7 @@ class App(tk.Tk):
         except Exception as e:
             self._val_log_write(f"ERROR: {e}", "err")
         finally:
-            self.after(0, self._beep)
+            self.after(0, self._avisar_fin)
             self.after(0, lambda: self._val_btn_run.configure(state="normal"))
             self.after(0, self._progress.stop)
 
