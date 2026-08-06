@@ -324,7 +324,6 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
             padre = detector.es_subhoja(nombre_hoja)
             if padre is not None:
                 omitidas_subhoja += 1
-                print(f"  subhoja omitida: {nombre_hoja}  (apoyo de {padre})")
                 continue
 
             tope = limite_filas(nombre_hoja)
