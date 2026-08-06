@@ -1258,6 +1258,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 sub_table_offset = col_info.get("sub_table_offset")
 
                 src_vals: list[Any] = []
+                src_row_indices: list[int] = []
                 for i in range(len(tgt_cells)):
                     # Doble sub-tabla: filas de la sub-tabla inferior del destino
                     # se remapean a las filas de la sub-tabla superior del fuente,
@@ -1276,6 +1277,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     row_s = src_cells[src_row_i] if 0 <= src_row_i < len(src_cells) else []
                     sv    = _cv(row_s[src_col]) if src_col < len(row_s) else None
                     src_vals.append(sv if isinstance(sv, (int, float)) else None)
+                    src_row_indices.append(src_row_i)
 
                 write_vals: list[Any] = []
                 for i, v in enumerate(src_vals):
@@ -1333,6 +1335,15 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                         if v is None:
                             continue
                         row_t   = tgt_cells[i]
+                        # Guard desfase estructural: si las etiquetas de fila no coinciden
+                        # entre fuente y destino, ignorar esta fila para evitar falsos hallazgos
+                        # causados por diferencias de plantilla entre períodos.
+                        _sri = src_row_indices[i]
+                        _row_s_lbl = src_cells[_sri] if 0 <= _sri < len(src_cells) else []
+                        _lbl_t = _etiqueta_fila(row_t)
+                        _lbl_s = _etiqueta_fila(_row_s_lbl)
+                        if _lbl_t and _lbl_s and _lbl_t != _lbl_s:
+                            continue
                         cur     = _cv(row_t[dest_col]) if dest_col < len(row_t) else None
                         if cur is None or (isinstance(cur, str) and not cur.strip()):
                             cur_num = 0.0
