@@ -120,9 +120,16 @@ async def resolver_spreadsheet(sociedad: str, anio: str, trimestre: str,
 #    hojas traen bloques auxiliares (PPT, cuadros de apoyo, etc.) que no son
 #    comparativo y generaban hallazgos falsos.
 #
-# 2) Subhojas: en los archivos CONSOLIDADOS cada nota se repite como
-#    "<n>.- CGE", "<n>.- CGEM Conso" o "<n>.- PPA". Son hojas de apoyo de la
-#    nota real y NO deben validarse; solo cuenta la hoja con el nombre real.
+# 2) Subhojas: en los archivos CONSOLIDADOS cada nota se repite una o más
+#    veces como hoja de apoyo ("27.- CGEM Conso", "73.- PPA", etc.). Son
+#    apoyo de la nota real y NO deben validarse.
+#
+#    La detección NO usa una lista de nombres: esos nombres cambian de una
+#    sociedad a otra. Se usa el prefijo de la nota ("27", "F", "A"), que es
+#    su identificador: la nota real es la PRIMERA hoja del archivo con ese
+#    prefijo y cualquier hoja posterior que repita el prefijo es subhoja.
+#
+#    Consecuencia importante: una hoja con prefijo único jamás se descarta.
 
 LIMITE_FILAS: dict[str, int] = {
     "A":   43,
@@ -153,31 +160,43 @@ LIMITE_FILAS: dict[str, int] = {
     "121": 53,
 }
 
-# "A.- Activos" -> ("A", "Activos") ; "27. CGEM Conso" -> ("27", "CGEM Conso")
-_RE_PREFIJO = re.compile(r"^\s*([A-Za-zÑñ0-9]{1,4})\s*\.\s*-?\s*(.*?)\s*$")
-
-# Nombres que identifican una subhoja de apoyo (tras quitar el prefijo).
-_RE_SUBHOJA = re.compile(r"^(CGE|CGEM\s*Conso|PPA|PPT)\.?$", re.IGNORECASE)
+# "A.- Activos" -> "A" ; "27. CGEM Conso" -> "27" ; "55.-CGE" -> "55"
+_RE_PREFIJO = re.compile(r"^\s*([A-Za-zÑñ0-9]{1,4})\s*\.\s*-?\s*\S")
 
 
-def _prefijo_hoja(nombre: str) -> tuple[str, str]:
-    """Devuelve (prefijo_normalizado, resto) del nombre de la hoja."""
+def prefijo_hoja(nombre: str) -> str:
+    """Prefijo de la nota ("A", "27"), o "" si el nombre no lo lleva."""
     m = _RE_PREFIJO.match(nombre or "")
-    if not m:
-        return "", (nombre or "").strip()
-    return m.group(1).upper(), m.group(2)
+    return m.group(1).upper() if m else ""
 
 
-def es_subhoja(nombre: str) -> bool:
-    """True si la hoja es una subhoja de apoyo de un consolidado."""
-    prefijo, resto = _prefijo_hoja(nombre)
-    return bool(prefijo) and _RE_SUBHOJA.match(resto) is not None
+class DetectorSubhojas:
+    """Marca como subhoja toda hoja que repita el prefijo de una anterior.
+
+    Se alimenta en el mismo orden en que Workiva devuelve las hojas, que es
+    el orden del archivo: la nota real va primero y sus hojas de apoyo la
+    siguen. Una hoja sin prefijo, o con un prefijo que aparece una sola vez,
+    nunca se marca.
+    """
+
+    def __init__(self) -> None:
+        self._vistos: dict[str, str] = {}
+
+    def es_subhoja(self, nombre: str) -> str | None:
+        """Devuelve el nombre de la nota real si `nombre` es subhoja suya."""
+        prefijo = prefijo_hoja(nombre)
+        if not prefijo:
+            return None
+        padre = self._vistos.get(prefijo)
+        if padre is None:
+            self._vistos[prefijo] = nombre
+            return None
+        return padre
 
 
 def limite_filas(nombre: str) -> int | None:
     """Última fila a validar en esa hoja, o None si no tiene límite."""
-    prefijo, _ = _prefijo_hoja(nombre)
-    return LIMITE_FILAS.get(prefijo)
+    return LIMITE_FILAS.get(prefijo_hoja(nombre))
 
 
 def _nombre_pestana(nombre: str, usados: set[str]) -> str:
@@ -258,6 +277,7 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
     encabezado_impreso = False
     omitidas_subhoja = 0
     filas_fuera      = 0
+    detector         = DetectorSubhojas()
 
     while True:
         raw = await w.workiva_fill_comparatives(
@@ -301,8 +321,10 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
             nombre_hoja = sh["sheet"]
 
             # Subhoja de apoyo de un consolidado: no se valida.
-            if es_subhoja(nombre_hoja):
+            padre = detector.es_subhoja(nombre_hoja)
+            if padre is not None:
                 omitidas_subhoja += 1
+                print(f"  subhoja omitida: {nombre_hoja}  (apoyo de {padre})")
                 continue
 
             tope = limite_filas(nombre_hoja)
