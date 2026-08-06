@@ -226,7 +226,8 @@ def exportar_excel(ruta: str, titulo: str, subtitulo: str,
     ws.title = "Resumen"
     ws.cell(row=1, column=1, value=titulo).font = bold
     ws.cell(row=2, column=1, value=subtitulo).font = bold
-    encabezados = ["Nota", "Hoja Excel", "Filas", "OK", "Hallazgo", "No procesado"]
+    encabezados = ["Nota", "Hoja Excel", "Filas", "OK", "Hallazgo", "No procesado",
+                   "Sin correspondencia"]
     for j, h in enumerate(encabezados, start=1):
         ws.cell(row=4, column=j, value=h).font = bold
     ws.column_dimensions["A"].width = 70
@@ -243,6 +244,8 @@ def exportar_excel(ruta: str, titulo: str, subtitulo: str,
         ws.cell(row=i, column=4, value=sum(1 for f in filas if f["estado"] == "OK"))
         ws.cell(row=i, column=5, value=sum(1 for f in filas if f["estado"] == "HALLAZGO"))
         ws.cell(row=i, column=6, value=sum(1 for f in filas if f["estado"] == "NO PROCESADO"))
+        ws.cell(row=i, column=7,
+                value=sum(1 for f in filas if f["estado"] == "SIN CORRESPONDENCIA"))
 
         if not filas:
             continue
@@ -274,7 +277,7 @@ def exportar_excel(ruta: str, titulo: str, subtitulo: str,
 
 async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> int:
     offset = 0
-    total_equal = total_diff = 0
+    total_equal = total_diff = total_sin_corr = 0
     candidatas = "?"
     info: dict = {}
     hojas: list[dict] = []
@@ -343,6 +346,8 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
                         continue
                     if f["estado"] == "OK":
                         total_equal += 1
+                    elif f["estado"] == "SIN CORRESPONDENCIA":
+                        total_sin_corr += 1
                     else:
                         total_diff += 1
                     base = f["etiqueta"] or f"(fila {f['fila']})"
@@ -359,6 +364,8 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
                             nota = "difiere"
                     elif f["estado"] == "NO PROCESADO":
                         nota = "valor destino no numérico"
+                    elif f["estado"] == "SIN CORRESPONDENCIA":
+                        nota = "la fila no existe en el archivo fuente: revisar manualmente"
                     else:
                         nota = None
                     filas_hoja.append({
@@ -381,6 +388,9 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
         print(f"  ({omitidas_subhoja} subhoja(s) de apoyo omitidas, ver detalle arriba)")
     if filas_fuera:
         print(f"  ({filas_fuera} fila(s) fuera del alcance de su nota, omitidas)")
+    if total_sin_corr:
+        print(f"  ({total_sin_corr} fila(s) sin correspondencia en el archivo fuente, "
+              f"revisar manualmente en el Excel)")
 
     m = re.match(r"(E\d+)_(IND|CONSO)_(\d{2})[-_](\d{4})", etiqueta)
     if m:

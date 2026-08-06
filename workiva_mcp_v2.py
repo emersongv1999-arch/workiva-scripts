@@ -1330,20 +1330,63 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                     return t.strip()
                         return ""
 
-                    equal, diff, samples, filas_det = 0, 0, [], []
+                    def _norm_lbl(s: str) -> str:
+                        s = (s or "").strip().lower().rstrip(".:; ")
+                        s = re.sub(r"\s+", " ", s)
+                        return s
+
+                    # Realineación por etiqueta: cuando la plantilla del período
+                    # fuente tiene filas de más/de menos, la fila i del destino no
+                    # corresponde a la fila i del fuente. En vez de omitir la fila
+                    # (lo que escondería hallazgos reales), se busca en el fuente la
+                    # fila con la MISMA etiqueta dentro de una ventana cercana y se
+                    # compara contra esa. Solo si no existe correspondencia se marca
+                    # la fila como SIN CORRESPONDENCIA (visible en el detalle).
+                    _VENTANA = 8
+
+                    def _valor_fuente_realineado(i: int, lbl_t: str) -> tuple[Any, bool]:
+                        """Devuelve (valor_fuente, hubo_correspondencia)."""
+                        base = src_row_indices[i]
+                        row_b = src_cells[base] if 0 <= base < len(src_cells) else []
+                        if _norm_lbl(_etiqueta_fila(row_b)) == lbl_t:
+                            return src_vals[i], True
+                        # buscar la etiqueta en filas cercanas, de la más próxima a la más lejana
+                        for d in range(1, _VENTANA + 1):
+                            for cand in (base - d, base + d):
+                                if not (0 <= cand < len(src_cells)):
+                                    continue
+                                row_c = src_cells[cand]
+                                if _norm_lbl(_etiqueta_fila(row_c)) != lbl_t:
+                                    continue
+                                sv = _cv(row_c[src_col]) if src_col < len(row_c) else None
+                                return (sv if isinstance(sv, (int, float)) else None), True
+                        return None, False
+
+                    equal, diff, sin_corr, samples, filas_det = 0, 0, 0, [], []
                     for i, v in enumerate(src_vals):
                         if v is None:
                             continue
-                        row_t   = tgt_cells[i]
-                        # Guard desfase estructural: si las etiquetas de fila no coinciden
-                        # entre fuente y destino, ignorar esta fila para evitar falsos hallazgos
-                        # causados por diferencias de plantilla entre períodos.
-                        _sri = src_row_indices[i]
-                        _row_s_lbl = src_cells[_sri] if 0 <= _sri < len(src_cells) else []
-                        _lbl_t = _etiqueta_fila(row_t)
-                        _lbl_s = _etiqueta_fila(_row_s_lbl)
-                        if _lbl_t and _lbl_s and _lbl_t != _lbl_s:
-                            continue
+                        row_t  = tgt_cells[i]
+                        _lbl_t = _norm_lbl(_etiqueta_fila(row_t))
+                        if _lbl_t:
+                            v, _hubo = _valor_fuente_realineado(i, _lbl_t)
+                            if not _hubo:
+                                # no existe esa fila en el fuente: se reporta, no se oculta
+                                sin_corr += 1
+                                if params.detalle_filas:
+                                    _c = _cv(row_t[dest_col]) if dest_col < len(row_t) else None
+                                    filas_det.append({
+                                        "fila":     i + 1,
+                                        "etiqueta": _etiqueta_fila(row_t),
+                                        "destino":  _c,
+                                        "fuente":   None,
+                                        "estado":   "SIN CORRESPONDENCIA",
+                                    })
+                                continue
+                            if v is None:
+                                # la fila existe en el fuente pero está vacía:
+                                # mismo criterio que una fuente vacía cualquiera
+                                continue
                         cur     = _cv(row_t[dest_col]) if dest_col < len(row_t) else None
                         if cur is None or (isinstance(cur, str) and not cur.strip()):
                             cur_num = 0.0
@@ -1377,6 +1420,8 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                         "iguales":        equal,
                         "distintos":      diff,
                     }
+                    if sin_corr:
+                        comp["sin_correspondencia"] = sin_corr
                     if samples:
                         comp["ejemplos_distintos"] = samples
                     if params.detalle_filas:
