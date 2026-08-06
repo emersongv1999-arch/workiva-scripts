@@ -151,6 +151,20 @@ def _is_formula(row: list, col: int) -> bool:
     return str(c.get("value", "") if isinstance(c, dict) else "").startswith("=")
 
 
+def _etiqueta_fila(row_e: list) -> str:
+    """Rótulo descriptivo de la fila (columna B, con fallback a A y C)."""
+    for j in (1, 0, 2):
+        if j < len(row_e):
+            t = _cv(row_e[j])
+            if isinstance(t, str) and t.strip():
+                return t.strip()
+    return ""
+
+
+def _norm_lbl(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "").strip().lower().rstrip(".:; "))
+
+
 async def _get_sheets(ss_id: str) -> dict[str, str]:
     result: dict[str, str] = {}
     url = f"{PLATFORM_URL}/spreadsheets/{ss_id}/sheets"
@@ -1257,8 +1271,16 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 sub2_data_start  = col_info.get("sub2_data_start")
                 sub_table_offset = col_info.get("sub_table_offset")
 
+                # Realineación por etiqueta: cuando la plantilla del archivo fuente
+                # tiene filas de más o de menos respecto al destino, la fila i del
+                # destino NO corresponde a la fila i del fuente. Se busca en el
+                # fuente la fila con la misma etiqueta dentro de una ventana cercana
+                # y se usa esa. Si las plantillas están alineadas (caso normal) la
+                # etiqueta calza en la misma fila y el comportamiento no cambia.
+                _VENTANA_ALINEACION = 8
+
                 src_vals: list[Any] = []
-                src_row_indices: list[int] = []
+                src_corr: list[bool] = []   # False = la fila no existe en el fuente
                 for i in range(len(tgt_cells)):
                     # Doble sub-tabla: filas de la sub-tabla inferior del destino
                     # se remapean a las filas de la sub-tabla superior del fuente,
@@ -1274,14 +1296,40 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             src_row_i = i - sub_table_offset
                     else:
                         src_row_i = i
+
+                    lbl_t = _norm_lbl(_etiqueta_fila(tgt_cells[i]))
+                    row_b = src_cells[src_row_i] if 0 <= src_row_i < len(src_cells) else []
+                    if lbl_t and _norm_lbl(_etiqueta_fila(row_b)) != lbl_t:
+                        # desfase: buscar la etiqueta cerca, de la fila más próxima
+                        # a la más lejana
+                        hallada = None
+                        for d in range(1, _VENTANA_ALINEACION + 1):
+                            for cand in (src_row_i - d, src_row_i + d):
+                                if not (0 <= cand < len(src_cells)):
+                                    continue
+                                if _norm_lbl(_etiqueta_fila(src_cells[cand])) == lbl_t:
+                                    hallada = cand
+                                    break
+                            if hallada is not None:
+                                break
+                        if hallada is None:
+                            src_vals.append(None)
+                            src_corr.append(False)
+                            continue
+                        src_row_i = hallada
+
                     row_s = src_cells[src_row_i] if 0 <= src_row_i < len(src_cells) else []
                     sv    = _cv(row_s[src_col]) if src_col < len(row_s) else None
                     src_vals.append(sv if isinstance(sv, (int, float)) else None)
-                    src_row_indices.append(src_row_i)
+                    src_corr.append(True)
 
                 write_vals: list[Any] = []
                 for i, v in enumerate(src_vals):
                     if _is_formula(tgt_cells[i], dest_col):
+                        write_vals.append(None)
+                    elif not src_corr[i]:
+                        # La fila no existe en el archivo fuente: no se inventa un
+                        # valor ni se pisa el que ya está. Queda para revisión manual.
                         write_vals.append(None)
                     elif v is None:
                         # Si la fuente es None pero el destino tiene valor numérico, escribir 0
@@ -1322,71 +1370,28 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     continue
                 else:
                     # Modo validación
-                    def _etiqueta_fila(row_e: list) -> str:
-                        for j in (1, 0, 2):
-                            if j < len(row_e):
-                                t = _cv(row_e[j])
-                                if isinstance(t, str) and t.strip():
-                                    return t.strip()
-                        return ""
-
-                    def _norm_lbl(s: str) -> str:
-                        s = (s or "").strip().lower().rstrip(".:; ")
-                        s = re.sub(r"\s+", " ", s)
-                        return s
-
-                    # Realineación por etiqueta: cuando la plantilla del período
-                    # fuente tiene filas de más/de menos, la fila i del destino no
-                    # corresponde a la fila i del fuente. En vez de omitir la fila
-                    # (lo que escondería hallazgos reales), se busca en el fuente la
-                    # fila con la MISMA etiqueta dentro de una ventana cercana y se
-                    # compara contra esa. Solo si no existe correspondencia se marca
-                    # la fila como SIN CORRESPONDENCIA (visible en el detalle).
-                    _VENTANA = 8
-
-                    def _valor_fuente_realineado(i: int, lbl_t: str) -> tuple[Any, bool]:
-                        """Devuelve (valor_fuente, hubo_correspondencia)."""
-                        base = src_row_indices[i]
-                        row_b = src_cells[base] if 0 <= base < len(src_cells) else []
-                        if _norm_lbl(_etiqueta_fila(row_b)) == lbl_t:
-                            return src_vals[i], True
-                        # buscar la etiqueta en filas cercanas, de la más próxima a la más lejana
-                        for d in range(1, _VENTANA + 1):
-                            for cand in (base - d, base + d):
-                                if not (0 <= cand < len(src_cells)):
-                                    continue
-                                row_c = src_cells[cand]
-                                if _norm_lbl(_etiqueta_fila(row_c)) != lbl_t:
-                                    continue
-                                sv = _cv(row_c[src_col]) if src_col < len(row_c) else None
-                                return (sv if isinstance(sv, (int, float)) else None), True
-                        return None, False
-
                     equal, diff, sin_corr, samples, filas_det = 0, 0, 0, [], []
-                    for i, v in enumerate(src_vals):
+                    for i in range(len(src_vals)):
+                        row_t = tgt_cells[i]
+                        if not src_corr[i]:
+                            # La fila no existe en el archivo fuente. Se reporta para
+                            # revisión manual en lugar de descartarla en silencio.
+                            _c = _cv(row_t[dest_col]) if dest_col < len(row_t) else None
+                            if _c is None or (isinstance(_c, str) and not str(_c).strip()):
+                                continue          # destino también vacío: nada que revisar
+                            sin_corr += 1
+                            if params.detalle_filas:
+                                filas_det.append({
+                                    "fila":     i + 1,
+                                    "etiqueta": _etiqueta_fila(row_t),
+                                    "destino":  _c,
+                                    "fuente":   None,
+                                    "estado":   "SIN CORRESPONDENCIA",
+                                })
+                            continue
+                        v = src_vals[i]
                         if v is None:
                             continue
-                        row_t  = tgt_cells[i]
-                        _lbl_t = _norm_lbl(_etiqueta_fila(row_t))
-                        if _lbl_t:
-                            v, _hubo = _valor_fuente_realineado(i, _lbl_t)
-                            if not _hubo:
-                                # no existe esa fila en el fuente: se reporta, no se oculta
-                                sin_corr += 1
-                                if params.detalle_filas:
-                                    _c = _cv(row_t[dest_col]) if dest_col < len(row_t) else None
-                                    filas_det.append({
-                                        "fila":     i + 1,
-                                        "etiqueta": _etiqueta_fila(row_t),
-                                        "destino":  _c,
-                                        "fuente":   None,
-                                        "estado":   "SIN CORRESPONDENCIA",
-                                    })
-                                continue
-                            if v is None:
-                                # la fila existe en el fuente pero está vacía:
-                                # mismo criterio que una fuente vacía cualquiera
-                                continue
                         cur     = _cv(row_t[dest_col]) if dest_col < len(row_t) else None
                         if cur is None or (isinstance(cur, str) and not cur.strip()):
                             cur_num = 0.0
