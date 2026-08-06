@@ -131,33 +131,34 @@ async def resolver_spreadsheet(sociedad: str, anio: str, trimestre: str,
 #
 #    Consecuencia importante: una hoja con prefijo único jamás se descarta.
 
-LIMITE_FILAS: dict[str, int] = {
-    "A":   43,
-    "B":   55,
-    "C":   54,
-    "D":   77,
-    "K":   14,
-    "13":  14,
-    "14":  45,
-    "15":  14,
-    "17":  15,
-    "53":  25,
-    "57":  41,
-    "74":  22,
-    "77":  40,
-    "104": 22,
-    "105": 11,
-    "106": 12,
-    "107": 20,
-    "108": 13,
-    "109": 19,
-    "110": 24,
-    "111": 37,
-    "113": 44,
-    "114": 29,
-    "118": 21,
-    "120": 43,
-    "121": 53,
+RANGO_FILAS: dict[str, tuple[int | None, int | None]] = {
+    "A":   (None, 43),
+    "B":   (None, 55),
+    "C":   (None, 54),
+    "D":   (None, 77),
+    "K":   (None, 14),
+    "13":  (None, 14),
+    "14":  (None, 45),
+    "15":  (None, 14),
+    "17":  (None, 15),
+    "53":  (None, 25),
+    "55":  (7,    18),
+    "57":  (None, 41),
+    "74":  (None, 22),
+    "77":  (None, 40),
+    "104": (None, 22),
+    "105": (None, 11),
+    "106": (None, 12),
+    "107": (None, 20),
+    "108": (None, 13),
+    "109": (None, 19),
+    "110": (None, 24),
+    "111": (None, 37),
+    "113": (None, 44),
+    "114": (None, 29),
+    "118": (None, 21),
+    "120": (None, 43),
+    "121": (None, 53),
 }
 
 # "A.- Activos" -> "A" ; "27. CGEM Conso" -> "27" ; "55.-CGE" -> "55"
@@ -194,9 +195,9 @@ class DetectorSubhojas:
         return padre
 
 
-def limite_filas(nombre: str) -> int | None:
-    """Última fila a validar en esa hoja, o None si no tiene límite."""
-    return LIMITE_FILAS.get(prefijo_hoja(nombre))
+def rango_filas(nombre: str) -> tuple[int | None, int | None]:
+    """Devuelve (desde, hasta) para esa hoja. None = sin límite en ese extremo."""
+    return RANGO_FILAS.get(prefijo_hoja(nombre), (None, None))
 
 
 def _nombre_pestana(nombre: str, usados: set[str]) -> str:
@@ -326,7 +327,7 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
                 omitidas_subhoja += 1
                 continue
 
-            tope = limite_filas(nombre_hoja)
+            desde, hasta = rango_filas(nombre_hoja)
             filas_hoja: list[dict] = []
             comps = sh.get("comparacion", [])
             for comp in comps:
@@ -334,7 +335,7 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
                 tipo_col = comp.get("tipo", "bal")
                 for f in comp.get("filas", []):
                     # Fuera del alcance de la nota (bloques auxiliares al pie).
-                    if tope is not None and f["fila"] > tope:
+                    if (desde is not None and f["fila"] < desde) or (hasta is not None and f["fila"] > hasta):
                         filas_fuera += 1
                         continue
                     if f["estado"] == "OK":
