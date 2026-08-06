@@ -937,6 +937,11 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 col += 1
             return None
 
+        # Palabras que invierten el sentido de un segmento. Si la diferencia
+        # entre dos etiquetas se reduce a una de estas, NO son el mismo
+        # segmento por más que una contenga a la otra.
+        _NEGACIONES = {"no", "non", "sin"}
+
         def _find_src_col_by_segment(
             src_cells: list[list], kw_src: str, segment_label: str,
             occurrence_index: int = 0
@@ -981,8 +986,24 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
 
             matched_col: int | None = None
             if real_segs and segment_label and not segment_label.startswith("="):
+                # 1) Coincidencia exacta: siempre gana.
+                #    Sin esto "Corrientes" se lleva por delante a "No corrientes",
+                #    porque una es subcadena de la otra y aparece antes.
                 for _, jj, lbl in real_segs:
-                    if lbl == segment_label or segment_label in lbl or lbl in segment_label:
+                    if lbl == segment_label:
+                        matched_col = jj
+                        break
+
+                # 2) Sin exacta: subcadena, pero solo si lo que sobra entre las
+                #    dos etiquetas no es una negación. Así "corrientes" nunca
+                #    calza con "no corrientes" (ni al revés), que son segmentos
+                #    opuestos y contiguos en casi todas las notas.
+                if matched_col is None:
+                    for _, jj, lbl in real_segs:
+                        if segment_label not in lbl and lbl not in segment_label:
+                            continue
+                        if _NEGACIONES & (set(lbl.split()) ^ set(segment_label.split())):
+                            continue
                         matched_col = jj
                         break
 
