@@ -375,7 +375,7 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
     print(f"RESUMEN: {len(hojas)} hojas | "
           f"{total_equal} valores iguales | {total_diff} con hallazgo/no procesado")
     if omitidas_subhoja:
-        print(f"  ({omitidas_subhoja} subhoja(s) de consolidado omitidas: CGE / CGEM Conso / PPA)")
+        print(f"  ({omitidas_subhoja} subhoja(s) de apoyo omitidas, ver detalle arriba)")
     if filas_fuera:
         print(f"  ({filas_fuera} fila(s) fuera del alcance de su nota, omitidas)")
 
