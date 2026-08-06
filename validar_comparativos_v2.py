@@ -147,6 +147,7 @@ RANGO_FILAS: dict[str, tuple[int | None, int | None]] = {
     "74":  (None, 22),
     "77":  (None, 40),
     "85":  (None, 37),
+    "90":  (None, 25),
     "104": (None, 22),
     "105": (None, 11),
     "106": (None, 12),
