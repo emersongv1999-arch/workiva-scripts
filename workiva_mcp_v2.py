@@ -1260,9 +1260,17 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 src_vals: list[Any] = []
                 for i in range(len(tgt_cells)):
                     # Doble sub-tabla: filas de la sub-tabla inferior del destino
-                    # se remapean a las filas de la sub-tabla superior del fuente.
+                    # se remapean a las filas de la sub-tabla superior del fuente,
+                    # PERO solo si la fuente no tiene ya datos en la misma fila.
+                    # Cuando ambas sub-tablas están en las mismas filas (ej. nota 85),
+                    # el offset no hace falta y aplicarlo remapea al lugar incorrecto.
                     if sub2_data_start and sub_table_offset and i >= sub2_data_start:
-                        src_row_i = i - sub_table_offset
+                        row_orig = src_cells[i] if 0 <= i < len(src_cells) else []
+                        sv_orig  = _cv(row_orig[src_col]) if src_col < len(row_orig) else None
+                        if sv_orig is not None:
+                            src_row_i = i          # fuente tiene datos aquí: no aplicar offset
+                        else:
+                            src_row_i = i - sub_table_offset
                     else:
                         src_row_i = i
                     row_s = src_cells[src_row_i] if 0 <= src_row_i < len(src_cells) else []
