@@ -1055,11 +1055,33 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             comp_cols: list[dict] = []
             seen: set[int] = set()
             occurrence_counts: dict[tuple, int] = {}
+            def _fila_en_blanco(row: list) -> bool:
+                """True si la fila no tiene ningún texto (separador entre tablas)."""
+                for cell in row[:30]:
+                    if not isinstance(cell, dict):
+                        continue
+                    v = str(cell.get("calculatedValue") or cell.get("value") or "").strip()
+                    if v:
+                        return False
+                return True
+
             for col_type, kw_detect, src_id, src_sh, kw_src in TYPE_MAP:
                 if not kw_detect or not src_id:
                     continue
                 all_rows = tgt_cells_by_name[sname]
+                # Notas con dos tablas apiladas y estructura NO relacionada (ej. tabla de
+                # este período arriba, tabla del período anterior "tal cual se reportó"
+                # abajo) pueden repetir por coincidencia la misma fecha que busca este
+                # col_type, pero en una columna de la tabla de abajo que no tiene nada
+                # que ver. Para no mezclarlas: una vez encontrada la primera coincidencia,
+                # dejar de buscar columnas NUEVAS más allá de la primera fila en blanco
+                # (separador de tabla). El mecanismo de "doble sub-tabla" (sub2_header_row,
+                # más abajo) sigue funcionando igual: busca dentro de la MISMA columna,
+                # no se ve afectado por este límite.
+                primer_match_row: int | None = None
                 for i, row in enumerate(all_rows):
+                    if primer_match_row is not None and i > primer_match_row and _fila_en_blanco(row):
+                        break
                     # Más allá de fila 7: solo procesar si la keyword aparece en
                     # ≥2 celdas de esta fila (indica celda fusionada = encabezado real).
                     # Filas 0-7: aceptar incluso match único (encabezado principal).
@@ -1078,6 +1100,8 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                         for val_key in ("calculatedValue", "value"):
                             v = str(cell.get(val_key, "") or "").lower()
                             if kw_detect in v:
+                                if primer_match_row is None:
+                                    primer_match_row = i
                                 # Skip % columns: check surrounding rows (±4) for "%" label
                                 win_s = max(0, i - 4)
                                 win_e = min(len(all_rows), i + 5)
