@@ -168,6 +168,35 @@ def _norm_lbl(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip().lower().rstrip(".:; "))
 
 
+_RE_PREFIJO_HOJA = re.compile(r"^\s*([A-Za-zÑñ0-9]{1,4})\s*\.\s*-?\s*\S")
+
+
+def _prefijo_hoja(nombre: str) -> str:
+    """'23.- Segmentos de ventas' → '23'"""
+    m = _RE_PREFIJO_HOJA.match(nombre or "")
+    return m.group(1).upper() if m else ""
+
+
+# Hojas armadas como DOS TABLAS COMPLETAS APILADAS de años distintos:
+# arriba el período actual (2026) y abajo los mismos períodos del año
+# anterior (2025). En estas notas la tabla de abajo del destino corresponde
+# a la tabla de ARRIBA del archivo fuente (que es el comparativo del año
+# anterior), y la tabla de arriba del destino no tiene contra qué validarse.
+HOJAS_TABLA_ANUAL_APILADA = {"23"}
+
+
+def _fila_kw_en_col(cells: list[list], kw: str, col: int) -> int | None:
+    """Índice de la fila donde aparece kw dentro de la columna col."""
+    if not kw or col is None:
+        return None
+    for ri, row in enumerate(cells):
+        if col < len(row) and isinstance(row[col], dict):
+            for vk in ("calculatedValue", "value"):
+                if kw in str(row[col].get(vk, "") or "").lower():
+                    return ri
+    return None
+
+
 async def _get_sheets(ss_id: str) -> dict[str, str]:
     result: dict[str, str] = {}
     url = f"{PLATFORM_URL}/spreadsheets/{ss_id}/sheets"
@@ -1298,6 +1327,20 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 sub2_data_start  = col_info.get("sub2_data_start")
                 sub_table_offset = col_info.get("sub_table_offset")
 
+                # ── Regla específica: hojas con dos tablas anuales apiladas ──────────
+                # (ej. "23.- Segmentos de ventas"). La tabla de arriba del destino es
+                # el período actual y NO se valida. La de abajo son los períodos del
+                # año anterior, y corresponde a la tabla de ARRIBA del archivo fuente.
+                # El desfase entre bloques se calcula comparando en qué fila está el
+                # encabezado de fecha en cada archivo, así no depende de filas fijas.
+                tabla_apilada   = _prefijo_hoja(sname) in HOJAS_TABLA_ANUAL_APILADA
+                fila_hdr_dest   = col_info.get("first_header_row")
+                offset_apilada  = None
+                if tabla_apilada and fila_hdr_dest is not None:
+                    fila_hdr_src = _fila_kw_en_col(src_cells, kw_src, src_col)
+                    if fila_hdr_src is not None:
+                        offset_apilada = fila_hdr_dest - fila_hdr_src
+
                 # Realineación por etiqueta: cuando la plantilla del archivo fuente
                 # tiene filas de más o de menos respecto al destino, la fila i del
                 # destino NO corresponde a la fila i del fuente. Se busca en el
@@ -1308,13 +1351,23 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
 
                 src_vals: list[Any] = []
                 src_corr: list[bool] = []   # False = la fila no existe en el fuente
+                src_skip: list[bool] = []   # True  = fila fuera de alcance: ni validar ni escribir
                 for i in range(len(tgt_cells)):
+                    if tabla_apilada:
+                        # Solo se valida la tabla inferior (año anterior). Todo lo que
+                        # está sobre su encabezado es el período actual: sin comparativo.
+                        if offset_apilada is None or i <= fila_hdr_dest:
+                            src_vals.append(None)
+                            src_corr.append(True)
+                            src_skip.append(True)
+                            continue
+                        src_row_i = i - offset_apilada
                     # Doble sub-tabla: filas de la sub-tabla inferior del destino
                     # se remapean a las filas de la sub-tabla superior del fuente,
                     # PERO solo si la fuente no tiene ya datos en la misma fila.
                     # Cuando ambas sub-tablas están en las mismas filas (ej. nota 85),
                     # el offset no hace falta y aplicarlo remapea al lugar incorrecto.
-                    if sub2_data_start and sub_table_offset and i >= sub2_data_start:
+                    elif sub2_data_start and sub_table_offset and i >= sub2_data_start:
                         row_orig = src_cells[i] if 0 <= i < len(src_cells) else []
                         sv_orig  = _cv(row_orig[src_col]) if src_col < len(row_orig) else None
                         if sv_orig is not None:
@@ -1349,6 +1402,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                         if hallada is None:
                             src_vals.append(None)
                             src_corr.append(False)
+                            src_skip.append(False)
                             continue
                         src_row_i = hallada
 
@@ -1356,10 +1410,14 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     sv    = _cv(row_s[src_col]) if src_col < len(row_s) else None
                     src_vals.append(sv if isinstance(sv, (int, float)) else None)
                     src_corr.append(True)
+                    src_skip.append(False)
 
                 write_vals: list[Any] = []
                 for i, v in enumerate(src_vals):
-                    if _is_formula(tgt_cells[i], dest_col):
+                    if src_skip[i]:
+                        # Fuera del alcance de la nota: no se toca la celda.
+                        write_vals.append(None)
+                    elif _is_formula(tgt_cells[i], dest_col):
                         write_vals.append(None)
                     elif not src_corr[i]:
                         # La fila no existe en el archivo fuente: no se inventa un
@@ -1407,6 +1465,8 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     equal, diff, sin_corr, samples, filas_det = 0, 0, 0, [], []
                     for i in range(len(src_vals)):
                         row_t = tgt_cells[i]
+                        if src_skip[i]:
+                            continue
                         if not src_corr[i]:
                             # La fila no existe en el archivo fuente. Se reporta para
                             # revisión manual en lugar de descartarla en silencio.
