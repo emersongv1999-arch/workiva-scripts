@@ -1377,8 +1377,10 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             # La fila no existe en el archivo fuente. Se reporta para
                             # revisión manual en lugar de descartarla en silencio.
                             _c = _cv(row_t[dest_col]) if dest_col < len(row_t) else None
-                            if _c is None or (isinstance(_c, str) and not str(_c).strip()):
-                                continue          # destino también vacío: nada que revisar
+                            if not isinstance(_c, (int, float)) or _c == 0:
+                                # Encabezados (fechas, "M$"), texto y celdas vacías o en
+                                # cero no son candidatos a comparación: no son hallazgo.
+                                continue
                             sin_corr += 1
                             if params.detalle_filas:
                                 filas_det.append({
