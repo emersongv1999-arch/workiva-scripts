@@ -1303,14 +1303,21 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     lbl_t = _norm_lbl(_etiqueta_fila(tgt_cells[i]))
                     row_b = src_cells[src_row_i] if 0 <= src_row_i < len(src_cells) else []
                     if lbl_t and _norm_lbl(_etiqueta_fila(row_b)) != lbl_t:
-                        # desfase: buscar la etiqueta cerca, de la fila más próxima
-                        # a la más lejana
+                        # Desfase: buscar la etiqueta cerca, de la fila más próxima a
+                        # la más lejana. La búsqueda NO cruza una fila en blanco (sin
+                        # etiqueta): eso marca el borde de la tabla/bloque, y notas con
+                        # dos tablas apiladas (año actual / año anterior) repiten las
+                        # mismas etiquetas — cruzar el borde mezclaría ambos bloques.
                         hallada = None
-                        for d in range(1, _VENTANA_ALINEACION + 1):
-                            for cand in (src_row_i - d, src_row_i + d):
+                        for signo in (-1, 1):
+                            for d in range(1, _VENTANA_ALINEACION + 1):
+                                cand = src_row_i + signo * d
                                 if not (0 <= cand < len(src_cells)):
-                                    continue
-                                if _norm_lbl(_etiqueta_fila(src_cells[cand])) == lbl_t:
+                                    break
+                                lbl_cand = _norm_lbl(_etiqueta_fila(src_cells[cand]))
+                                if not lbl_cand:
+                                    break   # fila en blanco: no seguir en esta dirección
+                                if lbl_cand == lbl_t:
                                     hallada = cand
                                     break
                             if hallada is not None:
