@@ -197,6 +197,13 @@ def _prefijo_hoja(nombre: str) -> str:
 # anterior), y la tabla de arriba del destino no tiene contra qué validarse.
 HOJAS_TABLA_ANUAL_APILADA = {"23"}
 
+# Hojas donde una etiqueta cambió de nombre entre períodos (ej. nota 106:
+# "Costo de administración" en 2025 pasó a llamarse "Gasto de administración"
+# en 2026). Solo en estas hojas se permite el respaldo por POSICIÓN dentro
+# del bloque cuando la búsqueda por etiqueta no encuentra nada — en el resto
+# de las notas, si la etiqueta no calza, se sigue marcando SIN CORRESPONDENCIA.
+HOJAS_ETIQUETA_RENOMBRADA = {"106"}
+
 
 def _fila_kw_en_col(cells: list[list], kw: str, col: int) -> int | None:
     """Índice de la fila donde aparece kw dentro de la columna col."""
@@ -1426,16 +1433,19 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                     break
                             if hallada is not None:
                                 break
-                        if hallada is None:
-                            # Último recurso: a veces la etiqueta cambia de un período
-                            # a otro (ej. "Costo de administración" pasó a llamarse
-                            # "Gasto de administración") pero la fila sigue ocupando
-                            # el mismo LUGAR dentro de la tabla. Si el bloque de la
-                            # fuente tiene exactamente el mismo número de filas que el
-                            # del destino (misma estructura, solo cambió el nombre),
-                            # se usa la posición relativa dentro del bloque. Si los
-                            # bloques tienen distinto largo, es más arriesgado asumir
-                            # que es solo un cambio de nombre: se deja SIN CORRESPONDENCIA.
+                        if hallada is None and _prefijo_hoja(sname) in HOJAS_ETIQUETA_RENOMBRADA:
+                            # Último recurso, SOLO para las hojas listadas en
+                            # HOJAS_ETIQUETA_RENOMBRADA: a veces la etiqueta cambia de
+                            # un período a otro (ej. nota 106: "Costo de administración"
+                            # pasó a llamarse "Gasto de administración") pero la fila
+                            # sigue ocupando el mismo LUGAR dentro de la tabla. Si el
+                            # bloque de la fuente tiene exactamente el mismo número de
+                            # filas que el del destino (misma estructura, solo cambió
+                            # el nombre), se usa la posición relativa dentro del
+                            # bloque. Si los bloques tienen distinto largo, es más
+                            # arriesgado asumir que es solo un cambio de nombre: se
+                            # deja SIN CORRESPONDENCIA. En cualquier otra hoja no
+                            # listada aquí, este respaldo no se intenta.
                             ini_d, fin_d = _bloque_de_fila(tgt_cells, i)
                             ini_s, fin_s = _bloque_de_fila(src_cells, src_row_i)
                             pos = i - ini_d
