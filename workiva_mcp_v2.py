@@ -1356,7 +1356,13 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     if tabla_apilada:
                         # Solo se valida la tabla inferior (año anterior). Todo lo que
                         # está sobre su encabezado es el período actual: sin comparativo.
-                        if offset_apilada is None or i <= fila_hdr_dest:
+                        # Y una vez que el destino se queda sin etiqueta (fin de la
+                        # tabla inferior, ej. tras el "Total"), tampoco se compara:
+                        # de lo contrario el offset sigue aplicándose sin límite hacia
+                        # abajo y termina leyendo contenido de la fuente que no tiene
+                        # nada que ver (otra tabla, un pie de página, etc.).
+                        _lbl_apilada = _norm_lbl(_etiqueta_fila(tgt_cells[i]))
+                        if offset_apilada is None or i <= fila_hdr_dest or not _lbl_apilada:
                             src_vals.append(None)
                             src_corr.append(True)
                             src_skip.append(True)
