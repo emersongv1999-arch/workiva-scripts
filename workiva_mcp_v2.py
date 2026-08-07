@@ -22,6 +22,7 @@ import json
 import os
 import re
 import time
+import unicodedata
 import warnings
 from contextlib import asynccontextmanager
 from typing import Any, Optional
@@ -162,7 +163,9 @@ def _etiqueta_fila(row_e: list) -> str:
 
 
 def _norm_lbl(s: str) -> str:
-    return re.sub(r"\s+", " ", (s or "").strip().lower().rstrip(".:; "))
+    s = unicodedata.normalize("NFKD", s or "")
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    return re.sub(r"\s+", " ", s.strip().lower().rstrip(".:; "))
 
 
 async def _get_sheets(ss_id: str) -> dict[str, str]:
