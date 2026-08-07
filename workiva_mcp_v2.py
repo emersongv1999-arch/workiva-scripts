@@ -168,6 +168,19 @@ def _norm_lbl(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip().lower().rstrip(".:; "))
 
 
+def _bloque_de_fila(cells: list[list], row_i: int) -> tuple[int, int]:
+    """Rango [inicio, fin) de filas con etiqueta no vacía que contiene row_i
+    (el "bloque"/tabla al que pertenece, delimitado por filas en blanco)."""
+    n = len(cells)
+    inicio = row_i
+    while inicio - 1 >= 0 and _norm_lbl(_etiqueta_fila(cells[inicio - 1])):
+        inicio -= 1
+    fin = row_i + 1
+    while fin < n and _norm_lbl(_etiqueta_fila(cells[fin])):
+        fin += 1
+    return inicio, fin
+
+
 _RE_PREFIJO_HOJA = re.compile(r"^\s*([A-Za-zÑñ0-9]{1,4})\s*\.\s*-?\s*\S")
 
 
@@ -1413,6 +1426,24 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                     break
                             if hallada is not None:
                                 break
+                        if hallada is None:
+                            # Último recurso: a veces la etiqueta cambia de un período
+                            # a otro (ej. "Costo de administración" pasó a llamarse
+                            # "Gasto de administración") pero la fila sigue ocupando
+                            # el mismo LUGAR dentro de la tabla. Si el bloque de la
+                            # fuente tiene exactamente el mismo número de filas que el
+                            # del destino (misma estructura, solo cambió el nombre),
+                            # se usa la posición relativa dentro del bloque. Si los
+                            # bloques tienen distinto largo, es más arriesgado asumir
+                            # que es solo un cambio de nombre: se deja SIN CORRESPONDENCIA.
+                            ini_d, fin_d = _bloque_de_fila(tgt_cells, i)
+                            ini_s, fin_s = _bloque_de_fila(src_cells, src_row_i)
+                            pos = i - ini_d
+                            if (fin_d - ini_d) == (fin_s - ini_s):
+                                cand_pos = ini_s + pos
+                                if 0 <= cand_pos < len(src_cells) and \
+                                        _norm_lbl(_etiqueta_fila(src_cells[cand_pos])):
+                                    hallada = cand_pos
                         if hallada is None:
                             src_vals.append(None)
                             src_corr.append(False)
