@@ -311,16 +311,20 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
         if not encabezado_impreso:
             candidatas = r.get("total_candidate_sheets", "?")
             info = {
-                "current_end":    r["current_end"],
-                "prior_end":      r["prior_end"],
-                "source_balance": r.get("source_balance", "?"),
-                "source_eerr":    r.get("source_eerr", "No encontrado"),
+                "current_end":       r["current_end"],
+                "prior_end":         r["prior_end"],
+                "source_balance":    r.get("source_balance", "?"),
+                "source_eerr":       r.get("source_eerr", "No encontrado"),
+                "source_prev_period":r.get("source_prev_period", "No encontrado"),
+                "source_curr_prev":  r.get("source_curr_prev", "No encontrado"),
             }
             print(f"Archivo destino   : {etiqueta}")
             print(f"Período actual    : {r['current_end']}")
             print(f"Comparativo bal.  : {r['prior_end']}")
             print(f"Fuente balance    : {info['source_balance']}")
             print(f"Fuente EERR       : {info['source_eerr']}")
+            print(f"Fuente prev.period: {info['source_prev_period']}")
+            print(f"Fuente curr.prev  : {info['source_curr_prev']}")
             print(f"Hojas a validar   : {candidatas}"
                   f" (excluidos {r.get('skipped_desglose_sociedad', 0)} desgloses por sociedad)")
             print("-" * 70)
