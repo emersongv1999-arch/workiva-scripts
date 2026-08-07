@@ -1317,8 +1317,16 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 companion_offset = col_info.get("companion_src_offset", 0)
                 if companion_offset and src_col is not None:
                     src_col = _next_companion_col_in_src(src_cells, src_col, companion_offset)
+                _archivo_fuente = {
+                    "bal": report.get("source_balance"),
+                    "eerr": report.get("source_eerr"),
+                    "quarter": report.get("source_eerr"),
+                    "curr_prev": report.get("source_curr_prev"),
+                    "prev_period": report.get("source_prev_period"),
+                }.get(col_type, "?")
                 sheet_report.setdefault("_debug_src_cols", []).append(
-                    f"{_col_letter(dest_col)}({col_type}): seg={seg_label!r} occ={occurrence_index} kw={kw_src!r} -> src_col={src_col}"
+                    f"{_col_letter(dest_col)}({col_type}) archivo={_archivo_fuente!r}: "
+                    f"seg={seg_label!r} occ={occurrence_index} kw={kw_src!r} -> src_col={src_col}"
                     + (f" [companion+{companion_offset}]" if companion_offset else "")
                 )
                 if src_col is None:
