@@ -1466,7 +1466,8 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                     break
                             if hallada is not None:
                                 break
-                        if hallada is None and _prefijo_hoja(sname) in HOJAS_ETIQUETA_RENOMBRADA:
+                        _es_106 = _prefijo_hoja(sname) in HOJAS_ETIQUETA_RENOMBRADA
+                        if hallada is None and _es_106:
                             # Último recurso, SOLO para las hojas listadas en
                             # HOJAS_ETIQUETA_RENOMBRADA: a veces la etiqueta cambia de
                             # un período a otro (ej. nota 106: "Costo de administración"
@@ -1482,6 +1483,12 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             ini_d, fin_d = _bloque_de_fila(tgt_cells, i)
                             ini_s, fin_s = _bloque_de_fila(src_cells, src_row_i)
                             pos = i - ini_d
+                            if _es_106:
+                                sheet_report.setdefault("_debug_src_cols", []).append(
+                                    f"{_col_letter(dest_col)}(FILA{i + 1}) lbl_dest={lbl_t!r} "
+                                    f"bloque_dest=({ini_d + 1},{fin_d + 1}) "
+                                    f"bloque_src=({ini_s + 1},{fin_s + 1}) pos={pos}"
+                                )
                             if (fin_d - ini_d) == (fin_s - ini_s):
                                 cand_pos = ini_s + pos
                                 if 0 <= cand_pos < len(src_cells) and \
