@@ -189,11 +189,28 @@ _SINONIMOS_ETIQUETA = {
     "costo": "gasto",
 }
 
+# Igual que _SINONIMOS_ETIQUETA pero a nivel de FRASE completa: para cambios
+# de nombre que no son una sola palabra distinta, sino una redacción
+# distinta para el mismo concepto (ej. nota 111: "tesorería centralizada"
+# pasó a llamarse "cuenta corriente mercantil" — casi no comparten
+# palabras, así que la comparación por palabras no alcanza). Se reemplaza
+# ANTES de partir en palabras, así que solo se agregan pares CONFIRMADOS.
+_FRASES_SINONIMAS = [
+    ("cuenta corriente mercantil", "tesoreria centralizada"),
+]
+
+
+def _aplicar_frases_sinonimas(lbl: str) -> str:
+    for variante, canonica in _FRASES_SINONIMAS:
+        lbl = lbl.replace(variante, canonica)
+    return lbl
+
 
 def _palabras_significativas(lbl: str) -> set[str]:
     """Palabras de una etiqueta ya normalizada, sin conectores, símbolos
     sueltos ((*), guiones, etc.) ni palabras cortas — para comparar por
     contenido en vez de por texto exacto."""
+    lbl = _aplicar_frases_sinonimas(lbl)
     palabras = (re.sub(r"[^a-zñ0-9]+", "", w) for w in lbl.split())
     return {w for w in palabras if len(w) >= 3 and w not in _STOPWORDS_ETIQUETA}
 
