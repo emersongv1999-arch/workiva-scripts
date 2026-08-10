@@ -168,17 +168,74 @@ def _norm_lbl(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip().lower().rstrip(".:; "))
 
 
-def _bloque_de_fila(cells: list[list], row_i: int) -> tuple[int, int]:
-    """Rango [inicio, fin) de filas con etiqueta no vacía que contiene row_i
-    (el "bloque"/tabla al que pertenece, delimitado por filas en blanco)."""
-    n = len(cells)
-    inicio = row_i
-    while inicio - 1 >= 0 and _norm_lbl(_etiqueta_fila(cells[inicio - 1])):
-        inicio -= 1
-    fin = row_i + 1
-    while fin < n and _norm_lbl(_etiqueta_fila(cells[fin])):
-        fin += 1
-    return inicio, fin
+_STOPWORDS_ETIQUETA = {
+    "de", "del", "la", "el", "los", "las", "y", "o", "u", "por", "en", "a",
+    "al", "con", "para", "que", "se", "su", "sus", "un", "una",
+}
+
+# "no"/"non"/"sin" NUNCA se tratan como conectores ignorables: invierten el
+# sentido de la etiqueta ("Corrientes" vs "No corrientes" son opuestos, no
+# la misma fila con otro texto). Deben coincidir exactamente a ambos lados.
+_NEGACIONES_ETIQUETA = {"no", "non", "sin"}
+
+# Sinónimos conocidos y VERIFICADOS entre plantillas de distintos períodos
+# (ej. "Costo de administración" pasó a llamarse "Gasto de administración").
+# Es una lista blanca a propósito: solo se agregan pares confirmados. Con
+# esto se evita adivinar por porcentaje de palabras en común, que puede
+# confundir conceptos opuestos con pocas palabras (ej. "cuentas por cobrar"
+# vs "cuentas por pagar" comparten más palabras que "costo"/"gasto" pero
+# significan lo contrario).
+_SINONIMOS_ETIQUETA = {
+    "costo": "gasto",
+}
+
+
+def _palabras_significativas(lbl: str) -> set[str]:
+    """Palabras de una etiqueta ya normalizada, sin conectores, símbolos
+    sueltos ((*), guiones, etc.) ni palabras cortas — para comparar por
+    contenido en vez de por texto exacto."""
+    palabras = (re.sub(r"[^a-zñ0-9]+", "", w) for w in lbl.split())
+    return {w for w in palabras if len(w) >= 3 and w not in _STOPWORDS_ETIQUETA}
+
+
+def _palabras_canonicas(lbl: str) -> set[str]:
+    """Palabras significativas normalizadas a su forma canónica según
+    _SINONIMOS_ETIQUETA (ej. 'costo' y 'gasto' quedan como la misma
+    palabra)."""
+    return {_SINONIMOS_ETIQUETA.get(w, w) for w in _palabras_significativas(lbl)}
+
+
+def _etiquetas_similares(a: str, b: str) -> bool:
+    """True si dos etiquetas describen la misma fila pese a un cambio de
+    plantilla entre períodos. Dos mecanismos, deliberadamente estrictos:
+
+    1) Etiquetas CORTAS (pocas palabras significativas): deben calzar
+       EXACTO tras aplicar la lista blanca de sinónimos verificados. No se
+       adivina por porcentaje — con pocas palabras un solo término
+       opuesto (cobrar/pagar, activo/pasivo) puede parecer "parecido" sin
+       serlo.
+    2) Etiquetas LARGAS (muchas palabras significativas): se acepta que
+       las mismas palabras estén en otro orden (ej. una redacción legal
+       reordenada), tolerando una diferencia mínima — con tantas palabras
+       en común la probabilidad de que sean conceptos distintos por
+       casualidad es prácticamente nula.
+    """
+    palabras_a, palabras_b = set(a.split()), set(b.split())
+    if (palabras_a & _NEGACIONES_ETIQUETA) != (palabras_b & _NEGACIONES_ETIQUETA):
+        return False   # una tiene "no"/"sin" y la otra no: son opuestas
+
+    pa, pb = _palabras_canonicas(a), _palabras_canonicas(b)
+    if not pa or not pb:
+        return False
+    if pa == pb:
+        return True
+
+    # Solo para etiquetas largas: tolerar palabras sueltas que cambiaron
+    # (ej. "determinado" vs "determinadas") si casi todo el resto calza.
+    if len(pa) >= 5 and len(pb) >= 5:
+        interseccion = len(pa & pb)
+        return interseccion / max(len(pa), len(pb)) >= 0.8
+    return False
 
 
 _RE_PREFIJO_HOJA = re.compile(r"^\s*([A-Za-zÑñ0-9]{1,4})\s*\.\s*-?\s*\S")
@@ -196,13 +253,6 @@ def _prefijo_hoja(nombre: str) -> str:
 # a la tabla de ARRIBA del archivo fuente (que es el comparativo del año
 # anterior), y la tabla de arriba del destino no tiene contra qué validarse.
 HOJAS_TABLA_ANUAL_APILADA = {"23"}
-
-# Hojas donde una etiqueta cambió de nombre entre períodos (ej. nota 106:
-# "Costo de administración" en 2025 pasó a llamarse "Gasto de administración"
-# en 2026). Solo en estas hojas se permite el respaldo por POSICIÓN dentro
-# del bloque cuando la búsqueda por etiqueta no encuentra nada — en el resto
-# de las notas, si la etiqueta no calza, se sigue marcando SIN CORRESPONDENCIA.
-HOJAS_ETIQUETA_RENOMBRADA = {"106"}
 
 
 def _fila_kw_en_col(cells: list[list], kw: str, col: int) -> int | None:
@@ -1359,25 +1409,10 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 companion_offset = col_info.get("companion_src_offset", 0)
                 if companion_offset and src_col is not None:
                     src_col = _next_companion_col_in_src(src_cells, src_col, companion_offset)
-                if (_prefijo_hoja(sname) in HOJAS_TABLA_ANUAL_APILADA
-                        or _prefijo_hoja(sname) in HOJAS_ETIQUETA_RENOMBRADA):
-                    _archivo_fuente = {
-                        "bal": report.get("source_balance"),
-                        "eerr": report.get("source_eerr"),
-                        "quarter": report.get("source_eerr"),
-                        "curr_prev": report.get("source_curr_prev"),
-                        "prev_period": report.get("source_prev_period"),
-                    }.get(col_type, "?")
-                    _srcB0 = _norm_lbl(_etiqueta_fila(src_cells[8])) if len(src_cells) > 8 else "?"
-                    sheet_report.setdefault("_debug_src_cols", []).append(
-                        f"{_col_letter(dest_col)}({col_type}) archivo={_archivo_fuente!r}: "
-                        f"seg={seg_label!r} occ={occurrence_index} kw={kw_src!r} "
-                        f"first_hdr={col_info.get('first_header_row')} -> src_col={src_col}"
-                        f" sub2_hdr={col_info.get('sub2_header_row')} "
-                        f"sub2_start={col_info.get('sub2_data_start')} "
-                        f"offset={col_info.get('sub_table_offset')} srcB0={_srcB0!r}"
-                        + (f" [companion+{companion_offset}]" if companion_offset else "")
-                    )
+                sheet_report.setdefault("_debug_src_cols", []).append(
+                    f"{_col_letter(dest_col)}({col_type}): seg={seg_label!r} occ={occurrence_index} kw={kw_src!r} -> src_col={src_col}"
+                    + (f" [companion+{companion_offset}]" if companion_offset else "")
+                )
                 if src_col is None:
                     continue
 
@@ -1444,56 +1479,39 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
 
                     lbl_t = _norm_lbl(_etiqueta_fila(tgt_cells[i]))
                     row_b = src_cells[src_row_i] if 0 <= src_row_i < len(src_cells) else []
+                    lbl_b = _norm_lbl(_etiqueta_fila(row_b))
                     via_busqueda = False
-                    if lbl_t and _norm_lbl(_etiqueta_fila(row_b)) != lbl_t:
+                    if lbl_t and lbl_b != lbl_t:
                         via_busqueda = True
-                        # Desfase: buscar la etiqueta cerca, de la fila más próxima a
-                        # la más lejana. La búsqueda NO cruza una fila en blanco (sin
-                        # etiqueta): eso marca el borde de la tabla/bloque, y notas con
-                        # dos tablas apiladas (año actual / año anterior) repiten las
-                        # mismas etiquetas — cruzar el borde mezclaría ambos bloques.
-                        hallada = None
-                        for signo in (-1, 1):
-                            for d in range(1, _VENTANA_ALINEACION + 1):
-                                cand = src_row_i + signo * d
-                                if not (0 <= cand < len(src_cells)):
+                        # Misma fila, pero la etiqueta cambió de una plantilla a otra
+                        # (ej. "Costo de administración" pasó a llamarse "Gasto de
+                        # administración", o el mismo texto quedó reordenado). Si las
+                        # etiquetas comparten la mayoría de sus palabras, se acepta
+                        # como la misma fila sin necesidad de buscar en otra posición
+                        # — es más robusto entre sociedades que asumir estructuras de
+                        # tabla idénticas.
+                        if lbl_b and _etiquetas_similares(lbl_t, lbl_b):
+                            hallada = src_row_i
+                        else:
+                            # Desfase real de fila: buscar la etiqueta cerca, de la más
+                            # próxima a la más lejana. La búsqueda NO cruza una fila en
+                            # blanco (sin etiqueta): eso marca el borde de la tabla, y
+                            # notas con dos tablas apiladas repiten las mismas
+                            # etiquetas — cruzar el borde mezclaría ambos bloques.
+                            hallada = None
+                            for signo in (-1, 1):
+                                for d in range(1, _VENTANA_ALINEACION + 1):
+                                    cand = src_row_i + signo * d
+                                    if not (0 <= cand < len(src_cells)):
+                                        break
+                                    lbl_cand = _norm_lbl(_etiqueta_fila(src_cells[cand]))
+                                    if not lbl_cand:
+                                        break   # fila en blanco: no seguir en esta dirección
+                                    if lbl_cand == lbl_t or _etiquetas_similares(lbl_t, lbl_cand):
+                                        hallada = cand
+                                        break
+                                if hallada is not None:
                                     break
-                                lbl_cand = _norm_lbl(_etiqueta_fila(src_cells[cand]))
-                                if not lbl_cand:
-                                    break   # fila en blanco: no seguir en esta dirección
-                                if lbl_cand == lbl_t:
-                                    hallada = cand
-                                    break
-                            if hallada is not None:
-                                break
-                        _es_106 = _prefijo_hoja(sname) in HOJAS_ETIQUETA_RENOMBRADA
-                        if hallada is None and _es_106:
-                            # Último recurso, SOLO para las hojas listadas en
-                            # HOJAS_ETIQUETA_RENOMBRADA: a veces la etiqueta cambia de
-                            # un período a otro (ej. nota 106: "Costo de administración"
-                            # pasó a llamarse "Gasto de administración") pero la fila
-                            # sigue ocupando el mismo LUGAR dentro de la tabla. Si el
-                            # bloque de la fuente tiene exactamente el mismo número de
-                            # filas que el del destino (misma estructura, solo cambió
-                            # el nombre), se usa la posición relativa dentro del
-                            # bloque. Si los bloques tienen distinto largo, es más
-                            # arriesgado asumir que es solo un cambio de nombre: se
-                            # deja SIN CORRESPONDENCIA. En cualquier otra hoja no
-                            # listada aquí, este respaldo no se intenta.
-                            ini_d, fin_d = _bloque_de_fila(tgt_cells, i)
-                            ini_s, fin_s = _bloque_de_fila(src_cells, src_row_i)
-                            pos = i - ini_d
-                            if _es_106:
-                                sheet_report.setdefault("_debug_src_cols", []).append(
-                                    f"{_col_letter(dest_col)}(FILA{i + 1}) lbl_dest={lbl_t!r} "
-                                    f"bloque_dest=({ini_d + 1},{fin_d + 1}) "
-                                    f"bloque_src=({ini_s + 1},{fin_s + 1}) pos={pos}"
-                                )
-                            if (fin_d - ini_d) == (fin_s - ini_s):
-                                cand_pos = ini_s + pos
-                                if 0 <= cand_pos < len(src_cells) and \
-                                        _norm_lbl(_etiqueta_fila(src_cells[cand_pos])):
-                                    hallada = cand_pos
                         if hallada is None:
                             src_vals.append(None)
                             src_corr.append(False)
