@@ -342,10 +342,6 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
             desde, hasta = rango_filas(nombre_hoja)
             filas_hoja: list[dict] = []
             comps = sh.get("comparacion", [])
-            _debug_23 = {}
-            if prefijo_hoja(nombre_hoja) == "23":
-                for _dbg in sh.get("_debug_src_cols", []):
-                    _debug_23[_dbg.split("(", 1)[0]] = _dbg
             for comp in comps:
                 contexto = (comp.get("contexto") or "").strip()
                 tipo_col = comp.get("tipo", "bal")
@@ -372,9 +368,6 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
                             nota = f"difiere en {float(f['destino']) - float(f['fuente']):,.0f}"
                         except (TypeError, ValueError):
                             nota = "difiere"
-                        _dbg23 = _debug_23.get(comp["col"])
-                        if _dbg23:
-                            nota = f"{nota}  |  {_dbg23}"
                     elif f["estado"] == "NO PROCESADO":
                         nota = "valor destino no numérico"
                     elif f["estado"] == "SIN CORRESPONDENCIA":

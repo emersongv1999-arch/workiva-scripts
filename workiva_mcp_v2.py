@@ -1127,13 +1127,28 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 # (separador de tabla). El mecanismo de "doble sub-tabla" (sub2_header_row,
                 # más abajo) sigue funcionando igual: busca dentro de la MISMA columna,
                 # no se ve afectado por este límite.
+                def _col_tiene_ms_cerca(col: int, desde_fila: int) -> bool:
+                    """M$ (o $) en alguna de las filas siguientes de esa columna:
+                    confirma que es una columna de datos real, no una mención
+                    suelta de una fecha en cualquier parte de la hoja."""
+                    for rr in all_rows[desde_fila:desde_fila + 8]:
+                        if col >= len(rr) or not isinstance(rr[col], dict):
+                            continue
+                        v = str(rr[col].get("calculatedValue") or rr[col].get("value") or "").strip().lower()
+                        if v in ("m$", "$"):
+                            return True
+                    return False
+
                 primer_match_row: int | None = None
                 for i, row in enumerate(all_rows):
                     if primer_match_row is not None and i > primer_match_row and _fila_en_blanco(row):
                         break
                     # Más allá de fila 7: solo procesar si la keyword aparece en
-                    # ≥2 celdas de esta fila (indica celda fusionada = encabezado real).
-                    # Filas 0-7: aceptar incluso match único (encabezado principal).
+                    # ≥2 celdas de esta fila (indica celda fusionada = encabezado real)
+                    # O si, aunque aparezca una sola vez, esa columna tiene "M$" cerca
+                    # (confirma encabezado real aunque la fecha sea única en la fila —
+                    # ej. la fecha de INICIO de un trimestre solo aparece en su propia
+                    # columna, no se repite). Filas 0-7: aceptar incluso match único.
                     if i >= 8:
                         matches_in_row = sum(
                             1 for c in row
@@ -1142,7 +1157,14 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             ).lower()
                         )
                         if matches_in_row < 2:
-                            continue
+                            cols_con_ms = [
+                                j for j, c in enumerate(row)
+                                if isinstance(c, dict)
+                                and kw_detect in str(c.get("calculatedValue") or c.get("value") or "").lower()
+                                and _col_tiene_ms_cerca(j, i)
+                            ]
+                            if not cols_con_ms:
+                                continue
                     for j, cell in enumerate(row):
                         if j in seen or not isinstance(cell, dict):
                             continue
