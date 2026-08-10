@@ -1169,7 +1169,14 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
         comp_cols_by_name: dict[str, list[dict]] = {}
         for sname in batch:
             comp_cols: list[dict] = []
-            seen: set[int] = set()
+            # col -> fila donde quedó reclamada. Una hoja puede tener varias
+            # sub-tablas independientes que reusan la misma letra de columna
+            # con un significado distinto (ej. nota 115: la columna F es
+            # "comparativo EERR" en la tabla de arriba y "saldo puntual
+            # 31-12-2025" en la sub-tabla de abajo). Por eso NO es un set
+            # fijo: una columna se puede reclamar de nuevo si el nuevo uso
+            # está claramente en otro bloque (separado por 2+ filas en blanco).
+            seen: dict[int, int] = {}
             occurrence_counts: dict[tuple, int] = {}
             def _fila_en_blanco(row: list) -> bool:
                 """True si la fila no tiene ningún texto (separador entre tablas)."""
@@ -1180,6 +1187,21 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     if v:
                         return False
                 return True
+
+            def _bloques_distintos(fila_a: int, fila_b: int) -> bool:
+                """True si entre fila_a y fila_b hay 2+ filas en blanco seguidas
+                (separador real de tabla, no solo un espaciador)."""
+                all_rows = tgt_cells_by_name[sname]
+                ini, fin = sorted((fila_a, fila_b))
+                blancos = 0
+                for i in range(ini + 1, fin):
+                    if _fila_en_blanco(all_rows[i]):
+                        blancos += 1
+                        if blancos >= 2:
+                            return True
+                    else:
+                        blancos = 0
+                return False
 
             for col_type, kw_detect, src_id, src_sh, kw_src in TYPE_MAP:
                 if not kw_detect or not src_id:
@@ -1207,9 +1229,18 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     return False
 
                 primer_match_row: int | None = None
+                _blancos_seguidos_scan = 0
+                fin_bloque_actual = len(all_rows)
+                idx_inicio_bloque = len(comp_cols)
                 for i, row in enumerate(all_rows):
-                    if primer_match_row is not None and i > primer_match_row and _fila_en_blanco(row):
-                        break
+                    if primer_match_row is not None and i > primer_match_row:
+                        if _fila_en_blanco(row):
+                            _blancos_seguidos_scan += 1
+                            if _blancos_seguidos_scan >= 2:
+                                fin_bloque_actual = i - 1   # no incluir el 2do blanco
+                                break
+                        else:
+                            _blancos_seguidos_scan = 0
                     # Más allá de fila 7: solo procesar si la keyword aparece en
                     # ≥2 celdas de esta fila (indica celda fusionada = encabezado real)
                     # O si, aunque aparezca una sola vez, esa columna tiene "M$" cerca
@@ -1233,7 +1264,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             if not cols_con_ms:
                                 continue
                     for j, cell in enumerate(row):
-                        if j in seen or not isinstance(cell, dict):
+                        if not isinstance(cell, dict):
+                            continue
+                        if j in seen and not _bloques_distintos(seen[j], i):
                             continue
                         for val_key in ("calculatedValue", "value"):
                             v = str(cell.get(val_key, "") or "").lower()
@@ -1305,7 +1338,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                         "sub2_data_start":  sub2_data_start,
                                         "sub_table_offset": (sub2_header_row - i) if sub2_header_row else None,
                                     })
-                                    seen.add(j)
+                                    seen[j] = i
                                     # Columnas compañeras bajo el mismo merge de fecha:
                                     # la celda de fecha solo existe en la 1ra col del merge;
                                     # las siguientes (ej. "Efecto en resultados") tienen fecha vacía.
@@ -1313,7 +1346,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                     jj = j + 1
                                     _skipped_sep = 0
                                     _companion_idx = 0  # cuántas companions ya añadimos
-                                    while jj < 500 and jj not in seen:
+                                    while jj < 500 and (jj not in seen or _bloques_distintos(seen[jj], i)):
                                         # Parar si la col tiene cualquier fecha en encabezado
                                         def _col_has_date(col):
                                             for rr in all_rows[:8]:
@@ -1363,9 +1396,16 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                             "is_companion":         True,
                                             "companion_src_offset": _companion_idx,  # saltar N cols M$ en fuente desde src_col
                                         })
-                                        seen.add(jj)
+                                        seen[jj] = i
                                         jj += 1
                                 break
+                # Todas las columnas detectadas en esta pasada quedan acotadas al
+                # bloque donde se encontraron: filas fuera de ese rango (otra
+                # sub-tabla, si la hay) NO se comparan/escriben con este col_info,
+                # dejando que otra pasada las reclame con el tipo que corresponda.
+                for entry in comp_cols[idx_inicio_bloque:]:
+                    entry["fila_bloque_inicio"] = primer_match_row or 0
+                    entry["fila_bloque_fin"] = fin_bloque_actual
             if comp_cols:
                 comp_cols_by_name[sname] = comp_cols
 
@@ -1426,14 +1466,11 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 companion_offset = col_info.get("companion_src_offset", 0)
                 if companion_offset and src_col is not None:
                     src_col = _next_companion_col_in_src(src_cells, src_col, companion_offset)
-                if _prefijo_hoja(sname) == "115":
-                    sheet_report.setdefault("_debug_src_cols", []).append(
-                        f"{_col_letter(dest_col)}({col_type}): seg={seg_label!r} occ={occurrence_index} "
-                        f"kw={kw_src!r} first_hdr={col_info.get('first_header_row')} -> src_col={src_col}"
-                        + (f" [companion+{companion_offset}]" if companion_offset else "")
-                    )
                 if src_col is None:
                     continue
+
+                fila_bloque_inicio = col_info.get("fila_bloque_inicio", 0)
+                fila_bloque_fin    = col_info.get("fila_bloque_fin")
 
                 sub2_data_start  = col_info.get("sub2_data_start")
                 sub_table_offset = col_info.get("sub_table_offset")
@@ -1465,6 +1502,17 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 src_skip: list[bool] = []   # True  = fila fuera de alcance: ni validar ni escribir
                 src_via_busqueda: list[bool] = []  # True = no calzó directo, se buscó cerca
                 for i in range(len(tgt_cells)):
+                    if fila_bloque_fin is not None and not (fila_bloque_inicio <= i < fila_bloque_fin):
+                        # Esta fila queda fuera del bloque donde se detectó esta
+                        # columna (ej. otra sub-tabla dentro de la misma hoja que
+                        # reusa la misma letra de columna con otro significado).
+                        # Se deja para que OTRA entrada de comp_cols (detectada en
+                        # ese otro bloque) se haga cargo, si corresponde.
+                        src_vals.append(None)
+                        src_corr.append(True)
+                        src_skip.append(True)
+                        src_via_busqueda.append(False)
+                        continue
                     if tabla_apilada:
                         # Solo se valida la tabla inferior (año anterior). Todo lo que
                         # está sobre su encabezado es el período actual: sin comparativo.
