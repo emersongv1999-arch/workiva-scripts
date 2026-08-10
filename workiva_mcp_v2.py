@@ -1494,19 +1494,26 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             hallada = src_row_i
                         else:
                             # Desfase real de fila: buscar la etiqueta cerca, de la más
-                            # próxima a la más lejana. La búsqueda NO cruza una fila en
-                            # blanco (sin etiqueta): eso marca el borde de la tabla, y
-                            # notas con dos tablas apiladas repiten las mismas
-                            # etiquetas — cruzar el borde mezclaría ambos bloques.
+                            # próxima a la más lejana. La búsqueda tolera UNA fila en
+                            # blanco de por medio (espaciador normal antes de un
+                            # "Total", por ejemplo), pero se detiene si encuentra DOS
+                            # blancos seguidos: esa es la señal real de "esto es otra
+                            # tabla" (notas con dos tablas apiladas repiten las mismas
+                            # etiquetas — cruzar ese borde mezclaría ambos bloques).
                             hallada = None
                             for signo in (-1, 1):
+                                blancos_seguidos = 0
                                 for d in range(1, _VENTANA_ALINEACION + 1):
                                     cand = src_row_i + signo * d
                                     if not (0 <= cand < len(src_cells)):
                                         break
                                     lbl_cand = _norm_lbl(_etiqueta_fila(src_cells[cand]))
                                     if not lbl_cand:
-                                        break   # fila en blanco: no seguir en esta dirección
+                                        blancos_seguidos += 1
+                                        if blancos_seguidos >= 2:
+                                            break   # dos blancos seguidos: borde real de tabla
+                                        continue
+                                    blancos_seguidos = 0
                                     if lbl_cand == lbl_t or _etiquetas_similares(lbl_t, lbl_cand):
                                         hallada = cand
                                         break
