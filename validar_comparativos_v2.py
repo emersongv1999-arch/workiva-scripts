@@ -131,6 +131,13 @@ async def resolver_spreadsheet(sociedad: str, anio: str, trimestre: str,
 #
 #    Consecuencia importante: una hoja con prefijo único jamás se descarta.
 
+# Notas excluidas de la VALIDACIÓN (no del llenado) mientras se investiga un
+# problema puntual. Cada columna comparativa de estas notas puede leer de un
+# archivo fuente distinto, y alguno de esos archivos tiene una estructura
+# distinta cerca de los totales que genera SIN CORRESPONDENCIA en cascada
+# (ej. nota D: 3 de 4 columnas fallan justo en las filas "Total").
+NOTAS_EXCLUIDAS_VALIDACION = {"D"}
+
 RANGO_FILAS: dict[str, tuple[int | None, int | None]] = {
     "A":   (None, 43),
     "B":   (None, 55),
@@ -284,9 +291,10 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
     info: dict = {}
     hojas: list[dict] = []
     encabezado_impreso = False
-    omitidas_subhoja = 0
-    filas_fuera      = 0
-    detector         = DetectorSubhojas()
+    omitidas_subhoja  = 0
+    omitidas_excluidas = 0
+    filas_fuera       = 0
+    detector          = DetectorSubhojas()
 
     while True:
         raw = await w.workiva_fill_comparatives(
@@ -337,6 +345,10 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
             padre = detector.es_subhoja(nombre_hoja)
             if padre is not None:
                 omitidas_subhoja += 1
+                continue
+
+            if prefijo_hoja(nombre_hoja) in NOTAS_EXCLUIDAS_VALIDACION:
+                omitidas_excluidas += 1
                 continue
 
             desde, hasta = rango_filas(nombre_hoja)
@@ -392,6 +404,9 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
           f"{total_equal} valores iguales | {total_diff} con hallazgo/no procesado")
     if omitidas_subhoja:
         print(f"  ({omitidas_subhoja} subhoja(s) de apoyo omitidas, ver detalle arriba)")
+    if omitidas_excluidas:
+        print(f"  ({omitidas_excluidas} hoja(s) excluidas temporalmente de la validación: "
+              f"{sorted(NOTAS_EXCLUIDAS_VALIDACION)})")
     if filas_fuera:
         print(f"  ({filas_fuera} fila(s) fuera del alcance de su nota, omitidas)")
     if total_sin_corr:
