@@ -1489,18 +1489,17 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                         # para limpiar valores erróneos previos en Workiva
                         dest_cv = _cv(tgt_cells[i][dest_col]) if dest_col < len(tgt_cells[i]) else None
                         write_vals.append(0 if isinstance(dest_cv, (int, float)) and dest_cv != 0 else None)
-                    elif src_via_busqueda[i]:
+                    else:
                         dest_cv = _cv(tgt_cells[i][dest_col]) if dest_col < len(tgt_cells[i]) else None
                         _dest_vacio = dest_cv is None or (isinstance(dest_cv, str) and not dest_cv.strip())
                         if _dest_vacio:
-                            # Fila título/subtítulo sin dato propio, que no calzó
-                            # directo con la fuente (se encontró por búsqueda): no se
-                            # escribe nada, para no rellenar algo que no corresponde.
+                            # El destino está REALMENTE en blanco (fila título/subtítulo,
+                            # sin dato propio, ej. "Deudores varios" antes de "Deudores
+                            # varios (*)."): no se escribe nada, para no rellenar algo
+                            # que no corresponde.
                             write_vals.append(None)
                         else:
                             write_vals.append(v)
-                    else:
-                        write_vals.append(v)
 
                 n = sum(1 for v in (src_vals if params.dry_run else write_vals)
                         if v is not None)
@@ -1561,20 +1560,16 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             continue
                         cur = _cv(row_t[dest_col]) if dest_col < len(row_t) else None
                         _cur_vacio = cur is None or (isinstance(cur, str) and not cur.strip())
-                        if _cur_vacio and src_via_busqueda[i]:
-                            # El destino está en blanco (ej. fila título/subtítulo, sin
-                            # dato propio) Y la fila no calzó directo con la fuente —
-                            # hubo que buscarla cerca. Comparar "0" contra un valor
-                            # encontrado por búsqueda es demasiado arriesgado: puede
-                            # tratarse de una fila que simplemente no tiene nada que
-                            # comparar (como un subtítulo), no de un hallazgo real.
-                            continue
                         if _cur_vacio:
-                            cur_num = 0.0
-                        elif isinstance(cur, (int, float)):
-                            cur_num = float(cur)
-                        else:
-                            cur_num = None
+                            # El destino está REALMENTE en blanco (no "0", nada escrito).
+                            # En todas las notas, una fila con dato real siempre trae un
+                            # "0" explícito cuando no tiene monto — nunca queda vacía.
+                            # Una celda vacía es la señal de que la fila es un título o
+                            # subtítulo (ej. "Deudores varios" antes de "Deudores varios
+                            # (*)."), que no tiene nada propio que comparar. Forzarla a
+                            # 0 y compararla contra la fuente genera falsos hallazgos.
+                            continue
+                        cur_num = float(cur) if isinstance(cur, (int, float)) else None
                         # Tolerancia 1.000 pesos: montos se presentan en M$,
                         # diferencias menores a 1.000 son insignificantes (redondeo)
                         if cur_num is not None and abs(cur_num - float(v)) < 1000:
