@@ -1359,7 +1359,8 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 companion_offset = col_info.get("companion_src_offset", 0)
                 if companion_offset and src_col is not None:
                     src_col = _next_companion_col_in_src(src_cells, src_col, companion_offset)
-                if _prefijo_hoja(sname) in HOJAS_TABLA_ANUAL_APILADA:
+                if (_prefijo_hoja(sname) in HOJAS_TABLA_ANUAL_APILADA
+                        or _prefijo_hoja(sname) in HOJAS_ETIQUETA_RENOMBRADA):
                     _archivo_fuente = {
                         "bal": report.get("source_balance"),
                         "eerr": report.get("source_eerr"),
