@@ -1380,6 +1380,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 src_vals: list[Any] = []
                 src_corr: list[bool] = []   # False = la fila no existe en el fuente
                 src_skip: list[bool] = []   # True  = fila fuera de alcance: ni validar ni escribir
+                src_via_busqueda: list[bool] = []  # True = no calzó directo, se buscó cerca
                 for i in range(len(tgt_cells)):
                     if tabla_apilada:
                         # Solo se valida la tabla inferior (año anterior). Todo lo que
@@ -1394,6 +1395,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             src_vals.append(None)
                             src_corr.append(True)
                             src_skip.append(True)
+                            src_via_busqueda.append(False)
                             continue
                         src_row_i = i - offset_apilada
                     # Doble sub-tabla: filas de la sub-tabla inferior del destino
@@ -1413,7 +1415,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
 
                     lbl_t = _norm_lbl(_etiqueta_fila(tgt_cells[i]))
                     row_b = src_cells[src_row_i] if 0 <= src_row_i < len(src_cells) else []
+                    via_busqueda = False
                     if lbl_t and _norm_lbl(_etiqueta_fila(row_b)) != lbl_t:
+                        via_busqueda = True
                         # Desfase: buscar la etiqueta cerca, de la fila más próxima a
                         # la más lejana. La búsqueda NO cruza una fila en blanco (sin
                         # etiqueta): eso marca el borde de la tabla/bloque, y notas con
@@ -1458,6 +1462,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             src_vals.append(None)
                             src_corr.append(False)
                             src_skip.append(False)
+                            src_via_busqueda.append(True)
                             continue
                         src_row_i = hallada
 
@@ -1466,6 +1471,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     src_vals.append(sv if isinstance(sv, (int, float)) else None)
                     src_corr.append(True)
                     src_skip.append(False)
+                    src_via_busqueda.append(via_busqueda)
 
                 write_vals: list[Any] = []
                 for i, v in enumerate(src_vals):
@@ -1483,6 +1489,16 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                         # para limpiar valores erróneos previos en Workiva
                         dest_cv = _cv(tgt_cells[i][dest_col]) if dest_col < len(tgt_cells[i]) else None
                         write_vals.append(0 if isinstance(dest_cv, (int, float)) and dest_cv != 0 else None)
+                    elif src_via_busqueda[i]:
+                        dest_cv = _cv(tgt_cells[i][dest_col]) if dest_col < len(tgt_cells[i]) else None
+                        _dest_vacio = dest_cv is None or (isinstance(dest_cv, str) and not dest_cv.strip())
+                        if _dest_vacio:
+                            # Fila título/subtítulo sin dato propio, que no calzó
+                            # directo con la fuente (se encontró por búsqueda): no se
+                            # escribe nada, para no rellenar algo que no corresponde.
+                            write_vals.append(None)
+                        else:
+                            write_vals.append(v)
                     else:
                         write_vals.append(v)
 
@@ -1543,8 +1559,17 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                         v = src_vals[i]
                         if v is None:
                             continue
-                        cur     = _cv(row_t[dest_col]) if dest_col < len(row_t) else None
-                        if cur is None or (isinstance(cur, str) and not cur.strip()):
+                        cur = _cv(row_t[dest_col]) if dest_col < len(row_t) else None
+                        _cur_vacio = cur is None or (isinstance(cur, str) and not cur.strip())
+                        if _cur_vacio and src_via_busqueda[i]:
+                            # El destino está en blanco (ej. fila título/subtítulo, sin
+                            # dato propio) Y la fila no calzó directo con la fuente —
+                            # hubo que buscarla cerca. Comparar "0" contra un valor
+                            # encontrado por búsqueda es demasiado arriesgado: puede
+                            # tratarse de una fila que simplemente no tiene nada que
+                            # comparar (como un subtítulo), no de un hallazgo real.
+                            continue
+                        if _cur_vacio:
                             cur_num = 0.0
                         elif isinstance(cur, (int, float)):
                             cur_num = float(cur)
