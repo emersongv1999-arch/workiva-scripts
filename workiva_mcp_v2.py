@@ -1368,10 +1368,14 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                         "curr_prev": report.get("source_curr_prev"),
                         "prev_period": report.get("source_prev_period"),
                     }.get(col_type, "?")
+                    _srcB0 = _norm_lbl(_etiqueta_fila(src_cells[8])) if len(src_cells) > 8 else "?"
                     sheet_report.setdefault("_debug_src_cols", []).append(
                         f"{_col_letter(dest_col)}({col_type}) archivo={_archivo_fuente!r}: "
                         f"seg={seg_label!r} occ={occurrence_index} kw={kw_src!r} "
                         f"first_hdr={col_info.get('first_header_row')} -> src_col={src_col}"
+                        f" sub2_hdr={col_info.get('sub2_header_row')} "
+                        f"sub2_start={col_info.get('sub2_data_start')} "
+                        f"offset={col_info.get('sub_table_offset')} srcB0={_srcB0!r}"
                         + (f" [companion+{companion_offset}]" if companion_offset else "")
                     )
                 if src_col is None:
