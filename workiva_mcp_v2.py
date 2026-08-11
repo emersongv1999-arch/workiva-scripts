@@ -206,11 +206,27 @@ def _aplicar_frases_sinonimas(lbl: str) -> str:
     return lbl
 
 
+# Coletas descriptivas que a veces se agregan/quitan entre plantillas sin
+# cambiar el concepto de la fila (ej. "Otros ingresos." pasó a llamarse
+# "Otros ingresos, por función."). Se quitan ANTES de comparar, tanto si
+# están como si no — así "Otros ingresos" y "Otros ingresos, por función"
+# quedan idénticas. Lista blanca a propósito, igual que los sinónimos.
+_COLETAS_IGNORABLES = [
+    "por funcion",
+]
+
+
+def _quitar_coletas_ignorables(lbl: str) -> str:
+    for coleta in _COLETAS_IGNORABLES:
+        lbl = re.sub(rf"\s*,?\s*{re.escape(coleta)}\s*$", "", lbl)
+    return lbl
+
+
 def _palabras_significativas(lbl: str) -> set[str]:
     """Palabras de una etiqueta ya normalizada, sin conectores, símbolos
     sueltos ((*), guiones, etc.) ni palabras cortas — para comparar por
     contenido en vez de por texto exacto."""
-    lbl = _aplicar_frases_sinonimas(lbl)
+    lbl = _quitar_coletas_ignorables(_aplicar_frases_sinonimas(lbl))
     palabras = (re.sub(r"[^a-zñ0-9]+", "", w) for w in lbl.split())
     return {w for w in palabras if len(w) >= 3 and w not in _STOPWORDS_ETIQUETA}
 
