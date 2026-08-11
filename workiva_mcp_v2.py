@@ -210,6 +210,7 @@ _SINONIMOS_ETIQUETA = {
 # ANTES de partir en palabras, así que solo se agregan pares CONFIRMADOS.
 _FRASES_SINONIMAS = [
     ("cuenta corriente mercantil", "tesoreria centralizada"),
+    ("beneficio (gasto)", "gasto"),
 ]
 
 
