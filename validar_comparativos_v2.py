@@ -355,6 +355,10 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
             desde, hasta = rango_filas(nombre_hoja)
             filas_hoja: list[dict] = []
             comps = sh.get("comparacion", [])
+            _debug_120 = {}
+            if prefijo_hoja(nombre_hoja) == "120":
+                for _dbg in sh.get("_debug_src_cols", []):
+                    _debug_120.setdefault(_dbg.split("(", 1)[0], []).append(_dbg)
             for comp in comps:
                 contexto = (comp.get("contexto") or "").strip()
                 tipo_col = comp.get("tipo", "bal")
@@ -387,6 +391,9 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
                         nota = "la fila no existe en el archivo fuente: revisar manualmente"
                     else:
                         nota = None
+                    if _debug_120 and f["fila"] in (19, 22) and comp["col"] in _debug_120:
+                        _extra = "  ||  ".join(_debug_120[comp["col"]])
+                        nota = f"{nota or 'ok'}  |  {_extra}"
                     filas_hoja.append({
                         "fila": f["fila"], "etiqueta": etiq,
                         "destino": f["destino"], "fuente": f["fuente"],

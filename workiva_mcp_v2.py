@@ -1637,6 +1637,15 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
 
                     row_s = src_cells[src_row_i] if 0 <= src_row_i < len(src_cells) else []
                     sv    = _cv(row_s[src_col]) if src_col < len(row_s) else None
+                    if _prefijo_hoja(sname) == "120" and (i + 1) in (19, 22) and dest_col == 17:
+                        _vecinas = {
+                            jj: _cv(row_s[jj]) for jj in range(max(0, src_col - 3), src_col + 4)
+                            if jj < len(row_s)
+                        }
+                        sheet_report.setdefault("_debug_src_cols", []).append(
+                            f"{_col_letter(dest_col)}(FILA{i + 1}): src_row_i={src_row_i} src_col={src_col} "
+                            f"vecinas={_vecinas}"
+                        )
                     src_vals.append(sv if isinstance(sv, (int, float)) else None)
                     src_corr.append(True)
                     src_skip.append(False)
