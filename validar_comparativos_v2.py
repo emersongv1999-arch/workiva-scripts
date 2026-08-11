@@ -171,6 +171,7 @@ RANGO_FILAS: dict[str, tuple[int | None, int | None]] = {
     "118": (None, 21),
     "120": (None, 43),
     "121": (None, 53),
+    "123": (8,    None),
 }
 
 # "A.- Activos" -> "A" ; "27. CGEM Conso" -> "27" ; "55.-CGE" -> "55"
