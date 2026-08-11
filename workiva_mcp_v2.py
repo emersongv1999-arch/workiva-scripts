@@ -1062,6 +1062,12 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     for vk in ("calculatedValue", "value"):
                         raw = str(cell.get(vk, "") or "").strip()
                         lo  = raw.lower()
+                        # "value" es la fórmula cruda (ej. "='Bases'!F16"): nunca
+                        # sirve como nombre de segmento, aunque calculatedValue
+                        # esté vacío. Usarla rompía la detección (caía a
+                        # buscar por posición y agarraba la columna vecina).
+                        if vk == "value" and lo.startswith("="):
+                            continue
                         if lo in _skip or _date_re.search(lo):
                             continue
                         if len(raw) >= 3:
