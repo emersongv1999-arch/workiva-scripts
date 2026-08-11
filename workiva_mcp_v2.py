@@ -1332,9 +1332,13 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                     for r in all_rows[:10]
                                     if j < len(r)
                                 )
-                                if not is_pct:
-                                    # Detectar segmento horizontal (tablas multi-segmento)
-                                    seg_label = _find_segment_label(all_rows, j, i)
+                                # Detectar segmento horizontal (tablas multi-segmento)
+                                seg_label = _find_segment_label(all_rows, j, i)
+                                # Columnas "Control": verificación interna de cuadre,
+                                # no un monto real de negocio. No se comparan/escriben,
+                                # igual que las columnas "%".
+                                is_control = _norm_lbl(seg_label) == "control"
+                                if not is_pct and not is_control:
 
                                     # Detectar doble sub-tabla: buscar si la misma
                                     # keyword aparece de nuevo en la misma columna j
