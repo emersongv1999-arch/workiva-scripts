@@ -178,6 +178,19 @@ _STOPWORDS_ETIQUETA = {
 # la misma fila con otro texto). Deben coincidir exactamente a ambos lados.
 _NEGACIONES_ETIQUETA = {"no", "non", "sin"}
 
+# Pares de palabras opuestas CONFIRMADAS: si una etiqueta tiene una palabra
+# de un par y la otra etiqueta tiene su opuesto, NUNCA se consideran la
+# misma fila, sin importar cuántas otras palabras compartan. Necesario
+# porque "Importes... de largo plazo" y "...de corto plazo" comparten el
+# 80% de sus palabras (calzaban con el umbral pensado para reordenamientos
+# como el de "Deterioro..."), pero son líneas opuestas.
+_ANTONIMOS_ETIQUETA = [
+    {"largo", "corto"},
+    {"cobrar", "pagar"},
+    {"activo", "activos", "pasivo", "pasivos"},
+    {"ingreso", "ingresos", "gasto", "gastos"},
+]
+
 # Sinónimos conocidos y VERIFICADOS entre plantillas de distintos períodos
 # (ej. "Costo de administración" pasó a llamarse "Gasto de administración").
 # Es una lista blanca a propósito: solo se agregan pares confirmados. Con
@@ -256,6 +269,11 @@ def _etiquetas_similares(a: str, b: str) -> bool:
     palabras_a, palabras_b = set(a.split()), set(b.split())
     if (palabras_a & _NEGACIONES_ETIQUETA) != (palabras_b & _NEGACIONES_ETIQUETA):
         return False   # una tiene "no"/"sin" y la otra no: son opuestas
+
+    for par in _ANTONIMOS_ETIQUETA:
+        en_a, en_b = palabras_a & par, palabras_b & par
+        if en_a and en_b and en_a != en_b:
+            return False   # una tiene "largo"/"cobrar"/... y la otra su opuesto
 
     pa, pb = _palabras_canonicas(a), _palabras_canonicas(b)
     if not pa or not pb:
