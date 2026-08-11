@@ -141,7 +141,7 @@ NOTAS_EXCLUIDAS_VALIDACION = {"D"}
 RANGO_FILAS: dict[str, tuple[int | None, int | None]] = {
     "A":   (None, 43),
     "B":   (None, 55),
-    "C":   (None, 54),
+    "C":   (None, 45),
     "D":   (None, 77),
     "K":   (None, 14),
     "13":  (None, 14),
