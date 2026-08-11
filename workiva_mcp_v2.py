@@ -1513,12 +1513,6 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 fila_bloque_inicio = col_info.get("fila_bloque_inicio", 0)
                 fila_bloque_fin    = col_info.get("fila_bloque_fin")
 
-                if _prefijo_hoja(sname) == "120":
-                    sheet_report.setdefault("_debug_src_cols", []).append(
-                        f"{_col_letter(dest_col)}({col_type}): seg={seg_label!r} occ={occurrence_index} "
-                        f"kw={kw_src!r} -> src_col={src_col} bloque=({fila_bloque_inicio},{fila_bloque_fin})"
-                    )
-
                 sub2_data_start  = col_info.get("sub2_data_start")
                 sub_table_offset = col_info.get("sub_table_offset")
 
@@ -1643,12 +1637,6 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
 
                     row_s = src_cells[src_row_i] if 0 <= src_row_i < len(src_cells) else []
                     sv    = _cv(row_s[src_col]) if src_col < len(row_s) else None
-                    if _prefijo_hoja(sname) == "120" and (i + 1) in (19, 22):
-                        sheet_report.setdefault("_debug_src_cols", []).append(
-                            f"{_col_letter(dest_col)}(FILA{i + 1}): lbl_t={lbl_t!r} "
-                            f"via_busqueda={via_busqueda} src_row_i_final={src_row_i} "
-                            f"lbl_fuente_final={_norm_lbl(_etiqueta_fila(row_s))!r} valor={sv!r}"
-                        )
                     src_vals.append(sv if isinstance(sv, (int, float)) else None)
                     src_corr.append(True)
                     src_skip.append(False)
