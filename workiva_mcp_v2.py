@@ -1513,6 +1513,12 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 fila_bloque_inicio = col_info.get("fila_bloque_inicio", 0)
                 fila_bloque_fin    = col_info.get("fila_bloque_fin")
 
+                if _prefijo_hoja(sname) == "120":
+                    sheet_report.setdefault("_debug_src_cols", []).append(
+                        f"{_col_letter(dest_col)}({col_type}): seg={seg_label!r} occ={occurrence_index} "
+                        f"kw={kw_src!r} -> src_col={src_col} bloque=({fila_bloque_inicio},{fila_bloque_fin})"
+                    )
+
                 sub2_data_start  = col_info.get("sub2_data_start")
                 sub_table_offset = col_info.get("sub_table_offset")
 
