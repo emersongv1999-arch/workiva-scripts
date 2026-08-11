@@ -131,12 +131,14 @@ async def resolver_spreadsheet(sociedad: str, anio: str, trimestre: str,
 #
 #    Consecuencia importante: una hoja con prefijo único jamás se descarta.
 
-# Notas excluidas de la VALIDACIÓN (no del llenado) mientras se investiga un
-# problema puntual. Cada columna comparativa de estas notas puede leer de un
-# archivo fuente distinto, y alguno de esos archivos tiene una estructura
-# distinta cerca de los totales que genera SIN CORRESPONDENCIA en cascada
-# (ej. nota D: 3 de 4 columnas fallan justo en las filas "Total").
-NOTAS_EXCLUIDAS_VALIDACION = {"D"}
+# Notas excluidas de la VALIDACIÓN (no del llenado).
+# - "D": mientras se investiga un problema puntual. Cada columna comparativa
+#   de esta nota puede leer de un archivo fuente distinto, y alguno de esos
+#   archivos tiene una estructura distinta cerca de los totales que genera
+#   SIN CORRESPONDENCIA en cascada (3 de 4 columnas fallan justo en las
+#   filas "Total").
+# - "139", "140" (NIIF 5 - Operaciones discontinuadas): no se usan.
+NOTAS_EXCLUIDAS_VALIDACION = {"D", "139", "140"}
 
 RANGO_FILAS: dict[str, tuple[int | None, int | None]] = {
     "A":   (None, 43),
