@@ -189,6 +189,14 @@ _ANTONIMOS_ETIQUETA = [
     {"cobrar", "pagar"},
     {"activo", "activos", "pasivo", "pasivos"},
     {"ingreso", "ingresos", "gasto", "gastos"},
+    # "Efectivo... al PRINCIPIO del período" vs "...al FINAL del período"
+    # comparten todas las demas palabras (>80%), calzando por el umbral de
+    # similaridad de etiquetas largas -- eso hacia que la fila "al final"
+    # se comparara contra el valor de la fila "al principio" del archivo
+    # fuente cuando la busqueda por fila cercana fallaba (ej. por filas
+    # agregadas/eliminadas entre plantillas). Mismo patron que largo/corto.
+    {"principio", "inicio", "inicial", "final"},
+    {"apertura", "cierre"},
 ]
 
 # Sinónimos conocidos y VERIFICADOS entre plantillas de distintos períodos
