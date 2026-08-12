@@ -1071,7 +1071,15 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             continue
                         if lo in _skip or _date_re.search(lo):
                             continue
-                        if len(raw) >= 3:
+                        # Nombres de segmento reales son cortos (sociedad,
+                        # categoría: "Patentes, marcas registradas y otros
+                        # derechos" ~7 palabras). Las descripciones oficiales
+                        # de nota (ej. "línea de partida en el estado de
+                        # resultados que incluye amortización...") son
+                        # oraciones largas que NO son segmentos — si se
+                        # aceptan, se confunden con nombres de segmento y
+                        # rompen la búsqueda en el archivo fuente.
+                        if len(raw) >= 3 and len(lo.split()) <= 8:
                             return lo
             return ""
 
