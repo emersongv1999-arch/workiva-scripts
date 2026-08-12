@@ -2692,6 +2692,10 @@ class App(tk.Tk):
                       relief="flat", bd=0, padx=10, pady=9,
                       cursor="hand2", command=cmd)
         b.pack(fill="x")
+        # tkinter, a diferencia de Windows nativo, solo activa el boton con
+        # Espacio por defecto -- Enter no hace nada salvo que se bindee
+        # explicitamente (igual que en los demas modulos).
+        b.bind("<Return>", lambda e: cmd())
         return b
 
     def _build_right(self, parent):
