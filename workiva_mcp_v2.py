@@ -1159,37 +1159,23 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
             real_segs = [(ri, jj, lbl) for ri, jj, lbl in seg_starts
                          if not lbl.startswith("=")]
 
-            matched_col: int | None = None
-            if real_segs and segment_label and not segment_label.startswith("="):
-                # 1) Coincidencia exacta: siempre gana.
-                #    Sin esto "Corrientes" se lleva por delante a "No corrientes",
-                #    porque una es subcadena de la otra y aparece antes.
+            # Candidatos de columna de inicio de segmento que calzan con
+            # segment_label, en orden (puede haber varios: la misma etiqueta
+            # de segmento se repite una vez por cada bloque de fecha, ej.
+            # "Programas informáticos" bajo D, bajo H, bajo L...).
+            exact_candidates: list[int] = [jj for _, jj, lbl in real_segs if lbl == segment_label]
+            sub_candidates: list[int] = []
+            if not exact_candidates:
                 for _, jj, lbl in real_segs:
-                    if lbl == segment_label:
-                        matched_col = jj
-                        break
+                    if segment_label not in lbl and lbl not in segment_label:
+                        continue
+                    if _NEGACIONES & (set(lbl.split()) ^ set(segment_label.split())):
+                        continue
+                    sub_candidates.append(jj)
 
-                # 2) Sin exacta: subcadena, pero solo si lo que sobra entre las
-                #    dos etiquetas no es una negación. Así "corrientes" nunca
-                #    calza con "no corrientes" (ni al revés), que son segmentos
-                #    opuestos y contiguos en casi todas las notas.
-                if matched_col is None:
-                    for _, jj, lbl in real_segs:
-                        if segment_label not in lbl and lbl not in segment_label:
-                            continue
-                        if _NEGACIONES & (set(lbl.split()) ^ set(segment_label.split())):
-                            continue
-                        matched_col = jj
-                        break
-
-            if matched_col is not None:
-                # Paso 3: dentro del segmento, buscar kw_src
-                next_seg_col = min(
-                    (jj for _, jj, _ in real_segs if jj > matched_col),
-                    default=9999
-                )
+            def _kw_src_col_in_range(start: int, end: int) -> int | None:
                 for row in src_cells[:8]:
-                    for jj in range(matched_col, min(next_seg_col, len(row))):
+                    for jj in range(start, min(end, len(row))):
                         cell = row[jj]
                         if not isinstance(cell, dict):
                             continue
@@ -1197,6 +1183,23 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             v = str(cell.get(vk, "") or "").lower()
                             if kw_src in v:
                                 return jj
+                return None
+
+            for candidates in (exact_candidates, sub_candidates):
+                if not candidates:
+                    continue
+                # Paso 3: dentro de CADA candidato de segmento (uno por bloque
+                # de fecha), buscar kw_src (fecha). Solo un bloque de fecha
+                # tendrá esa fecha en su rango de columnas — así se evita
+                # mezclar bloques que comparten el mismo nombre de segmento.
+                for matched_col in candidates:
+                    next_seg_col = min(
+                        (jj for _, jj, _ in real_segs if jj > matched_col),
+                        default=9999
+                    )
+                    found = _kw_src_col_in_range(matched_col, next_seg_col)
+                    if found is not None:
+                        return found
 
             # Segmento no encontrado o sin texto real → usar índice de ocurrencia.
             # Si la Nth ocurrencia no existe (celdas fusionadas: solo la 1ra tiene fecha),
@@ -1512,12 +1515,6 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 companion_offset = col_info.get("companion_src_offset", 0)
                 if companion_offset and src_col is not None:
                     src_col = _next_companion_col_in_src(src_cells, src_col, companion_offset)
-                if _prefijo_hoja(sname) == "45":
-                    sheet_report.setdefault("_debug_src_cols", []).append(
-                        f"{_col_letter(dest_col)}({col_type}): seg={seg_label!r} occ={occurrence_index} "
-                        f"kw={kw_src!r} first_hdr={col_info.get('first_header_row')} -> src_col={src_col}"
-                        + (f" [companion+{companion_offset}]" if companion_offset else "")
-                    )
                 if src_col is None:
                     continue
 
