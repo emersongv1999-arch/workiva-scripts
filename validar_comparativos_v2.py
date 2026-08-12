@@ -294,7 +294,7 @@ def exportar_excel(ruta: str, titulo: str, subtitulo: str,
     wb.save(ruta)
 
 
-async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> int:
+async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50, should_stop=None) -> int:
     offset = 0
     total_equal = total_diff = total_sin_corr = 0
     candidatas = "?"
@@ -409,6 +409,9 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
 
         print(f"  lote offset {r['sheet_offset']:>3}: {r['batch_size']} hojas revisadas")
 
+        if should_stop and should_stop():
+            print("\n⏹ Validación detenida por el usuario — se genera el Excel con lo revisado hasta ahora.")
+            break
         if not r.get("has_more"):
             break
         offset = r["next_offset"]
