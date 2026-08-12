@@ -200,6 +200,7 @@ _ANTONIMOS_ETIQUETA = [
 # significan lo contrario).
 _SINONIMOS_ETIQUETA = {
     "costo": "gasto",
+    "reembolsos": "pagos",
 }
 
 # Igual que _SINONIMOS_ETIQUETA pero a nivel de FRASE completa: para cambios
