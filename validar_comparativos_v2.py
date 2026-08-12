@@ -176,6 +176,13 @@ RANGO_FILAS: dict[str, tuple[int | None, int | None]] = {
     "123": (13,   None),
 }
 
+# Filas puntuales excluidas dentro de una nota (no es un tema de rango:
+# la fila está en medio de otras que sí se validan). Ej. nota 14: la fila
+# 28 "Deudores varios" es un subtotal que no debe compararse.
+FILAS_EXCLUIDAS_POR_NOTA: dict[str, set[int]] = {
+    "14": {28},
+}
+
 # "A.- Activos" -> "A" ; "27. CGEM Conso" -> "27" ; "55.-CGE" -> "55"
 _RE_PREFIJO = re.compile(r"^\s*([A-Za-zÑñ0-9]{1,4})\s*\.\s*-?\s*\S")
 
@@ -355,6 +362,7 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
                 continue
 
             desde, hasta = rango_filas(nombre_hoja)
+            filas_excluidas = FILAS_EXCLUIDAS_POR_NOTA.get(prefijo_hoja(nombre_hoja), set())
             filas_hoja: list[dict] = []
             comps = sh.get("comparacion", [])
             for comp in comps:
@@ -363,6 +371,9 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
                 for f in comp.get("filas", []):
                     # Fuera del alcance de la nota (bloques auxiliares al pie).
                     if (desde is not None and f["fila"] < desde) or (hasta is not None and f["fila"] > hasta):
+                        filas_fuera += 1
+                        continue
+                    if f["fila"] in filas_excluidas:
                         filas_fuera += 1
                         continue
                     if f["estado"] == "OK":
