@@ -1524,10 +1524,19 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 if companion_offset and src_col is not None:
                     src_col = _next_companion_col_in_src(src_cells, src_col, companion_offset)
                 if _prefijo_hoja(sname) == "45":
+                    _dbg_matches = []
+                    for _ri, _row in enumerate(src_cells[:8]):
+                        for _jj, _c in enumerate(_row):
+                            if isinstance(_c, dict):
+                                for _vk in ("calculatedValue", "value"):
+                                    if kw_src in str(_c.get(_vk, "") or "").lower():
+                                        _dbg_matches.append(f"r{_ri}c{_jj}")
+                                        break
                     sheet_report.setdefault("_debug_src_cols", []).append(
                         f"{_col_letter(dest_col)}({col_type}): seg={seg_label!r} occ={occurrence_index} "
                         f"kw={kw_src!r} first_hdr={col_info.get('first_header_row')} -> src_col={src_col}"
                         + (f" [companion+{companion_offset}]" if companion_offset else "")
+                        + f" kw_matches={_dbg_matches}"
                     )
                 if src_col is None:
                     continue
