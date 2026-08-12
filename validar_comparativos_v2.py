@@ -365,10 +365,6 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
             filas_excluidas = FILAS_EXCLUIDAS_POR_NOTA.get(prefijo_hoja(nombre_hoja), set())
             filas_hoja: list[dict] = []
             comps = sh.get("comparacion", [])
-            _debug_45 = {}
-            if prefijo_hoja(nombre_hoja) == "45":
-                for _dbg in sh.get("_debug_src_cols", []):
-                    _debug_45.setdefault(_dbg.split("(", 1)[0], []).append(_dbg)
             for comp in comps:
                 contexto = (comp.get("contexto") or "").strip()
                 tipo_col = comp.get("tipo", "bal")
@@ -398,9 +394,6 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50) -> i
                             nota = f"difiere en {float(f['destino']) - float(f['fuente']):,.0f}"
                         except (TypeError, ValueError):
                             nota = "difiere"
-                        _todo45 = _debug_45.get(comp["col"], [])
-                        if _todo45:
-                            nota = f"{nota}  |  " + "  ||  ".join(_todo45)
                     elif f["estado"] == "NO PROCESADO":
                         nota = "valor destino no numérico"
                     elif f["estado"] == "SIN CORRESPONDENCIA":
