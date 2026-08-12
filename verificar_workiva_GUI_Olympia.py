@@ -3102,6 +3102,7 @@ class App(tk.Tk):
         if not soc or not anio or not trim:
             messagebox.showwarning("Aviso", "Completa Sociedad, Año y Trimestre.")
             return
+        self._val_clear_log()
         self._val_btn_run.configure(state="disabled")
         self._progress.configure(mode="indeterminate")
         self._progress.start(10)

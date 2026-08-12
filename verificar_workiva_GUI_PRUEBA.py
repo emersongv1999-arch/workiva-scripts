@@ -2761,6 +2761,7 @@ class App(tk.Tk):
         if not soc or not anio or not trim:
             messagebox.showwarning("Aviso", "Completa Sociedad, Año y Trimestre.")
             return
+        self._val_clear_log()
         self._val_btn_run.configure(state="disabled")
         self._val_log_write(f"Validando {soc} {tipo} {trim}-{anio}...", "blue")
         threading.Thread(
