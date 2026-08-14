@@ -384,6 +384,13 @@ def parse_num(s):
         neg = True; t = t[1:-1]
     if t.startswith('-'):
         neg = True; t = t[1:]
+    # Porcentajes: se leen por su valor entero tal como esta impreso
+    # ("9%" -> 9, no 0.09), asi filas como "9% + 84% + 7% = 100%" se
+    # verifican con la misma logica de suma que cualquier otra columna.
+    if t.endswith('%'):
+        t = t[:-1]
+        if t in ('', '-', '—', '–'):
+            return None
     # Separador de miles: coma (ENG) o punto (ESP) — ambos se eliminan
     t = t.replace(',', '')
     core = t.replace('.', '')
