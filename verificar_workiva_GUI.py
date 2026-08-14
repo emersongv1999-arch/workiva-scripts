@@ -990,6 +990,33 @@ NAV_ITEMS = [
     ("Validar Comparativos",   "mod6"),
 ]
 
+
+def guardar_xlsx_seguro(wb, ruta, log=None):
+    """Guarda el libro en 'ruta'. Si el archivo esta abierto en Excel (o
+    bloqueado por OneDrive), Windows devuelve PermissionError y se perderia
+    toda la corrida — incluidas las consultas a la base, que son lo mas
+    lento. En vez de fallar, se guarda con un nombre alternativo
+    ("... (2).xlsx", "(3)", ...) y se devuelve la ruta realmente usada.
+
+    Devuelve la ruta final. Lanza PermissionError con un mensaje claro solo
+    si ningun nombre alternativo se pudo escribir."""
+    base, ext = os.path.splitext(ruta)
+    for intento in range(1, 21):
+        destino = ruta if intento == 1 else f"{base} ({intento}){ext}"
+        try:
+            wb.save(destino)
+            if destino != ruta and log:
+                log(f"'{os.path.basename(ruta)}' estaba abierto o bloqueado; "
+                    f"se guardo como '{os.path.basename(destino)}'.", "warn")
+            return destino
+        except PermissionError:
+            continue
+    raise PermissionError(
+        f"No se pudo escribir '{os.path.basename(ruta)}' en la carpeta de salida.\n\n"
+        "Lo mas probable es que el archivo este abierto en Excel: cierralo y "
+        "vuelve a intentar. Si no lo tienes abierto, revisa que la carpeta no "
+        "este bloqueada por OneDrive o sin permisos de escritura.")
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -2211,7 +2238,8 @@ class App(tk.Tk):
             mod.hoja_consolidado(wb, seleccionados, lineas_emp, subt_emp,
                                  nombres, fecha_ini, fecha_fin, preliminares_sel)
             ultima = mod.hoja_detalle(wb, detalle, fecha_ini, fecha_fin)
-            wb.save(salida)
+            # Puede devolver otra ruta si el .xlsx estaba abierto en Excel.
+            salida = guardar_xlsx_seguro(wb, salida, self._flujo_log_write)
             self._flujo_log_write(f"Guardado: {salida}", "ok")
 
             mod.tabla_dinamica(salida, ultima, fecha_ini, fecha_fin)
