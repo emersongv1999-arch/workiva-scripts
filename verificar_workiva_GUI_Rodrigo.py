@@ -609,6 +609,49 @@ def verify(rows, cols):
                     cum += v
     return res
 
+def verify_row_totals(rows, cols, htxt):
+    """Verifica sumas HORIZONTALES: cuadros donde hay varias columnas de
+    detalle y una columna "Total" a la derecha que debe ser la suma de las
+    demas EN LA MISMA FILA (ej. "Indemnizacion por anos de servicio" +
+    "Premios por antiguedad" = "Total", repetido fila por fila). verify()
+    solo suma hacia abajo dentro de cada columna; esta funcion cubre la
+    direccion que se le escapa.
+
+    Solo se activa si hay exactamente una columna "Total" y las demas
+    columnas comparten la misma fecha en el encabezado que ella (para no
+    disparar en cuadros donde una columna "Total" no es la suma horizontal
+    de las otras, sino un dato independiente)."""
+    total_cols = [j for j in cols if 'total' in htxt[j].lower()]
+    if len(total_cols) != 1:
+        return []
+    total_col = total_cols[0]
+    addend_cols = [j for j in cols if j != total_col]
+    if len(addend_cols) < 2:
+        return []
+
+    _date_re = re.compile(r'\d{2}-\d{2}-\d{4}')
+    date_total = set(_date_re.findall(htxt[total_col]))
+    if date_total:
+        addend_cols = [j for j in addend_cols
+                       if set(_date_re.findall(htxt[j])) == date_total]
+        if len(addend_cols) < 2:
+            return []
+
+    res = []
+    for r in rows:
+        lab = _row_label(r)
+        if NOLINEAL.search(lab) or REF_NOTA.search(lab):
+            continue
+        vals = [parse_num(cell(r, j)) for j in addend_cols]
+        P = parse_num(cell(r, total_col))
+        if P is None or any(v is None for v in vals):
+            continue
+        calc = sum(vals)
+        res.append({'col': total_col, 'label': lab, 'printed': P,
+                    'dif': P - calc, 'metodo': 'Suma horizontal de fila',
+                    'clase': 'check'})
+    return res
+
 def verify_movement(rows, cols):
     res = []
     for j in cols:
@@ -719,6 +762,7 @@ def verificar_docx(ruta):
             continue
         tipo = "movimiento" if is_movement_table(filas, cols) else "general"
         res  = verify_movement(filas, cols) if tipo == "movimiento" else verify(filas, cols)
+        res += verify_row_totals(filas, cols, htxt)
         checks = [r for r in res if r['clase'] == 'check']
         if not checks:
             continue
