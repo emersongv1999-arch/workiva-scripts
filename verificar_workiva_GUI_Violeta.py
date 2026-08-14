@@ -624,14 +624,24 @@ def verify_row_totals(rows, cols, htxt):
     solo suma hacia abajo dentro de cada columna; esta funcion cubre la
     direccion que se le escapa.
 
-    Solo se activa si hay exactamente una columna "Total" y las demas
-    columnas comparten la misma fecha en el encabezado que ella (para no
-    disparar en cuadros donde una columna "Total" no es la suma horizontal
-    de las otras, sino un dato independiente)."""
+    Solo se activa si hay exactamente una columna "Total", si esa columna
+    es la de MAS A LA DERECHA, y si las demas columnas comparten la misma
+    fecha en el encabezado que ella (para no disparar en cuadros donde una
+    columna "Total" no es la suma horizontal de las otras, sino un dato
+    independiente)."""
     total_cols = [j for j in cols if 'total' in htxt[j].lower()]
     if len(total_cols) != 1:
         return []
     total_col = total_cols[0]
+    # Un "Total" que NO es la columna mas a la derecha casi siempre es un
+    # encabezado de GRUPO fusionado sobre varias columnas (ej. "Total"
+    # abarcando "Importe bruto / Efecto tributario / Importe neto"), no una
+    # columna de total. Al extraer la tabla, el texto de una celda fusionada
+    # queda solo en la PRIMERA columna del grupo, asi que se veria como si
+    # "Importe bruto" fuera el total y las otras dos sus sumandos — un falso
+    # hallazgo. Una columna de total real siempre va despues de sus sumandos.
+    if total_col != max(cols):
+        return []
     addend_cols = [j for j in cols if j != total_col]
     if len(addend_cols) < 2:
         return []
