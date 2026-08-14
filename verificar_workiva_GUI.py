@@ -992,25 +992,36 @@ NAV_ITEMS = [
 
 
 def guardar_xlsx_seguro(wb, ruta, log=None):
-    """Guarda el libro en 'ruta'. Si el archivo esta abierto en Excel (o
-    bloqueado por OneDrive), Windows devuelve PermissionError y se perderia
-    toda la corrida — incluidas las consultas a la base, que son lo mas
-    lento. En vez de fallar, se guarda con un nombre alternativo
-    ("... (2).xlsx", "(3)", ...) y se devuelve la ruta realmente usada.
+    """Guarda el libro en 'ruta'. Igual que al descargar el mismo archivo
+    varias veces desde el navegador: si el nombre ya existe (exista o no,
+    este bloqueado o no), NUNCA se sobrescribe — se suma "(2)", "(3)", etc.
+    hasta encontrar un nombre libre.
+
+    De paso evita el PermissionError de Windows cuando el .xlsx anterior
+    esta abierto en Excel (o bloqueado por OneDrive), que antes hacia
+    perder toda la corrida — incluidas las consultas a la base, que son lo
+    mas lento.
 
     Devuelve la ruta final. Lanza PermissionError con un mensaje claro solo
-    si ningun nombre alternativo se pudo escribir."""
+    si ningun nombre se pudo escribir."""
     base, ext = os.path.splitext(ruta)
-    for intento in range(1, 21):
-        destino = ruta if intento == 1 else f"{base} ({intento}){ext}"
+    intento = 1
+    destino = ruta
+    while os.path.exists(destino):
+        intento += 1
+        destino = f"{base} ({intento}){ext}"
+        if intento > 100:
+            break
+    for _ in range(20):
         try:
             wb.save(destino)
             if destino != ruta and log:
-                log(f"'{os.path.basename(ruta)}' estaba abierto o bloqueado; "
+                log(f"Ya existia '{os.path.basename(ruta)}'; "
                     f"se guardo como '{os.path.basename(destino)}'.", "warn")
             return destino
         except PermissionError:
-            continue
+            intento += 1
+            destino = f"{base} ({intento}){ext}"
     raise PermissionError(
         f"No se pudo escribir '{os.path.basename(ruta)}' en la carpeta de salida.\n\n"
         "Lo mas probable es que el archivo este abierto en Excel: cierralo y "
