@@ -1,0 +1,715 @@
+<title>Oficio 95881 vs. EE.FF. CGE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;450;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap">
+<style>
+:root{
+  --paper:#f4f6f8; --surface:#ffffff; --surface-2:#eef1f5;
+  --ink:#141920; --ink-2:#39424f; --muted:#5b6673;
+  --line:#d8dee6; --line-soft:#e6eaf0;
+  --accent:#26405e; --accent-soft:#dde5ef;
+  --ok:#2d6a48; --ok-bg:#e4efe8; --ok-line:#9dc4ad;
+  --warn:#8f6110; --warn-bg:#f6eeda; --warn-line:#d9bd7e;
+  --gap:#a12f2a; --gap-bg:#f6e4e2; --gap-line:#dfa39d;
+  --info:#3a4c6b; --info-bg:#e7ecf4;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0f1319; --surface:#161c24; --surface-2:#1d242e;
+    --ink:#e4e8ee; --ink-2:#c2cad5; --muted:#8d99a8;
+    --line:#2b3542; --line-soft:#232c37;
+    --accent:#89a9cf; --accent-soft:#1e2c3d;
+    --ok:#69b78a; --ok-bg:#16281e; --ok-line:#2f5f42;
+    --warn:#d9a54c; --warn-bg:#2a2113; --warn-line:#6b5527;
+    --gap:#e2827b; --gap-bg:#2c1917; --gap-line:#6d3733;
+    --info:#9db3d4; --info-bg:#1a222e;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0f1319; --surface:#161c24; --surface-2:#1d242e;
+  --ink:#e4e8ee; --ink-2:#c2cad5; --muted:#8d99a8;
+  --line:#2b3542; --line-soft:#232c37;
+  --accent:#89a9cf; --accent-soft:#1e2c3d;
+  --ok:#69b78a; --ok-bg:#16281e; --ok-line:#2f5f42;
+  --warn:#d9a54c; --warn-bg:#2a2113; --warn-line:#6b5527;
+  --gap:#e2827b; --gap-bg:#2c1917; --gap-line:#6d3733;
+  --info:#9db3d4; --info-bg:#1a222e;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:15.5px; line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:920px; margin:0 auto; padding:0 24px 96px;}
+h1,h2,h3,h4{font-family:"Source Serif 4",Georgia,"Times New Roman",serif; text-wrap:balance; margin:0;}
+p{margin:0;}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;}
+.num{font-variant-numeric:tabular-nums;}
+
+/* ---------- masthead ---------- */
+.masthead{border-bottom:2px solid var(--accent); padding:52px 0 24px; display:flex; flex-direction:column; gap:18px;}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace; font-size:11.5px; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--muted);
+}
+.masthead h1{font-size:clamp(30px,4.6vw,44px); line-height:1.12; font-weight:700; letter-spacing:-.015em;}
+.masthead .sub{color:var(--ink-2); font-size:17px; max-width:62ch;}
+.docmeta{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:1px;
+  background:var(--line); border:1px solid var(--line); margin-top:6px;
+}
+.docmeta div{background:var(--surface); padding:11px 14px;}
+.docmeta dt{font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin:0 0 3px;}
+.docmeta dd{margin:0; font-size:13.5px; font-weight:500; line-height:1.4;}
+
+/* ---------- tally ---------- */
+.tally{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:34px 0 12px;}
+.tally .cell{
+  background:var(--surface); border:1px solid var(--line); border-top:3px solid var(--c);
+  padding:14px 16px; display:flex; flex-direction:column; gap:2px;
+}
+.tally .n{font-family:"Source Serif 4",serif; font-size:34px; font-weight:700; line-height:1; color:var(--c); font-variant-numeric:tabular-nums;}
+.tally .l{font-size:12.5px; color:var(--muted); line-height:1.35;}
+.c-ok{--c:var(--ok);} .c-warn{--c:var(--warn);} .c-gap{--c:var(--gap);} .c-info{--c:var(--info);}
+
+/* ---------- index ---------- */
+.scroller{overflow-x:auto; border:1px solid var(--line); background:var(--surface);}
+table{border-collapse:collapse; width:100%; font-size:13.5px; min-width:600px;}
+thead th{
+  text-align:left; font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--muted); font-weight:500;
+  padding:10px 14px; border-bottom:1px solid var(--line); background:var(--surface-2); white-space:nowrap;
+}
+tbody td{padding:10px 14px; border-bottom:1px solid var(--line-soft); vertical-align:top;}
+tbody tr:last-child td{border-bottom:0;}
+tbody tr:hover{background:var(--surface-2);}
+td.ref{font-family:"IBM Plex Mono",monospace; font-weight:500; white-space:nowrap; color:var(--accent);}
+td.figs{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; white-space:nowrap;}
+a{color:var(--accent); text-decoration-thickness:1px; text-underline-offset:2px;}
+a:focus-visible,summary:focus-visible{outline:2px solid var(--accent); outline-offset:3px;}
+
+/* ---------- chips ---------- */
+.chip{
+  display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
+  font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase;
+  font-weight:500; padding:3px 9px; border:1px solid var(--cl); background:var(--cb); color:var(--cc);
+}
+.chip::before{content:""; width:6px; height:6px; background:var(--cc); border-radius:50%; flex:none;}
+.s-ok{--cc:var(--ok); --cb:var(--ok-bg); --cl:var(--ok-line);}
+.s-warn{--cc:var(--warn); --cb:var(--warn-bg); --cl:var(--warn-line);}
+.s-gap{--cc:var(--gap); --cb:var(--gap-bg); --cl:var(--gap-line);}
+.s-info{--cc:var(--info); --cb:var(--info-bg); --cl:var(--line);}
+
+/* ---------- sections ---------- */
+.secthead{margin:60px 0 20px; padding-bottom:10px; border-bottom:1px solid var(--line); display:flex; flex-wrap:wrap; align-items:baseline; gap:14px;}
+.secthead h2{font-size:25px; font-weight:700; letter-spacing:-.01em;}
+.secthead .note{font-size:13px; color:var(--muted);}
+
+/* ---------- ficha ---------- */
+.ficha{background:var(--surface); border:1px solid var(--line); border-left:4px solid var(--cc,var(--line)); margin:20px 0;}
+.ficha.s-ok{--cc:var(--ok);} .ficha.s-warn{--cc:var(--warn);} .ficha.s-gap{--cc:var(--gap);} .ficha.s-info{--cc:var(--info);}
+.ficha > header{padding:18px 22px 14px; border-bottom:1px solid var(--line-soft); display:flex; flex-wrap:wrap; gap:12px 16px; align-items:flex-start; justify-content:space-between;}
+.ficha .idline{display:flex; flex-direction:column; gap:5px; min-width:0;}
+.ficha .obsref{font-family:"IBM Plex Mono",monospace; font-size:11.5px; letter-spacing:.08em; color:var(--accent); font-weight:600;}
+.ficha h3{font-size:19.5px; font-weight:600; line-height:1.28;}
+.ficha .norms{display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;}
+.norm{font-family:"IBM Plex Mono",monospace; font-size:10.5px; padding:2px 7px; background:var(--surface-2); border:1px solid var(--line-soft); color:var(--muted);}
+.body{padding:6px 22px 22px; display:flex; flex-direction:column; gap:16px;}
+.block{display:flex; flex-direction:column; gap:7px; padding-top:14px;}
+.block + .block{border-top:1px dashed var(--line-soft);}
+.blabel{font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
+.block p{color:var(--ink-2); max-width:74ch;}
+.block ul{margin:2px 0 0; padding-left:20px; color:var(--ink-2); display:flex; flex-direction:column; gap:5px; max-width:74ch;}
+strong{font-weight:600; color:var(--ink);}
+.fig{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; font-size:.94em;}
+.quote{
+  border-left:2px solid var(--line); padding:2px 0 2px 14px; color:var(--muted);
+  font-family:"Source Serif 4",Georgia,serif; font-size:15px; font-style:italic; max-width:70ch;
+}
+
+/* ---------- propuesta ---------- */
+.prop{background:var(--surface-2); border:1px solid var(--line); border-top:2px solid var(--accent); padding:16px 20px 18px; display:flex; flex-direction:column; gap:10px;}
+.prop .plabel{font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent); font-weight:600; display:flex; align-items:center; gap:8px;}
+.prop .plabel span{font-weight:400; letter-spacing:.04em; text-transform:none; color:var(--muted);}
+.draft{font-family:"Source Serif 4",Georgia,"Times New Roman",serif; font-size:15.5px; line-height:1.6; color:var(--ink); display:flex; flex-direction:column; gap:11px; max-width:76ch;}
+.draft .h{font-weight:700;}
+.draft ul{margin:0; padding-left:22px; display:flex; flex-direction:column; gap:6px;}
+.prop table{min-width:520px; font-size:12.5px; background:var(--surface);}
+.prop .scroller{border-color:var(--line);}
+.todo{font-size:13px; color:var(--muted); border-top:1px solid var(--line); padding-top:10px; margin-top:2px;}
+.todo b{color:var(--ink-2); font-weight:600;}
+
+/* ---------- callout ---------- */
+.callout{background:var(--gap-bg); border:1px solid var(--gap-line); border-left:4px solid var(--gap); padding:14px 18px; display:flex; flex-direction:column; gap:6px;}
+.callout .t{font-weight:600; color:var(--gap); font-size:13.5px; font-family:"IBM Plex Mono",monospace; letter-spacing:.06em; text-transform:uppercase;}
+.callout p{color:var(--ink-2); max-width:74ch; font-size:14.5px;}
+
+footer.end{margin-top:64px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:12.5px; display:flex; flex-direction:column; gap:6px;}
+@media (max-width:640px){
+  .wrap{padding:0 16px 72px;}
+  .ficha > header, .body{padding-left:16px; padding-right:16px;}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important;}}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <div class="eyebrow">Revisión de cumplimiento normativo · Auditoría CGE</div>
+  <h1>Oficio CMF 95881 frente a los EE.FF. consolidados de CGE al 30-06-2026</h1>
+  <p class="sub">Contraste observación por observación entre lo que exige la Comisión para el Mercado Financiero y lo que efectivamente revelan las notas del estado financiero intermedio, con el texto propuesto para cada brecha.</p>
+  <dl class="docmeta">
+    <div><dt>Oficio</dt><dd>OF. ORD. 95881 — 05-jun-2026</dd></div>
+    <div><dt>Folio CMF</dt><dd class="mono">2026958813453348</dd></div>
+    <div><dt>Documento revisado</dt><dd>E200 (ESP) EE.FF. 06-2026 — Compañía General de Electricidad S.A. y subsidiarias</dd></div>
+    <div><dt>Primera aplicación exigida</dt><dd>Información financiera al 30-jun-2026 y posteriores</dd></div>
+  </dl>
+</header>
+
+<div class="tally">
+  <div class="cell c-ok"><span class="n">5</span><span class="l">Cumplidas</span></div>
+  <div class="cell c-warn"><span class="n">5</span><span class="l">Cumplidas con reparo</span></div>
+  <div class="cell c-gap"><span class="n">1</span><span class="l">Incumplida</span></div>
+  <div class="cell c-info"><span class="n">3</span><span class="l">Fuera de este archivo<br>(Análisis Razonado)</span></div>
+</div>
+
+<div class="callout" style="margin-top:22px;">
+  <div class="t">Riesgo prioritario antes de enviar</div>
+  <p>La nota <strong>5.1.2 Riesgo de tasa de interés</strong>, redactada para responder la observación A.2.a, afirma que la Compañía mantiene derivados contratados para cubrir el riesgo de tasa de interés. La nota <strong>7.1</strong> no revela ningún derivado con ese tipo de cobertura: todos figuran como «Tipo de cambio». Es exactamente la clase de inconsistencia entre notas que la CMF objetó en A.2.b, ahora reintroducida en la respuesta a otra observación.</p>
+</div>
+
+<div class="secthead"><h2>Estado por observación</h2><span class="note">Referencias según la numeración del propio oficio</span></div>
+
+<div class="scroller">
+<table>
+  <thead><tr><th>Ref.</th><th>Materia</th><th>Nota EE.FF.</th><th>Estado</th><th>Brecha</th></tr></thead>
+  <tbody>
+    <tr><td class="ref">A.1</td><td>Técnicas e inputs de valorización de derivados</td><td class="figs">4.2</td><td><span class="chip s-ok">Cumple</span></td><td>Falta la frase sobre cambios de técnica</td></tr>
+    <tr><td class="ref">A.2.a</td><td>Políticas y procesos — riesgo de tasa de interés</td><td class="figs">5.1.2</td><td><span class="chip s-warn">Con reparo</span></td><td>Contradice la nota 7.1; párrafos sin separar</td></tr>
+    <tr><td class="ref">A.2.b</td><td>Consistencia cobertura UF</td><td class="figs">5.1.1 / 7.1</td><td><span class="chip s-ok">Cumple</span></td><td>Comparativo reetiquetado sin explicar</td></tr>
+    <tr><td class="ref">A.3.a-i</td><td>Desglose de «Deudores varios»</td><td class="figs">8.1.2</td><td><span class="chip s-warn">Con reparo</span></td><td class="figs">M$ 24.799.523 corrientes sin desglosar</td></tr>
+    <tr><td class="ref">A.3.a-ii</td><td>Desglose de cuentas por pagar</td><td class="figs">21</td><td><span class="chip s-warn">Con reparo</span></td><td class="figs">M$ 200.203.131 corrientes sin desglosar</td></tr>
+    <tr><td class="ref">A.3.b-i</td><td>Datos, supuestos y método de la matriz ECL</td><td class="figs">8.1.4</td><td><span class="chip s-ok">Cumple</span></td><td>—</td></tr>
+    <tr><td class="ref">A.3.b-ii</td><td>Agrupación colectiva de deudores</td><td class="figs">8.1.4</td><td><span class="chip s-warn">Con reparo</span></td><td>Nombres de clusters inconsistentes</td></tr>
+    <tr><td class="ref">A.3.b-iii</td><td>Tratamiento y salida de clientes repactados</td><td class="figs">8.1.4</td><td><span class="chip s-gap">No cumple</span></td><td>No hay política de salida</td></tr>
+    <tr><td class="ref">A.3.c</td><td>Partidas del «(Aumento) disminución»</td><td class="figs">8.1.4</td><td><span class="chip s-warn">Con reparo</span></td><td>Causas sí, montos no</td></tr>
+    <tr><td class="ref">A.3.d</td><td>Política de castigos financieros</td><td class="figs">8.1.4</td><td><span class="chip s-ok">Cumple</span></td><td>—</td></tr>
+    <tr><td class="ref">A.4</td><td>Desglose de «Otras reservas»</td><td class="figs">26.6.3</td><td><span class="chip s-ok">Cumple</span></td><td>Signo invertido y encabezado errado</td></tr>
+    <tr><td class="ref">A.5</td><td>Provisionados vs. pasivos contingentes</td><td class="figs">34</td><td><span class="chip s-warn">Con reparo</span></td><td>Falta NIC 37.86 (c) y (d)</td></tr>
+    <tr><td class="ref">B.1.a</td><td>Fórmulas de indicadores financieros</td><td>—</td><td><span class="chip s-info">Otro doc.</span></td><td>Análisis Razonado</td></tr>
+    <tr><td class="ref">B.1.b</td><td>Análisis del flujo de efectivo directo</td><td>—</td><td><span class="chip s-info">Otro doc.</span></td><td>Análisis Razonado</td></tr>
+    <tr><td class="ref">B.1.c</td><td>Áreas de negocios de CGE</td><td>—</td><td><span class="chip s-info">Otro doc.</span></td><td>Análisis Razonado</td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ============ A. ESTADOS FINANCIEROS ============ -->
+<div class="secthead"><h2>A. Estados financieros</h2></div>
+
+<!-- A.1 -->
+<article class="ficha s-ok">
+  <header>
+    <div class="idline">
+      <span class="obsref">A.1</span>
+      <h3>Técnicas de valoración e inputs de los derivados de cobertura</h3>
+      <div class="norms"><span class="norm">NIIF 13.93(d)</span><span class="norm">Nota 4.2</span></div>
+    </div>
+    <span class="chip s-ok">Cumple</span>
+  </header>
+  <div class="body">
+    <div class="block">
+      <span class="blabel">Qué exige la CMF</span>
+      <p>Revelar en el punto 4.2 una descripción de las técnicas de valoración y los datos de entrada usados en la medición del valor razonable de los derivados de cobertura, dado que en «Otros Activos Financieros» se clasifican en Nivel II.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Situación en el EE.FF. 06-2026</span>
+      <p>Se incorporaron cuatro párrafos nuevos en la nota 4.2 que cubren la exigencia completa: valorización <em>mark-to-market</em> provista por las contrapartes financieras, modelos de flujos de caja descontados, y la enumeración de los inputs — tipos de cambio spot y forward, curvas de tasas de interés, factores de descuento, montos nocionales, tasas, fechas de pago y vencimientos. Se agrega además el cálculo interno de CVA y DVA y la conclusión de que, por ser los inputs significativos observables, los derivados se clasifican en Nivel II.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Reparo menor</span>
+      <p>NIIF 13.93(d) también pide informar todo cambio en la técnica de valoración y la razón del cambio. Conviene cerrarlo explícitamente para que la CMF no lo devuelva.</p>
+    </div>
+    <div class="prop">
+      <div class="plabel">Texto propuesto <span>— agregar al final de la nota 4.2</span></div>
+      <div class="draft">
+        <p>Durante el período terminado al 30 de junio de 2026 no se han producido cambios en las técnicas de valoración ni en los datos de entrada utilizados para determinar el valor razonable de los instrumentos derivados de cobertura respecto de los aplicados al 31 de diciembre de 2025, ni se han efectuado transferencias entre niveles de la jerarquía de valor razonable.</p>
+      </div>
+    </div>
+  </div>
+</article>
+
+<!-- A.2.a -->
+<article class="ficha s-warn">
+  <header>
+    <div class="idline">
+      <span class="obsref">A.2.a</span>
+      <h3>Políticas y procesos para la gestión del riesgo de tasa de interés</h3>
+      <div class="norms"><span class="norm">NIIF 7.33(b)</span><span class="norm">Nota 5.1.2</span></div>
+    </div>
+    <span class="chip s-warn">Cumple con reparo</span>
+  </header>
+  <div class="body">
+    <div class="block">
+      <span class="blabel">Qué exige la CMF</span>
+      <p>Informar las políticas y procesos para la gestión del riesgo de tasa de interés. La versión objetada solo definía el riesgo y cuantificaba la sensibilidad.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Situación en el EE.FF. 06-2026</span>
+      <p>La nota fue reescrita e incorpora el objetivo de gestión (estructura equilibrada entre tasa fija y variable), la gestión centralizada a nivel corporativo, el proceso de monitoreo periódico —composición de la deuda, tasas de referencia, vencimientos, condiciones de mercado, impacto proyectado— y la evaluación de contratación o refinanciamiento y de derivados. La exigencia de fondo queda cubierta.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Dos problemas que hay que corregir antes de enviar</span>
+      <ul>
+        <li><strong>Inconsistencia con la nota 7.1.</strong> La nota 5.1.2 cierra con «Al cierre del período, la Compañía mantiene instrumentos derivados contratados para cubrir el riesgo de tasa de interés» y más adelante menciona «los derivados asociados a financiamientos a tasa variable que convierten su exposición a tasa fija». En la nota 7.1 <strong>todos</strong> los derivados figuran con «Tipo de cobertura: Tipo de cambio»; no existe ninguna fila de tasa de interés. Es el mismo defecto que la CMF observó en A.2.b.</li>
+        <li><strong>Defecto de formato.</strong> Los párrafos nuevos quedaron concatenados sin salto ni espacio tras el punto: «…tasas de interés variables.Las variaciones…», «…de la Compañía.En función…», «…gasto financiero.Al cierre…». Separar en párrafos en Workiva.</li>
+      </ul>
+    </div>
+    <div class="prop">
+      <div class="plabel">Texto propuesto <span>— reemplaza el párrafo final de la nota 5.1.2</span></div>
+      <div class="draft">
+        <p>Al 30 de junio de 2026 la Compañía mantiene contratos de <em>Cross Currency Swap</em> designados como coberturas de tipo de cambio que, adicionalmente, transforman la tasa de interés variable de los financiamientos cubiertos en una tasa fija en pesos chilenos, según se detalla en la nota 7.1. La Compañía no mantiene instrumentos derivados designados exclusivamente como cobertura del riesgo de tasa de interés.</p>
+      </div>
+      <div class="todo"><b>Además:</b> incorporar en la tabla de la nota 7.1 una columna o nota al pie que identifique, para cada <em>Cross Currency Swap</em>, si la operación fija también la tasa de interés del financiamiento subyacente. Si el efecto de conversión a tasa fija <em>no</em> existe, entonces debe eliminarse esa mención en 5.1.2 y recalcularse el 24,89% de deuda a tasa variable, que en la nota se presenta ya neto de dicho efecto.</div>
+    </div>
+  </div>
+</article>
+
+<!-- A.2.b -->
+<article class="ficha s-ok">
+  <header>
+    <div class="idline">
+      <span class="obsref">A.2.b</span>
+      <h3>Consistencia entre la deuda en UF sin cobertura y los derivados por unidad de reajuste</h3>
+      <div class="norms"><span class="norm">Nota 5.1.1</span><span class="norm">Nota 7.1</span></div>
+    </div>
+    <span class="chip s-ok">Cumple</span>
+  </header>
+  <div class="body">
+    <div class="block">
+      <span class="blabel">Qué exige la CMF</span>
+      <p>La nota de riesgos informaba que la deuda en UF no estaba cubierta, mientras la nota de otros activos financieros revelaba un activo por derivados de cobertura para la «Unidad de reajuste». Debe hacerse consistente.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Situación en el EE.FF. 06-2026</span>
+      <p>Resuelto. En la nota 7.1 desapareció la fila «Unidad de reajuste»: tanto el saldo al 30-06-2026 como el comparativo al 31-12-2025 <span class="fig">(M$ 2.531.040)</span> se presentan ahora como cobertura de «Tipo de cambio». El texto explica que el derivado en UF asociado al bono BCGEI-M N° 916 y el propio bono vencieron el 1 de diciembre de 2025, por lo que no correspondió renovar la cobertura. Esto es coherente con la nota 5.1.1, que informa un <span class="fig">48,20%</span> de deuda financiera en UF sin instrumento de cobertura.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Reparo menor de trazabilidad</span>
+      <p>La CMF tiene a la vista la versión anterior, donde ese mismo saldo comparativo estaba etiquetado como «Unidad de reajuste». El cambio de etiqueta del comparativo no está explicado y puede leerse como una reclasificación no revelada.</p>
+    </div>
+    <div class="prop">
+      <div class="plabel">Texto propuesto <span>— nota al pie de la tabla de activos de cobertura, nota 7.1</span></div>
+      <div class="draft">
+        <p>El saldo comparativo al 31 de diciembre de 2025 se presenta bajo el tipo de cobertura «Tipo de cambio», corrigiendo la clasificación informada en estados financieros anteriores. La modificación afecta únicamente la descripción del tipo de cobertura y no altera los montos, la clasificación entre corriente y no corriente, ni los resultados reconocidos en el período.</p>
+      </div>
+    </div>
+  </div>
+</article>
+
+<!-- A.3.a i -->
+<article class="ficha s-warn">
+  <header>
+    <div class="idline">
+      <span class="obsref">A.3.a &middot; i</span>
+      <h3>Desglose corriente y no corriente de los «Deudores varios»</h3>
+      <div class="norms"><span class="norm">Nota 8.1.2</span></div>
+    </div>
+    <span class="chip s-warn">Cumple con reparo</span>
+  </header>
+  <div class="body">
+    <div class="block">
+      <span class="blabel">Qué exige la CMF</span>
+      <p>Desglosar los montos corrientes y no corrientes correspondientes a cada uno de los conceptos que originan los «Deudores varios» — Leyes 21.185 y 21.472, reliquidaciones del Decreto 5T-2024, entre otros.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Situación en el EE.FF. 06-2026</span>
+      <p>La nota (*) identifica tres conceptos con montos: mecanismos de estabilización de las Leyes 21.185 / 21.472 / 21.667, reliquidación del Decreto 5T-2024 y proceso tarifario VAD. <strong>La parte no corriente cierra exacta</strong>: <span class="fig">135.688.042 + 297.020.680 + 173.639.706 = 606.348.428</span>, igual al saldo del cuadro.</p>
+      <p>La parte corriente no cierra. Solo se desglosan <span class="fig">M$ 238.169.651</span> de un total de <span class="fig">M$ 262.969.174</span>, quedando <strong><span class="fig">M$ 24.799.523</span> (9,4%) sin identificar</strong>. Adicionalmente, para el Decreto 5T-2024 y el VAD solo se informa saldo no corriente, sin señalar que la porción corriente es cero.</p>
+    </div>
+    <div class="prop">
+      <div class="plabel">Texto propuesto <span>— sustituir la nota (*) por un cuadro que cierre contra el rubro</span></div>
+      <div class="draft">
+        <p class="h">(*) Detalle de «Deudores varios» por concepto:</p>
+      </div>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Concepto</th><th>Corrientes 30-06-2026 M$</th><th>No corrientes 30-06-2026 M$</th></tr></thead>
+          <tbody>
+            <tr><td>Mecanismos de estabilización de tarifas — Leyes N° 21.185, N° 21.472 y N° 21.667</td><td class="figs">238.169.651</td><td class="figs">135.688.042</td></tr>
+            <tr><td>Reliquidación tarifaria Decreto N° 5T-2024, incluidos intereses del art. 192° LGSE</td><td class="figs">—</td><td class="figs">297.020.680</td></tr>
+            <tr><td>Proceso tarifario VAD noviembre 2024 – noviembre 2030</td><td class="figs">—</td><td class="figs">173.639.706</td></tr>
+            <tr><td>Otros conceptos, individualmente no significativos</td><td class="figs">24.799.523</td><td class="figs">—</td></tr>
+            <tr><td><strong>Total Deudores varios</strong></td><td class="figs"><strong>262.969.174</strong></td><td class="figs"><strong>606.348.428</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="todo"><b>Pendiente de dato:</b> abrir con Contabilidad los <span class="fig">M$ 24.799.523</span> corrientes. Si dentro de ese saldo hay un concepto relevante, debe abrirse en línea propia en vez de dejarlo en «Otros». Replicar el cuadro con la columna comparativa al 31-12-2025 <span class="fig">(246.097.079 / 643.732.662)</span>.</div>
+    </div>
+  </div>
+</article>
+
+<!-- A.3.a ii -->
+<article class="ficha s-warn">
+  <header>
+    <div class="idline">
+      <span class="obsref">A.3.a &middot; ii</span>
+      <h3>Mismo desglose en cuentas por pagar comerciales y otras cuentas por pagar</h3>
+      <div class="norms"><span class="norm">Nota 21</span></div>
+    </div>
+    <span class="chip s-warn">Cumple con reparo</span>
+  </header>
+  <div class="body">
+    <div class="block">
+      <span class="blabel">Qué exige la CMF</span>
+      <p>Aplicar el mismo desglose por concepto, corriente y no corriente, a las cuentas por pagar informadas en la nota respectiva.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Situación en el EE.FF. 06-2026</span>
+      <p>La nota (*) de «Proveedores de energía y otros eléctricos» abre los rezagos de pago por el mecanismo de estabilización: Ley 21.185 por <span class="fig">M$ 235.707.561</span> corriente y <span class="fig">M$ 114.876.787</span> no corriente, y Leyes 21.472 y 21.667 por <span class="fig">M$ 51.584.021</span> corriente.</p>
+      <p>La cobertura es claramente insuficiente frente al saldo del rubro. En la porción corriente se explican <span class="fig">M$ 287.291.582</span> de <span class="fig">M$ 487.494.713</span>: quedan <strong><span class="fig">M$ 200.203.131</span> sin desglosar, el 41,1% del saldo</strong>. En la no corriente quedan <span class="fig">M$ 3.528.257</span> sin identificar. Es la brecha más expuesta de todo el paquete: la CMF pidió el desglose precisamente por esta partida.</p>
+    </div>
+    <div class="prop">
+      <div class="plabel">Texto propuesto <span>— sustituir la nota (*) de la nota 21</span></div>
+      <div class="draft">
+        <p class="h">(*) Detalle de «Proveedores de energía y otros eléctricos» por concepto:</p>
+      </div>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Concepto</th><th>Corrientes 30-06-2026 M$</th><th>No corrientes 30-06-2026 M$</th></tr></thead>
+          <tbody>
+            <tr><td>Rezagos de pago por compras de energía — mecanismo de estabilización Ley N° 21.185</td><td class="figs">235.707.561</td><td class="figs">114.876.787</td></tr>
+            <tr><td>Rezagos de pago por compras de energía — Leyes N° 21.472 y N° 21.667</td><td class="figs">51.584.021</td><td class="figs">—</td></tr>
+            <tr><td>Facturación corriente por compras de energía y potencia y peajes de transmisión</td><td class="figs">[completar]</td><td class="figs">[completar]</td></tr>
+            <tr><td>Otros conceptos, individualmente no significativos</td><td class="figs">[completar]</td><td class="figs">[completar]</td></tr>
+            <tr><td><strong>Total Proveedores de energía y otros eléctricos</strong></td><td class="figs"><strong>487.494.713</strong></td><td class="figs"><strong>118.405.044</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="todo"><b>Pendiente de dato:</b> las dos líneas marcadas deben sumar <span class="fig">M$ 200.203.131</span> corrientes y <span class="fig">M$ 3.528.257</span> no corrientes. Solicitar la apertura a Contabilidad. Añadir la columna comparativa al 31-12-2025 <span class="fig">(496.419.628 / 219.407.434)</span> y evaluar si «Acreedores varios» <span class="fig">(M$ 28.139.024)</span> requiere una apertura equivalente, ya que la observación se refiere al rubro completo, no solo a proveedores de energía.</div>
+    </div>
+  </div>
+</article>
+
+<!-- A.3.b i -->
+<article class="ficha s-ok">
+  <header>
+    <div class="idline">
+      <span class="obsref">A.3.b &middot; i</span>
+      <h3>Datos de entrada, supuestos, métodos y forma de aplicación de la matriz de pérdida esperada</h3>
+      <div class="norms"><span class="norm">NIIF 7.35G</span><span class="norm">Nota 8.1.4</span></div>
+    </div>
+    <span class="chip s-ok">Cumple</span>
+  </header>
+  <div class="body">
+    <div class="block">
+      <span class="blabel">Qué exige la CMF</span>
+      <p>Revelar los datos de entrada, supuestos y métodos usados para determinar la matriz de pérdida esperada, y la forma en que se aplica — por cliente, por documento u otro concepto.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Situación en el EE.FF. 06-2026</span>
+      <p>Cubierto con holgura. La nota incorpora el método <span class="fig">ECL = PD × LGD × EAD</span> descontado a la tasa de interés efectiva original conforme al párrafo 5.5.17 de NIIF 9, el enfoque simplificado por vida completa, y responde de forma expresa la pregunta de la CMF: <span class="quote">«La matriz se aplica por documento, esto es, cada factura se asigna al tramo de antigüedad que le corresponde a la fecha de cierre y se multiplica por la tasa de pérdida esperada del tramo respectivo del cluster al que pertenece el cliente».</span></p>
+      <p>Los inputs quedan identificados —facturación y recaudación mensual por cluster desde los sistemas comerciales, incobrabilidad efectivamente materializada, histórico de efectividad del corte de suministro y variables macroeconómicas externas— así como los supuestos: ratio histórico de pérdida ponderado, PD estimada sobre ventana superior a 24 meses en trece tramos de antigüedad desde «En plazo» hasta «Más de 1.080 días», y ajuste prospectivo por correlación estadística superior al 50% con fuentes citadas (IPoM del Banco Central para IPC y PIB, INE para desempleo, Banco Central para IPDEGA), bajo tres escenarios ponderados 30% / 40% / 30%.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Sugerencia, no exigida por el oficio</span>
+      <p>No se revela el efecto cuantitativo del ajuste prospectivo ni una sensibilidad de la PD. Es la pregunta natural de seguimiento de la CMF en el próximo ciclo; conviene tener el dato preparado aunque no se incorpore ahora.</p>
+    </div>
+  </div>
+</article>
+
+<!-- A.3.b ii -->
+<article class="ficha s-warn">
+  <header>
+    <div class="idline">
+      <span class="obsref">A.3.b &middot; ii</span>
+      <h3>Agrupación de los deudores para la medición colectiva</h3>
+      <div class="norms"><span class="norm">NIIF 7.35F(c)</span><span class="norm">Nota 8.1.4</span></div>
+    </div>
+    <span class="chip s-warn">Cumple con reparo</span>
+  </header>
+  <div class="body">
+    <div class="block">
+      <span class="blabel">Qué exige la CMF</span>
+      <p>Indicar la manera en que se agruparon los deudores comerciales para medir las pérdidas crediticias esperadas sobre base colectiva.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Situación en el EE.FF. 06-2026</span>
+      <p>La nota define siete clusters con su criterio de asignación: Municipal-Fiscal, Residenciales, Convenio Especial, PYME, Comercial-Industrial, Mercado Eléctrico y Otros Negocios, y aclara que cada uno tiene un modelo ECL independiente con curvas de default y de recupero propias. La exigencia queda cubierta.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Reparo</span>
+      <p>Los nombres no se mantienen a lo largo de la nota. Al describir el ajuste prospectivo aparecen «Cluster PRC/Vulnerables» y «Cluster Empresa/Industria», que no figuran en la lista de siete definida más arriba, mientras que «Convenio Especial» y «Comercial-Industrial» no reaparecen. Un lector no puede mapear los clusters con su variable macroeconómica, y esa es una observación fácil de recibir.</p>
+    </div>
+    <div class="prop">
+      <div class="plabel">Texto propuesto <span>— homologar la nomenclatura en el bloque de ajuste prospectivo</span></div>
+      <div class="draft">
+        <ul>
+          <li>Clusters Residenciales, Municipal-Fiscal y Otros Negocios: el ajuste prospectivo se calibra en función del IPC proyectado, variable que exhibe la mayor correlación con la pérdida histórica de estos segmentos (entre 55% y 71%).</li>
+          <li>Cluster Convenio Especial: la variable de referencia es la tasa de desempleo nacional, con una correlación del 86% respecto de la pérdida histórica, lo que refleja la mayor sensibilidad de este segmento al deterioro del mercado laboral.</li>
+          <li>Cluster Comercial-Industrial: el ajuste se calibra en función del IPDEGA, con una correlación del 74%, capturando la exposición de estos clientes a variaciones en los costos del sector energético.</li>
+          <li>Clusters PYME y Mercado Eléctrico: dado que ninguna variable macroeconómica supera el umbral de correlación estadística del 50%, no se aplica ajuste cuantitativo prospectivo, quedando sujeto a evaluación cualitativa de la Administración.</li>
+        </ul>
+      </div>
+      <div class="todo"><b>Validar con el equipo de riesgo</b> que «PRC/Vulnerables» corresponde efectivamente a «Convenio Especial» y «Empresa/Industria» a «Comercial-Industrial». Si son agrupaciones distintas, hay que incorporarlas a la lista de clusters en lugar de renombrarlas.</div>
+    </div>
+  </div>
+</article>
+
+<!-- A.3.b iii -->
+<article class="ficha s-gap">
+  <header>
+    <div class="idline">
+      <span class="obsref">A.3.b &middot; iii</span>
+      <h3>Tratamiento de los clientes repactados y política para dejar esa clasificación</h3>
+      <div class="norms"><span class="norm">NIIF 7</span><span class="norm">Nota 8.1.4</span></div>
+    </div>
+    <span class="chip s-gap">No cumple</span>
+  </header>
+  <div class="body">
+    <div class="block">
+      <span class="blabel">Qué exige la CMF</span>
+      <p>Explicar el tratamiento de los clientes repactados para efectos de la estimación de deterioro, <strong>incluyendo las políticas para que un cliente deje dicha clasificación</strong>.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Situación en el EE.FF. 06-2026</span>
+      <p>La primera mitad está resuelta: se explica que los clientes con convenios de pago o repactaciones no reciben tratamiento diferenciado en la determinación de las pérdidas esperadas, salvo los incluidos en el cluster «Convenio Especial», y se da la lógica contable —la repactación reprograma flujos pero no extingue ni transforma sustancialmente el activo original, de modo que la cuenta permanece en el mismo cluster con igual PD y LGD.</p>
+      <p><strong>La segunda mitad no está.</strong> No hay ninguna política de salida. Lo más cercano es la definición del cluster «Convenio Especial», que describe lo contrario: «Al finalizar el convenio se volverá a entregar otro convenio tantas veces como sea necesario hasta extinguir la deuda». Eso es permanencia, no salida. La omisión es visible porque la clasificación sí opera en los estados financieros: las notas 8.2, 8.3 y 8.5 estratifican y provisionan por separado la cartera repactada y la no repactada, sin definir en ningún punto cuándo una cuenta entra y cuándo sale de esa condición.</p>
+    </div>
+    <div class="prop">
+      <div class="plabel">Texto propuesto <span>— agregar tras el párrafo «La lógica de esta decisión…» de la nota 8.1.4</span></div>
+      <div class="draft">
+        <p class="h">Ingreso y salida de la condición de cartera repactada.</p>
+        <p>Una cuenta por cobrar se clasifica como cartera repactada desde el momento en que el cliente suscribe un convenio de pago sobre deuda vencida y mientras dicho convenio se mantenga vigente. La suscripción del convenio no modifica el cluster de riesgo al que pertenece el cliente ni los parámetros de probabilidad de incumplimiento y pérdida dado el incumplimiento aplicables a su segmento.</p>
+        <p>Un cliente deja la condición de cartera repactada cuando se verifica alguna de las siguientes situaciones:</p>
+        <ul>
+          <li>El pago íntegro de las cuotas comprometidas, con lo cual el convenio se extingue y el saldo remanente del cliente, de existir, retorna a la cartera no repactada en el tramo de antigüedad que corresponda a su facturación vigente.</li>
+          <li>El incumplimiento del convenio conforme a las condiciones pactadas, caso en el cual el convenio caduca, la deuda se reincorpora a la cartera no repactada conservando la antigüedad original de los documentos que le dieron origen, y queda sujeta a las acciones de cobranza y, en su caso, de suspensión de suministro previstas en la normativa eléctrica.</li>
+          <li>El castigo contable del saldo, conforme a la política descrita más adelante en esta nota.</li>
+        </ul>
+        <p>La salida de la condición de repactado no origina por sí sola una reversión de la provisión por deterioro: la cuenta continúa medida bajo el modelo de pérdidas crediticias esperadas del cluster al que pertenece el cliente, según el tramo de antigüedad que le corresponda a la fecha de cierre.</p>
+      </div>
+      <div class="todo"><b>Validar antes de incorporar:</b> confirmar con Cobranzas el tratamiento efectivo de la antigüedad al caducar un convenio —si la deuda vuelve con antigüedad original o se reinicia el conteo—, porque de ello depende la PD aplicada y la redacción debe reflejar el comportamiento real del sistema, no el deseable.</div>
+    </div>
+  </div>
+</article>
+
+<!-- A.3.c -->
+<article class="ficha s-warn">
+  <header>
+    <div class="idline">
+      <span class="obsref">A.3.c</span>
+      <h3>Partidas que componen el «(Aumento) disminución del período o ejercicio»</h3>
+      <div class="norms"><span class="norm">NIIF 7.35H</span><span class="norm">NIIF 7.35I</span><span class="norm">NIIF 7 B8D</span><span class="norm">Nota 8.1.4</span></div>
+    </div>
+    <span class="chip s-warn">Cumple con reparo</span>
+  </header>
+  <div class="body">
+    <div class="block">
+      <span class="blabel">Qué exige la CMF</span>
+      <p>Explicar las partidas que componen ese concepto, indicando las causas o factores que influyeron en ellas — cambios en la composición de la cartera, en la morosidad y en las repactaciones.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Situación en el EE.FF. 06-2026</span>
+      <p>Se agregó un párrafo con cuatro factores: cambios en la composición de la cartera vía facturación por cluster que mueve la base sobre la que se aplica la PD; variaciones de morosidad por traslado de saldos entre tramos; efecto de las repactaciones; y los castigos del período. La parte de «causas o factores» queda razonablemente respondida.</p>
+      <p>Quedan dos flancos abiertos. Primero, la CMF pidió antes que nada <strong>explicar las partidas que componen dicho concepto</strong>, y el monto de <span class="fig">M$ (10.717.277)</span> sigue presentándose como una sola cifra sin apertura. Segundo, el párrafo enumera los castigos como componente del «(Aumento) disminución», pero el mismo cuadro tiene una línea separada, «Baja (reversiones) de deudores comerciales y otras cuentas por cobrar deterioradas del período», por <span class="fig">M$ (1.160.102)</span>. Si los castigos se imputan en esa línea, el texto contradice el cuadro.</p>
+    </div>
+    <div class="prop">
+      <div class="plabel">Texto propuesto <span>— cuadro de apertura a continuación del movimiento de la provisión</span></div>
+      <div class="draft">
+        <p>El detalle de las partidas que componen el «(Aumento) disminución del período o ejercicio» es el siguiente:</p>
+      </div>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Partida</th><th>30-06-2026 M$</th><th>31-12-2025 M$</th></tr></thead>
+          <tbody>
+            <tr><td>Efecto de la variación en el volumen de cartera bruta por cluster</td><td class="figs">[completar]</td><td class="figs">[completar]</td></tr>
+            <tr><td>Efecto del cambio en la distribución de la cartera entre tramos de morosidad</td><td class="figs">[completar]</td><td class="figs">[completar]</td></tr>
+            <tr><td>Efecto de las repactaciones y convenios del período</td><td class="figs">[completar]</td><td class="figs">[completar]</td></tr>
+            <tr><td>Efecto de la actualización de parámetros del modelo (PD, LGD y ajuste prospectivo)</td><td class="figs">[completar]</td><td class="figs">[completar]</td></tr>
+            <tr><td><strong>(Aumento) disminución del período o ejercicio</strong></td><td class="figs"><strong>(10.717.277)</strong></td><td class="figs"><strong>(52.439.755)</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="todo"><b>Corregir además la redacción:</b> eliminar el punto iv) referido a los castigos del párrafo explicativo del «(Aumento) disminución» y trasladarlo a la explicación de la línea «Baja (reversiones)», o bien confirmar en qué línea se imputan efectivamente los castigos y alinear ambos textos. Hoy el cuadro y el párrafo dicen cosas distintas.</div>
+    </div>
+  </div>
+</article>
+
+<!-- A.3.d -->
+<article class="ficha s-ok">
+  <header>
+    <div class="idline">
+      <span class="obsref">A.3.d</span>
+      <h3>Política de castigos para efectos financieros</h3>
+      <div class="norms"><span class="norm">NIIF 7.35F(e)</span><span class="norm">Nota 8.1.4</span></div>
+    </div>
+    <span class="chip s-ok">Cumple</span>
+  </header>
+  <div class="body">
+    <div class="block">
+      <span class="blabel">Qué exige la CMF</span>
+      <p>Describir la política de castigos para efectos financieros, incluyendo los indicadores de que no hay expectativas razonables de recuperación. La nota anterior solo se refería a los castigos tributarios.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Situación en el EE.FF. 06-2026</span>
+      <p>Se incorporó el apartado «Castigos de deudores incobrables», que resuelve la observación: define el hecho gatillante —agotadas las instancias de cobranza y sin expectativas razonables de recuperación total o parcial—, entrega el indicador para la cartera masiva —antigüedad superior a 36 meses junto al resultado de las gestiones de cobranza y los antecedentes de recuperabilidad—, aclara que el castigo se imputa contra la provisión previamente constituida, y distingue el caso de cobranza judicial, donde la antigüedad no basta y la baja se produce al cerrarse el juicio con el certificado de castigo. El párrafo de castigos tributarios se mantiene, ahora claramente diferenciado del castigo financiero.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Sugerencia menor</span>
+      <p>NIIF 7.35F(e) se lee junto con el tratamiento de los activos castigados que aún son objeto de cobranza. Una frase cierra el punto por completo.</p>
+    </div>
+    <div class="prop">
+      <div class="plabel">Texto propuesto <span>— agregar al final del apartado de castigos</span></div>
+      <div class="draft">
+        <p>Los activos financieros castigados continúan sujetos a gestiones de cobranza cuando existen antecedentes que lo justifican. Las recuperaciones obtenidas con posterioridad al castigo se reconocen en resultados del período en que se perciben, como una disminución del gasto por deterioro.</p>
+      </div>
+    </div>
+  </div>
+</article>
+
+<!-- A.4 -->
+<article class="ficha s-ok">
+  <header>
+    <div class="idline">
+      <span class="obsref">A.4</span>
+      <h3>Desglose de los conceptos que componen «Otras reservas»</h3>
+      <div class="norms"><span class="norm">NIC 1.79(b)</span><span class="norm">Nota 26.6.3</span></div>
+    </div>
+    <span class="chip s-ok">Cumple, con dos errores de presentación</span>
+  </header>
+  <div class="body">
+    <div class="block">
+      <span class="blabel">Qué exige la CMF</span>
+      <p>Desglosar los conceptos que componen las otras reservas y su respectivo monto, según su naturaleza. La nota anterior solo decía que se incluían reservas reconocidas de inversiones en subsidiarias, asociadas y negocios de control conjunto.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Situación en el EE.FF. 06-2026</span>
+      <p>El desglose se incorporó y es completo: nueve conceptos identificados con su monto y su fecha —reservas de la ex matriz GNF Chile hasta su fusión en 2016, asignación por la división con CGE Gas Natural, canjes de acciones a participaciones no controladoras por las fusiones de 2016, 2017 y 2018, compra de minoritarios de Sociedad de Computación Binaria, reclasificación de reservas históricas de conversión, asignación por la división con CGE Transmisión y el ajuste por política de revaluación de filiales 2009-2014. La exigencia de fondo está cubierta.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Dos errores que hay que corregir</span>
+      <ul>
+        <li><strong>Signo invertido.</strong> El cuadro de la nota suma <span class="fig">+103.785.672</span>, pero el Estado de Cambios en el Patrimonio presenta «Otras reservas varias» en <span class="fig">(103.785.672)</span>, negativo, tanto al 01-01-2025 como al 01-01-2026 y al 30-06-2026. La nota no reconcilia con el estado primario. Publicar un desglose cuyo total tiene signo contrario al del estado financiero es una observación garantizada.</li>
+        <li><strong>Encabezado de columna errado.</strong> La tabla titula las columnas de saldo como «Corrientes», concepto inaplicable a una partida patrimonial. Es un arrastre de otra plantilla.</li>
+      </ul>
+    </div>
+    <div class="prop">
+      <div class="plabel">Texto propuesto <span>— corrección de la tabla 26.6.3 y frase de cierre</span></div>
+      <div class="draft">
+        <ul>
+          <li>Reemplazar el encabezado «Corrientes» por «30-06-2026 M$ / 31-12-2025 M$», sin clasificación corriente.</li>
+          <li>Invertir el signo de los nueve conceptos de modo que el total sea <span class="fig">(103.785.672)</span>, coincidente con la columna «Otras reservas varias» del Estado de Cambios en el Patrimonio.</li>
+          <li>Agregar como cierre del cuadro:</li>
+        </ul>
+        <p>El saldo total de este cuadro corresponde a la columna «Otras reservas varias» presentada en el Estado Consolidado Intermedio de Cambios en el Patrimonio Neto. Estas reservas no han presentado movimientos durante los períodos terminados al 30 de junio de 2026 y al 31 de diciembre de 2025.</p>
+      </div>
+      <div class="todo"><b>Verificar antes de invertir:</b> confirmar con Consolidación cuál de las dos presentaciones tiene el signo correcto. Si el estado primario es el que está mal, la corrección va allí y no en la nota — pero las dos no pueden convivir.</div>
+    </div>
+  </div>
+</article>
+
+<!-- A.5 -->
+<article class="ficha s-warn">
+  <header>
+    <div class="idline">
+      <span class="obsref">A.5</span>
+      <h3>Diferenciación entre casos provisionados y pasivos contingentes</h3>
+      <div class="norms"><span class="norm">NIC 37</span><span class="norm">NIC 37.86</span><span class="norm">Nota 34</span></div>
+    </div>
+    <span class="chip s-warn">Cumple con reparo</span>
+  </header>
+  <div class="body">
+    <div class="block">
+      <span class="blabel">Qué exige la CMF</span>
+      <p>Diferenciar los casos provisionados de los que corresponden a pasivos contingentes no contabilizados, y revelar para estos últimos la información del párrafo 86 de la NIC 37.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Situación en el EE.FF. 06-2026</span>
+      <p>La separación estructural está hecha. La nota 34.1 agrupa los juicios con provisión constituida —<span class="fig">M$ 5.418.841</span> al 30-06-2026, más <span class="fig">M$ 10.407.572</span> por juicios laborales—, la 34.2 agrupa los pasivos contingentes con la declaración de que «el Grupo no ha constituido provisiones, el estado del proceso no permite estimar como probable que el Grupo resulte obligado en los términos demandados», y la 34.3 las sanciones administrativas con provisión de <span class="fig">M$ 23.367.034</span>.</p>
+      <p>Falta la segunda parte de la observación. Del párrafo 86 solo se cumple con holgura el literal (a), descripción de la naturaleza. Sobre el literal (b), varias causas registran «Cuantía: Indeterminada» sin acogerse expresamente a la excepción del párrafo 91 ni señalar por qué el efecto financiero no puede estimarse. Del literal (c) solo se cubre la incertidumbre de calendario —«no es posible determinar un calendario razonable de fechas de pago»—, no la del importe. El literal (d), posibilidad de reembolsos, no se menciona en ninguna parte, pese a que una compañía de distribución eléctrica con demandas de responsabilidad civil extracontractual razonablemente cuenta con pólizas.</p>
+      <p>Además, el título «34.1.- Juicios y otras acciones legales» no dice que ese sea el bloque de los provisionados. Si la CMF pidió diferenciar, la diferenciación conviene que se lea desde el índice.</p>
+    </div>
+    <div class="prop">
+      <div class="plabel">Texto propuesto <span>— encabezados y párrafo de cierre de la nota 34.2</span></div>
+      <div class="draft">
+        <p class="h">1. Renombrar los apartados:</p>
+        <ul>
+          <li>34.1.- Juicios y otras acciones legales con provisión constituida.</li>
+          <li>34.2.- Pasivos contingentes no provisionados.</li>
+        </ul>
+        <p class="h">2. Reemplazar el cierre de la nota 34.2 por:</p>
+        <p>En relación con los litigios descritos en este apartado, el Grupo no ha constituido provisiones por cuanto el estado de tramitación de cada proceso no permite calificar como probable que resulte obligado en los términos demandados. En consecuencia, corresponden a pasivos contingentes que no han sido reconocidos en el estado de situación financiera, conforme a lo establecido en la NIC 37.</p>
+        <p>La estimación del efecto financiero de estos pasivos contingentes corresponde, cuando se informa, a la cuantía demandada, la que no representa necesariamente el desembolso que eventualmente deba efectuarse. Respecto de aquellas causas cuya cuantía se indica como indeterminada, el demandante no ha cuantificado su pretensión o ésta queda entregada a la determinación del tribunal, por lo que no resulta practicable efectuar una estimación fiable de su efecto financiero.</p>
+        <p>El importe y la oportunidad de una eventual salida de recursos dependen del resultado de los procesos judiciales en curso, del ejercicio de los recursos procesales disponibles y de los plazos de tramitación de los tribunales, circunstancias que están fuera del control del Grupo. Por esta razón, no es posible determinar un calendario razonable de fechas de pago ni un rango fiable de importes, si en su caso los hubiere.</p>
+        <p>El Grupo mantiene pólizas de seguro de responsabilidad civil que podrían cubrir parcialmente los desembolsos derivados de determinadas causas de responsabilidad civil extracontractual. Al 30 de junio de 2026 no se han reconocido activos por reembolso, por cuanto su recepción no se considera prácticamente cierta en los términos de la NIC 37.</p>
+      </div>
+      <div class="todo"><b>Validar con Legal y con el corredor de seguros</b> el alcance real de la cobertura antes de incorporar el último párrafo. Si no existen pólizas aplicables, debe decirse eso expresamente en lugar de omitir el literal (d).</div>
+    </div>
+  </div>
+</article>
+
+<!-- ============ B ============ -->
+<div class="secthead"><h2>B. Análisis razonado</h2><span class="note">NCG N° 30, Sección II, N° 2.1, punto A.4, letra e)</span></div>
+
+<article class="ficha s-info">
+  <header>
+    <div class="idline">
+      <span class="obsref">B.1.a — B.1.c</span>
+      <h3>Las tres observaciones de análisis razonado no se resuelven en este archivo</h3>
+      <div class="norms"><span class="norm">NCG 30</span><span class="norm">Documento separado</span></div>
+    </div>
+    <span class="chip s-info">Fuera de alcance</span>
+  </header>
+  <div class="body">
+    <div class="block">
+      <span class="blabel">Verificación efectuada</span>
+      <p>El archivo E200 revisado contiene únicamente los estados financieros consolidados intermedios y sus notas. Se buscaron expresamente y no existen: la sección de indicadores financieros con «Liquidez Corriente», «Razón Ácida» y «Cobertura de Gastos Financieros Netos»; el «Análisis del Estado Consolidado de Flujo de Efectivo Directo»; y la sección «Áreas de Negocios de CGE». Las tres observaciones deben resolverse en el Análisis Razonado, que se presenta como documento separado y debe revisarse aparte antes del envío.</p>
+    </div>
+    <div class="block">
+      <span class="blabel">Qué debe contener cada una</span>
+      <ul>
+        <li><strong>B.1.a — Indicadores.</strong> Incorporar bajo cada indicador la fórmula empleada: Liquidez Corriente como activos corrientes totales sobre pasivos corrientes totales; Razón Ácida como activos corrientes totales menos inventarios y menos activos por impuestos corrientes, sobre pasivos corrientes totales; Cobertura de Gastos Financieros Netos como resultado antes de impuestos más gastos financieros, sobre gastos financieros netos de ingresos financieros. Para «Deuda Financiera Neta» hay que enumerar los conceptos que la conforman.</li>
+        <li><strong>B.1.b — Flujo de efectivo.</strong> Reescribir el análisis de la operación explicando <em>por qué</em> variaron los flujos —comportamiento de la recaudación, efecto de los rezagos de pago por los mecanismos de estabilización, calendario de pagos a generadores, efecto de las reliquidaciones tarifarias— en lugar de describir la composición de la variación.</li>
+        <li><strong>B.1.c — Áreas de negocios.</strong> Acompañar cada cifra de ventas físicas reguladas y operadas, número de clientes y pérdidas de electricidad con la explicación de las causas de su evolución: crecimiento vegetativo, comportamiento de la demanda por segmento, incorporación de clientes, y los planes de reducción de pérdidas.</li>
+      </ul>
+    </div>
+    <div class="prop">
+      <div class="plabel">Texto propuesto <span>— definición de Deuda Financiera Neta para B.1.a</span></div>
+      <div class="draft">
+        <p>«Deuda Financiera Neta» se determina como la suma de «Otros pasivos financieros corrientes» y «Otros pasivos financieros no corrientes», menos «Efectivo y equivalentes al efectivo».</p>
+      </div>
+      <div class="todo"><b>Consistencia:</b> ésta es exactamente la definición que el propio EE.FF. utiliza en la nota 20 para el cálculo de la Razón de Endeudamiento Financiero de las series de bonos BCGEI-I, J y K. Usar la misma en el Análisis Razonado evita que la CMF observe dos definiciones distintas para el mismo concepto en documentos del mismo cierre. Si el Análisis Razonado incorpora además las cuentas por pagar a entidades relacionadas, hay que decirlo y explicar la diferencia con la definición de covenants.</div>
+    </div>
+  </div>
+</article>
+
+<!-- ============ ORDEN DE TRABAJO ============ -->
+<div class="secthead"><h2>Orden de trabajo sugerido</h2><span class="note">De mayor a menor exposición</span></div>
+
+<div class="scroller">
+<table>
+  <thead><tr><th>#</th><th>Acción</th><th>Ref.</th><th>Depende de</th></tr></thead>
+  <tbody>
+    <tr><td class="figs">1</td><td>Resolver la contradicción sobre derivados de tasa de interés entre 5.1.2 y 7.1</td><td class="ref">A.2.a</td><td>Tesorería</td></tr>
+    <tr><td class="figs">2</td><td>Corregir el signo del cuadro de otras reservas y su encabezado</td><td class="ref">A.4</td><td>Consolidación</td></tr>
+    <tr><td class="figs">3</td><td>Redactar la política de entrada y salida de cartera repactada</td><td class="ref">A.3.b-iii</td><td>Cobranzas</td></tr>
+    <tr><td class="figs">4</td><td>Cerrar el desglose de proveedores de energía (M$ 200.203.131 corrientes)</td><td class="ref">A.3.a-ii</td><td>Contabilidad</td></tr>
+    <tr><td class="figs">5</td><td>Cerrar el desglose de deudores varios (M$ 24.799.523 corrientes)</td><td class="ref">A.3.a-i</td><td>Contabilidad</td></tr>
+    <tr><td class="figs">6</td><td>Abrir por partidas el «(Aumento) disminución» y alinear el tratamiento de castigos</td><td class="ref">A.3.c</td><td>Riesgo de crédito</td></tr>
+    <tr><td class="figs">7</td><td>Completar NIC 37.86 (b), (c) y (d) y renombrar los apartados de la nota 34</td><td class="ref">A.5</td><td>Legal / Seguros</td></tr>
+    <tr><td class="figs">8</td><td>Homologar los nombres de clusters dentro de la nota 8.1.4</td><td class="ref">A.3.b-ii</td><td>Riesgo de crédito</td></tr>
+    <tr><td class="figs">9</td><td>Separar los párrafos concatenados de la nota 5.1.2 en Workiva</td><td class="ref">A.2.a</td><td>—</td></tr>
+    <tr><td class="figs">10</td><td>Agregar frase de «sin cambios en técnicas de valoración» y nota de reclasificación del comparativo</td><td class="ref">A.1 · A.2.b</td><td>—</td></tr>
+    <tr><td class="figs">11</td><td>Revisar el Análisis Razonado contra las tres observaciones de la sección B</td><td class="ref">B.1</td><td>Estudios / Regulación</td></tr>
+  </tbody>
+</table>
+</div>
+
+<footer class="end">
+  <div>Fuentes: OF. ORD. CMF N° 95881 de 05-jun-2026, folio 2026958813453348 · E200 (ESP) EE.FF. 06-2026 Compañía General de Electricidad S.A. y subsidiarias.</div>
+  <div>Las cifras citadas se tomaron directamente de las notas del estado financiero revisado. Los textos propuestos son borradores para revisión de la Administración y de los auditores; los marcados «[completar]» requieren dato de origen antes de su incorporación.</div>
+</footer>
+
+</div>
