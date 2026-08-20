@@ -580,17 +580,79 @@ def _renombrar_periodo_en_nombre(nombre: str, mes_origen: int, anio_origen: int,
     return _quitar_sufijo_copia(nuevo)
 
 
+# ── Actualizar parametro TIME de las conexiones wdata (Query BPC / equiv.) ──
+# API distinta de las dos anteriores: Wdata (conexiones de datos), no
+# Platform. Base URL propia, sin X-Version.
+_WDATA_ROOT = "https://h.app.wdesk.com/s/wdata/prep/api/v1"
+
+
+async def _headers_wdata() -> dict[str, str]:
+    token = await _wk._get_token()
+    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+
+def _valor_time_periodo(mes: int, anio: int) -> str:
+    """Formato del parametro TIME de las conexiones wdata, tal como se ve en
+    el panel de Workiva: 'AAAA.MM' (ej. '2026.07'), NO 'MM.AAAA'."""
+    return f"{anio}.{mes:02d}"
+
+
+async def _actualizar_conexiones_time(spreadsheet_id: str, valor_origen: str,
+                                       valor_destino: str, log=None) -> dict:
+    """Busca, entre las conexiones wdata de un spreadsheet (destinationId),
+    las que tienen parametro TIME con el valor del periodo de ORIGEN
+    (ej. '2026.07') y las refresca con el TIME de DESTINO (ej. '2026.08'),
+    sin tocar el resto de los parametros (CATEGORY, SOCIEDAD, etc.). No
+    depende del nombre de la hoja/conexion ('Query BPC' en Individuales,
+    otro nombre en Consolidados) -- se identifica por el valor de TIME."""
+    client = await _wk._ensure_client()
+    r = await client.get(
+        f"{_WDATA_ROOT}/connections", headers=await _headers_wdata(),
+        params={"destinationId": spreadsheet_id, "destinationType": "spreadsheet"})
+    if r.status_code != 200:
+        return {"actualizadas": [], "sin_calzar": [f"(no se pudieron listar conexiones: HTTP {r.status_code})"]}
+
+    actualizadas: list[str] = []
+    sin_calzar: list[str] = []
+    for c in r.json().get("body", []):
+        params_actuales = c.get("lastRunSourceParameters") or {}
+        if params_actuales.get("TIME") != valor_origen:
+            continue
+        nuevos_params = dict(params_actuales)
+        nuevos_params["TIME"] = valor_destino
+        cid = c.get("connectionId")
+        nombre_conn = c.get("name") or "(sin nombre)"
+        rr = await client.post(
+            f"{_WDATA_ROOT}/connections/{cid}/refresh", headers=await _headers_wdata(),
+            json={
+                "connectionId": cid,
+                "sourceParameters": nuevos_params,
+                "usePreviousDestinationParameters": True,
+                "usePreviousSourceParameters": False,
+            })
+        if rr.status_code not in (200, 202):
+            sin_calzar.append(f"{nombre_conn} (fallo el refresh: HTTP {rr.status_code})")
+            continue
+        actualizadas.append(nombre_conn)
+        if log:
+            log(f"  Conexión actualizada: {nombre_conn} — TIME {valor_origen} -> {valor_destino}")
+    return {"actualizadas": actualizadas, "sin_calzar": sin_calzar}
+
+
 async def _renombrar_archivos_copiados(operation_id: str, mes_origen: int, anio_origen: int,
                                         mes_destino: int, anio_destino: int, log=None) -> dict:
-    """Recorre los archivos que devolvio la copia (copyFileResults) y les
-    reemplaza el periodo de origen por el de destino en el nombre, cuando lo
-    encuentra (ej. 'E200_CONSO_07-2026_Base Notas CGE' ->
-    '..._08-2026_...'). Los archivos cuyo nombre no contiene el periodo de
-    origen (formato distinto, sin fecha en el nombre, etc.) se dejan tal
-    cual y quedan listados para revisar/renombrar a mano."""
+    """Recorre los archivos que devolvio la copia (copyFileResults):
+    1) les reemplaza el periodo de origen por el de destino en el nombre,
+       cuando lo encuentra (ej. 'E200_CONSO_07-2026_Base Notas CGE' ->
+       '..._08-2026_...'). Los que no calzan quedan listados para revisar
+       a mano, nunca se les inventa un nombre.
+    2) en los spreadsheets, actualiza el parametro TIME de sus conexiones
+       wdata (ej. 'Query BPC') del periodo de origen al de destino."""
     client = await _wk._ensure_client()
     renombrados: list[str] = []
     sin_calzar: list[str] = []
+    conexiones_actualizadas: list[str] = []
+    conexiones_sin_calzar: list[str] = []
 
     url = f"{_API_ROOT_2026}/operations/{operation_id}/copyFileResults"
     params = {"$maxpagesize": 200}
@@ -604,6 +666,9 @@ async def _renombrar_archivos_copiados(operation_id: str, mes_origen: int, anio_
         if not next_link:
             break
         url, params = next_link, None
+
+    valor_time_origen  = _valor_time_periodo(mes_origen, anio_origen)
+    valor_time_destino = _valor_time_periodo(mes_destino, anio_destino)
 
     for item in resultados:
         if item.get("kind") == "Folder":
@@ -620,24 +685,40 @@ async def _renombrar_archivos_copiados(operation_id: str, mes_origen: int, anio_
             nombre_actual, mes_origen, anio_origen, mes_destino, anio_destino)
         if nuevo_nombre is None:
             sin_calzar.append(nombre_actual)
-            continue
-        rp = await client.patch(
-            f"{_API_ROOT_2026}/files/{fid}", headers=await _headers_2026(),
-            json=[{"op": "replace", "path": "/name", "value": nuevo_nombre}])
-        if rp.status_code not in (200, 202, 204):
-            sin_calzar.append(f"{nombre_actual} (fallo el renombrado: HTTP {rp.status_code})")
-            continue
-        renombrados.append(f"{nombre_actual} -> {nuevo_nombre}")
-        if log:
-            log(f"  Renombrado: {nombre_actual} -> {nuevo_nombre}")
+        else:
+            rp = await client.patch(
+                f"{_API_ROOT_2026}/files/{fid}", headers=await _headers_2026(),
+                json=[{"op": "replace", "path": "/name", "value": nuevo_nombre}])
+            if rp.status_code not in (200, 202, 204):
+                sin_calzar.append(f"{nombre_actual} (fallo el renombrado: HTTP {rp.status_code})")
+            else:
+                renombrados.append(f"{nombre_actual} -> {nuevo_nombre}")
+                if log:
+                    log(f"  Renombrado: {nombre_actual} -> {nuevo_nombre}")
+
+        if item.get("kind") == "Spreadsheet":
+            res_conn = await _actualizar_conexiones_time(
+                fid, valor_time_origen, valor_time_destino, log=log)
+            conexiones_actualizadas.extend(res_conn["actualizadas"])
+            conexiones_sin_calzar.extend(
+                f"{nombre_actual}: {s}" for s in res_conn["sin_calzar"])
 
     if log and sin_calzar:
         log(f"{len(sin_calzar)} archivo(s) sin el periodo de origen en el nombre "
             f"(no se tocaron, revisar manualmente):")
         for n in sin_calzar:
             log(f"  - {n}")
+    if log and conexiones_sin_calzar:
+        log(f"{len(conexiones_sin_calzar)} conexion(es) que no se pudieron "
+            f"actualizar (revisar manualmente):")
+        for n in conexiones_sin_calzar:
+            log(f"  - {n}")
 
-    return {"renombrados": renombrados, "sin_calzar": sin_calzar}
+    return {
+        "renombrados": renombrados, "sin_calzar": sin_calzar,
+        "conexiones_actualizadas": conexiones_actualizadas,
+        "conexiones_sin_calzar": conexiones_sin_calzar,
+    }
 
 
 class CopiaPeriodoError(Exception):
@@ -774,7 +855,9 @@ async def copiar_periodo(mes_destino: int, anio_destino: int,
                 op["id"], mes_origen, anio_origen, mes_destino, anio_destino, log=log)
             if log:
                 log(f"Listo: {len(resultado_rename['renombrados'])} archivo(s) renombrado(s), "
-                    f"{len(resultado_rename['sin_calzar'])} sin tocar.")
+                    f"{len(resultado_rename['sin_calzar'])} sin tocar. "
+                    f"{len(resultado_rename['conexiones_actualizadas'])} conexión(es) "
+                    f"actualizadas, {len(resultado_rename['conexiones_sin_calzar'])} sin actualizar.")
             return {"estado": "completed", "operation": op, **resultado_rename}
         if estado in ("failed", "cancelled"):
             raise CopiaPeriodoError(f"La copia terminó con estado '{estado}' en Workiva.")
