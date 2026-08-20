@@ -544,6 +544,83 @@ async def _buscar_hijo_por_nombre(container_id: Optional[str], nombre: str,
     return None
 
 
+def _patron_periodo(mes: int, anio: int) -> re.Pattern:
+    """Coincide con 'MM-AAAA', 'MM_AAAA' o 'MM.AAAA' (los tres separadores
+    vistos en nombres de archivo de esta app) para un mes/año dado."""
+    return re.compile(rf"{mes:02d}([-_.]){anio}")
+
+
+def _renombrar_periodo_en_nombre(nombre: str, mes_origen: int, anio_origen: int,
+                                  mes_destino: int, anio_destino: int) -> Optional[str]:
+    """Devuelve el nombre con el periodo de origen reemplazado por el de
+    destino (mismo separador que ya tenia), o None si el nombre NO contiene
+    el periodo de origen -- nunca se inventa un nombre nuevo a ciegas."""
+    patron = _patron_periodo(mes_origen, anio_origen)
+    if not patron.search(nombre):
+        return None
+    return patron.sub(lambda m: f"{mes_destino:02d}{m.group(1)}{anio_destino}", nombre)
+
+
+async def _renombrar_archivos_copiados(operation_id: str, mes_origen: int, anio_origen: int,
+                                        mes_destino: int, anio_destino: int, log=None) -> dict:
+    """Recorre los archivos que devolvio la copia (copyFileResults) y les
+    reemplaza el periodo de origen por el de destino en el nombre, cuando lo
+    encuentra (ej. 'E200_CONSO_07-2026_Base Notas CGE' ->
+    '..._08-2026_...'). Los archivos cuyo nombre no contiene el periodo de
+    origen (formato distinto, sin fecha en el nombre, etc.) se dejan tal
+    cual y quedan listados para revisar/renombrar a mano."""
+    client = await _wk._ensure_client()
+    renombrados: list[str] = []
+    sin_calzar: list[str] = []
+
+    url = f"{_API_ROOT_2026}/operations/{operation_id}/copyFileResults"
+    params = {"$maxpagesize": 200}
+    resultados: list[dict] = []
+    while True:
+        r = await client.get(url, headers=await _headers_2026(), params=params)
+        r.raise_for_status()
+        data = r.json()
+        resultados.extend(data.get("data", []))
+        next_link = data.get("@nextLink")
+        if not next_link:
+            break
+        url, params = next_link, None
+
+    for item in resultados:
+        if item.get("kind") == "Folder":
+            continue  # la carpeta ya quedo con su nombre via destinationName
+        fid = item.get("id")
+        if not fid:
+            continue
+        rf = await client.get(f"{_API_ROOT_2026}/files/{fid}", headers=await _headers_2026())
+        if rf.status_code != 200:
+            sin_calzar.append(f"(no se pudo leer el archivo {fid})")
+            continue
+        nombre_actual = rf.json().get("name", "")
+        nuevo_nombre = _renombrar_periodo_en_nombre(
+            nombre_actual, mes_origen, anio_origen, mes_destino, anio_destino)
+        if nuevo_nombre is None:
+            sin_calzar.append(nombre_actual)
+            continue
+        rp = await client.patch(
+            f"{_API_ROOT_2026}/files/{fid}", headers=await _headers_2026(),
+            json=[{"op": "replace", "path": "/name", "value": nuevo_nombre}])
+        if rp.status_code not in (200, 202, 204):
+            sin_calzar.append(f"{nombre_actual} (fallo el renombrado: HTTP {rp.status_code})")
+            continue
+        renombrados.append(f"{nombre_actual} -> {nuevo_nombre}")
+        if log:
+            log(f"  Renombrado: {nombre_actual} -> {nuevo_nombre}")
+
+    if log and sin_calzar:
+        log(f"{len(sin_calzar)} archivo(s) sin el periodo de origen en el nombre "
+            f"(no se tocaron, revisar manualmente):")
+        for n in sin_calzar:
+            log(f"  - {n}")
+
+    return {"renombrados": renombrados, "sin_calzar": sin_calzar}
+
+
 class CopiaPeriodoError(Exception):
     """Error de negocio (carpeta no encontrada, destino ya existe, etc.) --
     no un error tecnico de la API. Se muestra tal cual al usuario."""
@@ -672,8 +749,14 @@ async def copiar_periodo(mes_destino: int, anio_destino: int,
         estado = op.get("status", "")
         if estado == "completed":
             if log:
-                log("Copia completada en Workiva.")
-            return {"estado": "completed", "operation": op}
+                log("Copia completada en Workiva. Renombrando archivos copiados...")
+            mes_origen, anio_origen = periodo_origen(mes_destino, anio_destino)
+            resultado_rename = await _renombrar_archivos_copiados(
+                op["id"], mes_origen, anio_origen, mes_destino, anio_destino, log=log)
+            if log:
+                log(f"Listo: {len(resultado_rename['renombrados'])} archivo(s) renombrado(s), "
+                    f"{len(resultado_rename['sin_calzar'])} sin tocar.")
+            return {"estado": "completed", "operation": op, **resultado_rename}
         if estado in ("failed", "cancelled"):
             raise CopiaPeriodoError(f"La copia terminó con estado '{estado}' en Workiva.")
         espera = r2.headers.get("Retry-After", "")
