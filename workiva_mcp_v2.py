@@ -495,19 +495,31 @@ def periodo_origen(mes_destino: int, anio_destino: int) -> tuple[int, int]:
     """Determina que periodo hay que copiar segun la regla del usuario:
     - Meses de cierre trimestral (03, 06, 09, 12): se copia el trimestre
       anterior (ej. septiembre copia de junio, no de agosto).
-    - Resto de los meses: se copia el mes calendario inmediato anterior
-      (ej. agosto copia de julio).
-    En ambos casos se maneja el cruce de año (ej. enero copia de diciembre
+    - Resto de los meses: se copia el mes calendario anterior QUE TAMPOCO
+      sea cierre trimestral -- un cierre trimestral (dic, jun, mar, sep)
+      tiene una estructura distinta (año/trimestre cerrado) y no sirve de
+      base para un mes normal. Si el mes inmediato anterior es un cierre,
+      se sigue retrocediendo hasta encontrar uno que no lo sea (ej. enero
+      NO copia de diciembre -- copia de noviembre; abril NO copia de marzo
+      -- copia de febrero).
+    En ambos casos se maneja el cruce de año (ej. enero copia de noviembre
     del año anterior; marzo copia de diciembre del año anterior)."""
+    anio_origen = anio_destino
     if mes_destino in MESES_CIERRE_TRIMESTRE:
         mes_origen = mes_destino - 3
-    else:
-        mes_origen = mes_destino - 1
-    anio_origen = anio_destino
-    if mes_origen < 1:
-        mes_origen += 12
-        anio_origen -= 1
-    return mes_origen, anio_origen
+        if mes_origen < 1:
+            mes_origen += 12
+            anio_origen -= 1
+        return mes_origen, anio_origen
+
+    mes_origen = mes_destino
+    while True:
+        mes_origen -= 1
+        if mes_origen < 1:
+            mes_origen += 12
+            anio_origen -= 1
+        if mes_origen not in MESES_CIERRE_TRIMESTRE:
+            return mes_origen, anio_origen
 
 
 async def _listar_hijos(container_id: Optional[str], kind: str = "Folder") -> list[dict]:
