@@ -456,6 +456,234 @@ async def _load_all_files() -> dict[str, str]:
     return result
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# COPIAR PERIODO (carpetas mensuales/trimestrales) — modulo "Copiar Periodo"
+# ══════════════════════════════════════════════════════════════════════════════
+# Usa la API 2026-01-01 de Workiva (https://api.app.wdesk.com), DISTINTA de la
+# que usa el resto del motor (PLATFORM_URL = .../platform/v1, version 2022-01-01
+# via _wk._headers()). El endpoint de copia de la version 2022-01-01
+# (/prototype/platform/files/{id}/copy) esta DEPRECADO (sunset 2027-01-31);
+# el de 2026-01-01 (/files/{id}/copy) es el vigente y el unico con las
+# opciones necesarias (shallowCopy, outline labels, automations, etc.).
+# Referencia: https://developers.workiva.com/2026-01-01/copyfile.md
+
+_API_ROOT_2026 = "https://api.app.wdesk.com"
+
+MESES_NOMBRE = {
+    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
+    7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre",
+    12: "Diciembre",
+}
+MESES_CIERRE_TRIMESTRE = {3, 6, 9, 12}
+
+
+async def _headers_2026() -> dict[str, str]:
+    token = await _wk._get_token()
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type":  "application/json",
+        "X-Version":     "2026-01-01",
+    }
+
+
+def nombre_carpeta_periodo(mes: int, anio: int) -> str:
+    """Ej: nombre_carpeta_periodo(7, 2026) -> '07 Julio 2026'."""
+    return f"{mes:02d} {MESES_NOMBRE[mes]} {anio}"
+
+
+def periodo_origen(mes_destino: int, anio_destino: int) -> tuple[int, int]:
+    """Determina que periodo hay que copiar segun la regla del usuario:
+    - Meses de cierre trimestral (03, 06, 09, 12): se copia el trimestre
+      anterior (ej. septiembre copia de junio, no de agosto).
+    - Resto de los meses: se copia el mes calendario inmediato anterior
+      (ej. agosto copia de julio).
+    En ambos casos se maneja el cruce de año (ej. enero copia de diciembre
+    del año anterior; marzo copia de diciembre del año anterior)."""
+    if mes_destino in MESES_CIERRE_TRIMESTRE:
+        mes_origen = mes_destino - 3
+    else:
+        mes_origen = mes_destino - 1
+    anio_origen = anio_destino
+    if mes_origen < 1:
+        mes_origen += 12
+        anio_origen -= 1
+    return mes_origen, anio_origen
+
+
+async def _listar_hijos(container_id: Optional[str], kind: str = "Folder") -> list[dict]:
+    """Lista los hijos DIRECTOS de una carpeta (o de la raiz si container_id es
+    None), filtrados por 'kind'. Usa la API 2026-01-01 (GET /files), no el
+    _wk.get() del resto del motor (que apunta a /platform/v1, otra version)."""
+    client = await _wk._ensure_client()
+    contenedor = container_id if container_id else ""
+    filtro = f"container eq '{contenedor}' and kind eq '{kind}'"
+    url = f"{_API_ROOT_2026}/files"
+    params = {"$filter": filtro, "$maxpagesize": 200}
+    salida: list[dict] = []
+    while True:
+        r = await client.get(url, headers=await _headers_2026(), params=params)
+        r.raise_for_status()
+        data = r.json()
+        salida.extend(data.get("data", []))
+        next_link = data.get("@nextLink")
+        if not next_link:
+            break
+        url, params = next_link, None
+    return salida
+
+
+async def _buscar_hijo_por_nombre(container_id: Optional[str], nombre: str,
+                                   kind: str = "Folder") -> Optional[dict]:
+    """Busca, entre los hijos DIRECTOS de container_id, uno cuyo nombre calce
+    (sin distinguir mayus/minus ni espacios de sobra)."""
+    hijos = await _listar_hijos(container_id, kind)
+    objetivo = nombre.strip().lower()
+    for h in hijos:
+        if h.get("name", "").strip().lower() == objetivo:
+            return h
+    return None
+
+
+class CopiaPeriodoError(Exception):
+    """Error de negocio (carpeta no encontrada, destino ya existe, etc.) --
+    no un error tecnico de la API. Se muestra tal cual al usuario."""
+
+
+async def resolver_rutas_copia(mes_destino: int, anio_destino: int) -> dict:
+    """Encuentra las carpetas origen y destino en Workiva SIN copiar nada
+    todavia -- para poder mostrarle al usuario que va a hacer antes de que
+    confirme. Estados Financieros / {anio} / {NN Mes AAAA}.
+
+    Lanza CopiaPeriodoError si falta alguna carpeta intermedia o si el
+    destino ya existe (regla del usuario: nunca sobrescribir/mezclar)."""
+    mes_origen, anio_origen = periodo_origen(mes_destino, anio_destino)
+    nombre_origen  = nombre_carpeta_periodo(mes_origen, anio_origen)
+    nombre_destino = nombre_carpeta_periodo(mes_destino, anio_destino)
+
+    raiz = await _buscar_hijo_por_nombre(None, "Estados Financieros")
+    if raiz is None:
+        raise CopiaPeriodoError(
+            "No se encontro la carpeta 'Estados Financieros' en la raiz del workspace.")
+
+    anio_origen_folder = await _buscar_hijo_por_nombre(raiz["id"], str(anio_origen))
+    if anio_origen_folder is None:
+        raise CopiaPeriodoError(
+            f"No se encontro la carpeta del año de origen '{anio_origen}' "
+            f"dentro de 'Estados Financieros'.")
+
+    origen = await _buscar_hijo_por_nombre(anio_origen_folder["id"], nombre_origen)
+    if origen is None:
+        raise CopiaPeriodoError(
+            f"No se encontro la carpeta de origen '{nombre_origen}' "
+            f"dentro de 'Estados Financieros/{anio_origen}'.")
+
+    anio_destino_folder = await _buscar_hijo_por_nombre(raiz["id"], str(anio_destino))
+    if anio_destino_folder is None:
+        raise CopiaPeriodoError(
+            f"No se encontro la carpeta del año de destino '{anio_destino}' "
+            f"dentro de 'Estados Financieros'. Hay que crearla manualmente "
+            f"antes de copiar (la app no crea carpetas de año nuevas).")
+
+    ya_existe = await _buscar_hijo_por_nombre(anio_destino_folder["id"], nombre_destino)
+    if ya_existe is not None:
+        raise CopiaPeriodoError(
+            f"Ya existe una carpeta '{nombre_destino}' dentro de "
+            f"'Estados Financieros/{anio_destino}'. No se copia nada para no "
+            f"mezclar o sobrescribir archivos — revisa esa carpeta manualmente.")
+
+    return {
+        "nombre_origen":        nombre_origen,
+        "nombre_destino":       nombre_destino,
+        "origen_id":            origen["id"],
+        "anio_destino_folder_id": anio_destino_folder["id"],
+    }
+
+
+async def copiar_periodo(mes_destino: int, anio_destino: int,
+                          log=None, poll_interval: float = 5.0) -> dict:
+    """Copia la carpeta del periodo que corresponda (mes anterior, o trimestre
+    anterior si mes_destino es cierre trimestral) dentro de la carpeta del año
+    de destino, con el nombre del periodo destino. 'log' es una funcion
+    opcional log(mensaje) para reportar progreso.
+
+    IMPORTANTE: la copia corre del lado de Workiva una vez iniciada -- no hay
+    endpoint de cancelacion en la API, asi que cerrar la app NO la detiene.
+
+    Configuracion de copia (fija, decidida por el usuario):
+    - shallowCopy=True: mantiene los links a los archivos fuente originales
+      en vez de copiarlos tambien (evita una cascada de copias que puede
+      tardar dias en vez de ~1 hora).
+    - outline labels y automations: se preservan.
+    - comentarios, adjuntos, marcado de documento, valores de celda de
+      entrada y modo de entrada: NO se preservan (igual que el resto de
+      opciones que quedan sin marcar por defecto en el modal de Workiva).
+    """
+    rutas = await resolver_rutas_copia(mes_destino, anio_destino)
+    if log:
+        log(f"Copiando '{rutas['nombre_origen']}' -> '{rutas['nombre_destino']}'...")
+
+    client = await _wk._ensure_client()
+    body = {
+        "destinationContainer": rutas["anio_destino_folder_id"],
+        "options": {
+            "destinationName":                 rutas["nombre_destino"],
+            "emailOnComplete":                 False,
+            "includeAttachments":              False,
+            "includeAutomations":              True,
+            "includeComments":                 False,
+            "includeCustomFieldValues":        False,
+            "includeDocumentMarkup":           False,
+            "includeInputCellValues":          False,
+            "includeOutlineLabels":            True,
+            "includeSmartLinkMetadata":        True,
+            "includeWdataIncomingConnections": True,
+            "includeWdataOutgoingConnections": True,
+            "includeXBRL":                     False,
+            "includeXBRLDisconnected":         False,
+            "keepInputModeEnabled":            False,
+            # Si shallowCopy=True, removeGRCLinks y removeLinks DEBEN ser False
+            # (la API los rechaza combinados) -- "shallowCopy" es justo el
+            # "Keep links to original source files" del modal de Workiva.
+            "removeGRCLinks":                  False,
+            "removeLinks":                     False,
+            "shallowCopy":                     True,
+        },
+    }
+    r = await client.post(f"{_API_ROOT_2026}/files/{rutas['origen_id']}/copy",
+                          headers=await _headers_2026(), json=body)
+    if r.status_code != 202:
+        raise CopiaPeriodoError(
+            f"Workiva rechazo la copia (HTTP {r.status_code}): {r.text[:300]}")
+
+    op_url = r.headers.get("Location") or r.json().get("operationLocation")
+    if not op_url:
+        raise CopiaPeriodoError("Workiva no devolvio una URL de operacion para hacer seguimiento.")
+
+    if log:
+        log("Copia iniciada en Workiva. Esto puede tardar bastante "
+            "(puede ser ~1 hora o mas segun el tamaño del periodo) — "
+            "sondeando estado...")
+
+    intentos_sin_avance = 0
+    while True:
+        r2 = await client.get(op_url, headers=await _headers_2026())
+        r2.raise_for_status()
+        op = r2.json()
+        estado = op.get("status", "")
+        if estado == "completed":
+            if log:
+                log("Copia completada en Workiva.")
+            return {"estado": "completed", "operation": op}
+        if estado in ("failed", "cancelled"):
+            raise CopiaPeriodoError(f"La copia terminó con estado '{estado}' en Workiva.")
+        espera = r2.headers.get("Retry-After", "")
+        espera = float(espera) if espera.replace(".", "", 1).isdigit() else poll_interval
+        intentos_sin_avance += 1
+        if log and intentos_sin_avance % 6 == 0:
+            log(f"  Sigue en curso (estado: {estado})...")
+        await asyncio.sleep(max(espera, poll_interval))
+
+
 def _handle_error(e: Exception) -> str:
     if isinstance(e, httpx.HTTPStatusError):
         code = e.response.status_code
