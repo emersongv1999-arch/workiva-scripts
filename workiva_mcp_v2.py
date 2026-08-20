@@ -550,15 +550,34 @@ def _patron_periodo(mes: int, anio: int) -> re.Pattern:
     return re.compile(rf"{mes:02d}([-_.]){anio}")
 
 
+_SUFIJO_COPIA_RE = re.compile(r"\s*\(\d+\)$")
+
+
+def _quitar_sufijo_copia(nombre: str) -> str:
+    """Quita el/los sufijo(s) de desambiguacion que WORKIVA agrega solo el
+    mismo a cada archivo dentro de una copia de carpeta (ej. '... (1)') --
+    no es algo que este motor haya escrito, ya viene asi en el nombre leido
+    despues de copiar. La carpeta destino es nueva, asi que ese sufijo no
+    aporta nada; se quita (repitiendo por si quedaron varios apilados de
+    copias anteriores sin limpiar, ej. '... (1) (1)')."""
+    anterior = None
+    while anterior != nombre:
+        anterior = nombre
+        nombre = _SUFIJO_COPIA_RE.sub("", nombre)
+    return nombre
+
+
 def _renombrar_periodo_en_nombre(nombre: str, mes_origen: int, anio_origen: int,
                                   mes_destino: int, anio_destino: int) -> Optional[str]:
     """Devuelve el nombre con el periodo de origen reemplazado por el de
-    destino (mismo separador que ya tenia), o None si el nombre NO contiene
-    el periodo de origen -- nunca se inventa un nombre nuevo a ciegas."""
+    destino (mismo separador que ya tenia) y sin el sufijo '(N)' que
+    Workiva agrega automaticamente al copiar, o None si el nombre NO
+    contiene el periodo de origen -- nunca se inventa un nombre a ciegas."""
     patron = _patron_periodo(mes_origen, anio_origen)
     if not patron.search(nombre):
         return None
-    return patron.sub(lambda m: f"{mes_destino:02d}{m.group(1)}{anio_destino}", nombre)
+    nuevo = patron.sub(lambda m: f"{mes_destino:02d}{m.group(1)}{anio_destino}", nombre)
+    return _quitar_sufijo_copia(nuevo)
 
 
 async def _renombrar_archivos_copiados(operation_id: str, mes_origen: int, anio_origen: int,
