@@ -988,7 +988,7 @@ NAV_ITEMS = [
     ("Llenar Comparativos",    "mod2"),
     ("Flujo de Efectivo",      "mod5"),
     ("Validar Comparativos",   "mod6"),
-    ("Copiar Periodo",         "mod7"),
+    ("Crear Periodo",          "mod7"),
 ]
 
 def guardar_xlsx_seguro(wb, ruta, log=None):
@@ -3365,7 +3365,7 @@ class App(tk.Tk):
 
         # Vista previa de la regla (mes normal -> mes anterior;
         # cierre trimestral 03/06/09/12 -> trimestre anterior)
-        tk.Label(left, text="SE VA A COPIAR", font=("Segoe UI", 8, "bold"),
+        tk.Label(left, text="SE VA A CREAR A PARTIR DE", font=("Segoe UI", 8, "bold"),
                  bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(6, 2))
         prev_box = tk.Frame(left, bg=CGE_CARD,
                             highlightbackground=CGE_BORDER, highlightthickness=1)
@@ -3377,7 +3377,7 @@ class App(tk.Tk):
         self._cp_preview.pack(fill="x")
 
         self._cp_btn_run = tk.Button(
-            left, text="Copiar", font=("Segoe UI", 10, "bold"),
+            left, text="Crear período", font=("Segoe UI", 10, "bold"),
             bg=CGE_BLUE, fg=CGE_WHITE, relief="flat", bd=0,
             padx=12, pady=8, cursor="hand2",
             command=self._cp_on_run)
@@ -3408,10 +3408,12 @@ class App(tk.Tk):
         self._cp_log.tag_config("blue", foreground=CGE_BLUE)
         self._cp_log.tag_config("muted", foreground=CGE_MUTED)
         self._cp_log_write(
-            "Copia la carpeta 'Estados Financieros/{año}/{período}' completa: "
-            "meses normales copian el mes anterior; los cierres trimestrales "
+            "Crea el período nuevo en 'Estados Financieros/{año}/{período}' "
+            "copiando la carpeta del período anterior como base: meses "
+            "normales copian el mes anterior; los cierres trimestrales "
             "(03, 06, 09, 12) copian el trimestre anterior. La carpeta del "
-            "año destino debe existir de antemano (no se crea sola). Los "
+            "año destino debe existir de antemano (no se crea sola — si es "
+            "enero de un año nuevo, crea esa carpeta de año primero). Los "
             "archivos copiados se renombran automáticamente cambiando el "
             "período en su nombre (ej. 07-2026 -> 08-2026); los que no "
             "tengan el período de origen en el nombre quedan sin tocar, "
@@ -3481,9 +3483,10 @@ class App(tk.Tk):
         mes, anio = periodo
         self._cp_actualizar_preview()
         confirmado = messagebox.askyesno(
-            "Confirmar copia de período",
-            f"Esto va a COPIAR una carpeta completa dentro de Workiva "
-            f"(Estados Financieros/{anio}).\n\n"
+            "Confirmar creación de período",
+            f"Esto va a CREAR el período nuevo dentro de Workiva "
+            f"(Estados Financieros/{anio}), copiando la carpeta del período "
+            f"anterior como base.\n\n"
             f"{self._cp_preview.cget('text').replace(chr(10), ' ')}\n\n"
             "La copia puede tardar bastante (puede ser ~1 hora o más según "
             "el tamaño del período) y NO se puede cancelar una vez iniciada "
@@ -3499,7 +3502,7 @@ class App(tk.Tk):
         self._cp_btn_run.configure(state="disabled")
         self._progress.configure(mode="indeterminate")
         self._progress.start(10)
-        self._cp_log_write(f"Iniciando copia para {mes:02d}-{anio}...", "blue")
+        self._cp_log_write(f"Iniciando creación del período {mes:02d}-{anio}...", "blue")
         threading.Thread(target=self._cp_thread_run, args=(mes, anio), daemon=True).start()
 
     def _cp_thread_run(self, mes, anio):
@@ -3519,11 +3522,19 @@ class App(tk.Tk):
                     mcp_mod.copiar_periodo(mes, anio, log=self._cp_log_write))
             finally:
                 loop.close()
-            self._cp_log_write("Listo — copia completada.", "ok")
+            n_renom  = len(resultado.get("renombrados", []))
+            n_srenom = len(resultado.get("sin_calzar", []))
+            n_conn   = len(resultado.get("conexiones_actualizadas", []))
+            n_sconn  = len(resultado.get("conexiones_sin_calzar", []))
+            self._cp_log_write("Listo — período creado.", "ok")
             self.after(0, lambda: messagebox.showinfo(
-                "Copia completada",
-                f"La carpeta se copió correctamente en Workiva "
-                f"(Estados Financieros/{anio})."))
+                "Período creado",
+                f"El período se creó correctamente en Workiva "
+                f"(Estados Financieros/{anio}).\n\n"
+                f"Archivos renombrados: {n_renom}"
+                + (f" ({n_srenom} sin tocar, revisar manualmente)" if n_srenom else "")
+                + f"\nConexiones actualizadas: {n_conn}"
+                + (f" ({n_sconn} sin actualizar, revisar manualmente)" if n_sconn else "")))
         except Exception as e:
             es_negocio = type(e).__name__ == "CopiaPeriodoError"
             self._cp_log_write(f"{'ERROR' if not es_negocio else 'No se copió'}: {e}", "err")
