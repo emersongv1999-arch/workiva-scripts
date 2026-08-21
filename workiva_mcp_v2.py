@@ -559,6 +559,37 @@ async def _buscar_hijo_por_nombre(container_id: Optional[str], nombre: str,
     return None
 
 
+async def _crear_carpeta(container_id: Optional[str], nombre: str,
+                          log=None, reintentos: int = 6) -> dict:
+    """Crea una carpeta VACIA dentro de container_id (POST /files con
+    kind=Folder). Distinto de la copia de periodo, que duplica una carpeta
+    existente con todo su contenido.
+
+    Workiva crea los archivos de forma ASINCRONA: recien creada puede no
+    aparecer todavia en un GET, por eso se reconsulta hasta que aparezca
+    antes de devolverla (si no, el paso siguiente no la encontraria)."""
+    client = await _wk._ensure_client()
+    body = {"name": nombre, "kind": "Folder"}
+    if container_id:
+        body["container"] = container_id
+    r = await client.post(f"{_API_ROOT_2026}/files",
+                          headers=await _headers_2026(), json=body)
+    if r.status_code not in (200, 201, 202):
+        raise CopiaPeriodoError(
+            f"No se pudo crear la carpeta '{nombre}' (HTTP {r.status_code}): {r.text[:200]}")
+    if log:
+        log(f"Carpeta '{nombre}' creada.")
+
+    for intento in range(reintentos):
+        encontrada = await _buscar_hijo_por_nombre(container_id, nombre)
+        if encontrada is not None:
+            return encontrada
+        await asyncio.sleep(1 + intento)
+    raise CopiaPeriodoError(
+        f"La carpeta '{nombre}' se creo pero Workiva todavia no la devuelve. "
+        f"Espera unos segundos y vuelve a intentar.")
+
+
 def _patron_periodo(mes: int, anio: int) -> re.Pattern:
     """Coincide con 'MM-AAAA', 'MM_AAAA' o 'MM.AAAA' (los tres separadores
     vistos en nombres de archivo de esta app) para un mes/año dado."""
@@ -741,10 +772,13 @@ class CopiaPeriodoError(Exception):
     no un error tecnico de la API. Se muestra tal cual al usuario."""
 
 
-async def resolver_rutas_copia(mes_destino: int, anio_destino: int) -> dict:
-    """Encuentra las carpetas origen y destino en Workiva SIN copiar nada
-    todavia -- para poder mostrarle al usuario que va a hacer antes de que
-    confirme. Estados Financieros / {anio} / {NN Mes AAAA}.
+async def resolver_rutas_copia(mes_destino: int, anio_destino: int, log=None) -> dict:
+    """Encuentra las carpetas origen y destino en Workiva antes de copiar.
+    Estados Financieros / {anio} / {NN Mes AAAA}.
+
+    Lo unico que puede crear es la carpeta del AÑO de destino si no existe
+    (caso tipico: enero de un año nuevo). Crear una carpeta vacia no pisa
+    nada; el contenido lo pone despues la copia.
 
     Lanza CopiaPeriodoError si falta alguna carpeta intermedia o si el
     destino ya existe (regla del usuario: nunca sobrescribir/mezclar)."""
@@ -771,10 +805,16 @@ async def resolver_rutas_copia(mes_destino: int, anio_destino: int) -> dict:
 
     anio_destino_folder = await _buscar_hijo_por_nombre(raiz["id"], str(anio_destino))
     if anio_destino_folder is None:
-        raise CopiaPeriodoError(
-            f"No se encontro la carpeta del año de destino '{anio_destino}' "
-            f"dentro de 'Estados Financieros'. Hay que crearla manualmente "
-            f"antes de copiar (la app no crea carpetas de año nuevas).")
+        # Caso tipico: enero de un año nuevo, donde la carpeta del año todavia
+        # no existe. Se crea vacia (POST /files kind=Folder) y la copia del
+        # periodo va adentro. Crear una carpeta vacia es inofensivo y no pisa
+        # nada -- distinto de la copia, que si mueve contenido.
+        if log:
+            log(f"La carpeta del año '{anio_destino}' no existe todavia; creandola...")
+        anio_destino_folder = await _crear_carpeta(raiz["id"], str(anio_destino), log=log)
+        creo_anio = True
+    else:
+        creo_anio = False
 
     ya_existe = await _buscar_hijo_por_nombre(anio_destino_folder["id"], nombre_destino)
     if ya_existe is not None:
@@ -788,6 +828,7 @@ async def resolver_rutas_copia(mes_destino: int, anio_destino: int) -> dict:
         "nombre_destino":       nombre_destino,
         "origen_id":            origen["id"],
         "anio_destino_folder_id": anio_destino_folder["id"],
+        "creo_carpeta_anio":    creo_anio,
     }
 
 
@@ -941,7 +982,7 @@ async def copiar_periodo(mes_destino: int, anio_destino: int,
       entrada y modo de entrada: NO se preservan (igual que el resto de
       opciones que quedan sin marcar por defecto en el modal de Workiva).
     """
-    rutas = await resolver_rutas_copia(mes_destino, anio_destino)
+    rutas = await resolver_rutas_copia(mes_destino, anio_destino, log=log)
     if log:
         log(f"Copiando '{rutas['nombre_origen']}' -> '{rutas['nombre_destino']}'...")
 
