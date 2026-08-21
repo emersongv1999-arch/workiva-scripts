@@ -522,13 +522,16 @@ def periodo_origen(mes_destino: int, anio_destino: int) -> tuple[int, int]:
             return mes_origen, anio_origen
 
 
-async def _listar_hijos(container_id: Optional[str], kind: str = "Folder") -> list[dict]:
+async def _listar_hijos(container_id: Optional[str], kind: Optional[str] = "Folder") -> list[dict]:
     """Lista los hijos DIRECTOS de una carpeta (o de la raiz si container_id es
-    None), filtrados por 'kind'. Usa la API 2026-01-01 (GET /files), no el
-    _wk.get() del resto del motor (que apunta a /platform/v1, otra version)."""
+    None), filtrados por 'kind' (None = todos los tipos, sin filtrar). Usa la
+    API 2026-01-01 (GET /files), no el _wk.get() del resto del motor (que
+    apunta a /platform/v1, otra version)."""
     client = await _wk._ensure_client()
     contenedor = container_id if container_id else ""
-    filtro = f"container eq '{contenedor}' and kind eq '{kind}'"
+    filtro = f"container eq '{contenedor}'"
+    if kind:
+        filtro += f" and kind eq '{kind}'"
     url = f"{_API_ROOT_2026}/files"
     params = {"$filter": filtro, "$maxpagesize": 200}
     salida: list[dict] = []
@@ -786,6 +789,107 @@ async def resolver_rutas_copia(mes_destino: int, anio_destino: int) -> dict:
         "origen_id":            origen["id"],
         "anio_destino_folder_id": anio_destino_folder["id"],
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PUBLICAR LINKING (smart links) de todos los documentos de un periodo
+# ══════════════════════════════════════════════════════════════════════════════
+# Endpoints paralelos por tipo de archivo (mismo shape, distinta ruta):
+#   POST /spreadsheets/{id}/links/publication
+#   POST /documents/{id}/links/publication
+#   POST /presentations/{id}/links/publication
+# Body: {"publishType": "allLinks"} -- publica TODOS los links del archivo,
+# no solo los editados por el usuario actual ("ownLinks", que es el otro
+# valor valido pero no lo que pidio el usuario: "que publique todos").
+# Referencia: https://developers.workiva.com/2026-01-01/spreadsheetlinkspublication.md
+
+_RUTA_PUBLICACION_POR_KIND = {
+    "Spreadsheet":  "spreadsheets",
+    "Document":     "documents",
+    "Presentation": "presentations",
+}
+
+
+async def publicar_linking_periodo(mes: int, anio: int, log=None,
+                                    poll_interval: float = 5.0) -> dict:
+    """Publica TODOS los smart links de TODOS los archivos (spreadsheets,
+    documents, presentations) dentro de 'Estados Financieros/{anio}/
+    {NN Mes AAAA}'. No toca subcarpetas (solo los archivos DIRECTOS de esa
+    carpeta) ni tipos de archivo sin endpoint de publicacion de links
+    (carpetas, scripts, supporting documents -- se listan aparte, sin
+    tocarlos)."""
+    nombre_carpeta = nombre_carpeta_periodo(mes, anio)
+    raiz = await _buscar_hijo_por_nombre(None, "Estados Financieros")
+    if raiz is None:
+        raise CopiaPeriodoError(
+            "No se encontro la carpeta 'Estados Financieros' en la raiz del workspace.")
+    anio_folder = await _buscar_hijo_por_nombre(raiz["id"], str(anio))
+    if anio_folder is None:
+        raise CopiaPeriodoError(
+            f"No se encontro la carpeta del año '{anio}' dentro de 'Estados Financieros'.")
+    carpeta = await _buscar_hijo_por_nombre(anio_folder["id"], nombre_carpeta)
+    if carpeta is None:
+        raise CopiaPeriodoError(
+            f"No se encontro la carpeta '{nombre_carpeta}' dentro de "
+            f"'Estados Financieros/{anio}'.")
+
+    archivos = await _listar_hijos(carpeta["id"], kind=None)
+    client = await _wk._ensure_client()
+
+    publicados: list[str] = []
+    sin_publicar: list[str] = []
+    omitidos: list[str] = []
+
+    for f in archivos:
+        nombre = f.get("name", "(sin nombre)")
+        kind = f.get("kind")
+        fid = f.get("id")
+        ruta = _RUTA_PUBLICACION_POR_KIND.get(kind)
+        if ruta is None:
+            omitidos.append(f"{nombre} ({kind})")
+            continue
+
+        if log:
+            log(f"Publicando links: {nombre}...")
+        r = await client.post(
+            f"{_API_ROOT_2026}/{ruta}/{fid}/links/publication",
+            headers=await _headers_2026(), json={"publishType": "allLinks"})
+        if r.status_code != 202:
+            sin_publicar.append(f"{nombre} (HTTP {r.status_code}: {r.text[:150]})")
+            if log:
+                log(f"  ERROR ({nombre}): HTTP {r.status_code}", None)
+            continue
+
+        op_url = r.headers.get("Location") or r.json().get("operationLocation")
+        if not op_url:
+            sin_publicar.append(f"{nombre} (sin URL de operacion)")
+            continue
+
+        while True:
+            r2 = await client.get(op_url, headers=await _headers_2026())
+            r2.raise_for_status()
+            op = r2.json()
+            estado = op.get("status", "")
+            if estado == "completed":
+                publicados.append(nombre)
+                if log:
+                    log(f"  OK: {nombre}")
+                break
+            if estado in ("failed", "cancelled"):
+                sin_publicar.append(f"{nombre} (operación {estado} en Workiva)")
+                if log:
+                    log(f"  ERROR ({nombre}): operación {estado}")
+                break
+            espera = r2.headers.get("Retry-After", "")
+            espera = float(espera) if espera.replace(".", "", 1).isdigit() else poll_interval
+            await asyncio.sleep(max(espera, poll_interval))
+
+    if log:
+        log(f"Listo: {len(publicados)} archivo(s) publicados, "
+            f"{len(sin_publicar)} con error, {len(omitidos)} omitido(s) "
+            f"(carpetas u otro tipo sin links que publicar).")
+
+    return {"publicados": publicados, "sin_publicar": sin_publicar, "omitidos": omitidos}
 
 
 async def copiar_periodo(mes_destino: int, anio_destino: int,
