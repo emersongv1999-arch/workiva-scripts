@@ -810,14 +810,40 @@ _RUTA_PUBLICACION_POR_KIND = {
 }
 
 
+async def _listar_archivos_recursivo(container_id: str, log=None,
+                                      _profundidad: int = 0) -> list[dict]:
+    """Lista TODOS los archivos dentro de una carpeta, entrando tambien en
+    sus subcarpetas (recursivo). Necesario porque una carpeta de periodo no
+    tiene todos los archivos sueltos en la raiz: los Base Notas viven en
+    subcarpetas, y listar solo los hijos DIRECTOS los dejaba fuera."""
+    if _profundidad > 10:   # guarda contra jerarquias patologicas/ciclos
+        return []
+    hijos = await _listar_hijos(container_id, kind=None)
+    archivos: list[dict] = []
+    for h in hijos:
+        if h.get("kind") == "Folder":
+            if log:
+                log(f"  Entrando a subcarpeta: {h.get('name', '(sin nombre)')}")
+            archivos.extend(
+                await _listar_archivos_recursivo(h["id"], log=log,
+                                                 _profundidad=_profundidad + 1))
+        else:
+            archivos.append(h)
+    return archivos
+
+
 async def publicar_linking_periodo(mes: int, anio: int, log=None,
                                     poll_interval: float = 5.0) -> dict:
-    """Publica TODOS los smart links de TODOS los archivos (spreadsheets,
-    documents, presentations) dentro de 'Estados Financieros/{anio}/
-    {NN Mes AAAA}'. No toca subcarpetas (solo los archivos DIRECTOS de esa
-    carpeta) ni tipos de archivo sin endpoint de publicacion de links
-    (carpetas, scripts, supporting documents -- se listan aparte, sin
-    tocarlos)."""
+    """Publica TODOS los links (source links -> sus destinos) de TODOS los
+    archivos (spreadsheets, documents, presentations) dentro de
+    'Estados Financieros/{anio}/{NN Mes AAAA}', INCLUYENDO los que estan en
+    subcarpetas. Los tipos sin endpoint de publicacion de links (scripts,
+    supporting documents) se listan aparte, sin tocarlos.
+
+    Nota de terminologia (segun la doc de Workiva): un "link publish" hace
+    que todos los SOURCE links del archivo manden su valor a sus destination
+    links. No son "smart links" -- eso es otro concepto distinto de Workiva
+    (metadata de links, ver includeSmartLinkMetadata en la copia)."""
     nombre_carpeta = nombre_carpeta_periodo(mes, anio)
     raiz = await _buscar_hijo_por_nombre(None, "Estados Financieros")
     if raiz is None:
@@ -833,7 +859,11 @@ async def publicar_linking_periodo(mes: int, anio: int, log=None,
             f"No se encontro la carpeta '{nombre_carpeta}' dentro de "
             f"'Estados Financieros/{anio}'.")
 
-    archivos = await _listar_hijos(carpeta["id"], kind=None)
+    if log:
+        log(f"Buscando archivos en '{nombre_carpeta}' (incluyendo subcarpetas)...")
+    archivos = await _listar_archivos_recursivo(carpeta["id"], log=log)
+    if log:
+        log(f"{len(archivos)} archivo(s) encontrados en total.")
     client = await _wk._ensure_client()
 
     publicados: list[str] = []
@@ -887,7 +917,7 @@ async def publicar_linking_periodo(mes: int, anio: int, log=None,
     if log:
         log(f"Listo: {len(publicados)} archivo(s) publicados, "
             f"{len(sin_publicar)} con error, {len(omitidos)} omitido(s) "
-            f"(carpetas u otro tipo sin links que publicar).")
+            f"(tipo de archivo sin links que publicar).")
 
     return {"publicados": publicados, "sin_publicar": sin_publicar, "omitidos": omitidos}
 
