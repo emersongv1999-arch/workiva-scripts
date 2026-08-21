@@ -3462,14 +3462,29 @@ class App(tk.Tk):
             self._cp_preview.configure(text="Completa mes y año.", fg=CGE_MUTED)
             return
         mes, anio = periodo
-        if mes in (3, 6, 9, 12):
-            mes_origen = mes - 3
-        else:
-            mes_origen = mes - 1
+        # OJO: esta regla debe quedar IDÉNTICA a periodo_origen() en
+        # workiva_mcp_v2.py — es el motor el que decide de verdad qué se
+        # copia; acá solo se muestra. Si las dos versiones se separan, la
+        # vista previa miente sobre lo que va a pasar (ya ocurrió una vez:
+        # octubre mostraba septiembre en vez de agosto).
         anio_origen = anio
-        if mes_origen < 1:
-            mes_origen += 12
-            anio_origen -= 1
+        if mes in (3, 6, 9, 12):
+            # Cierre trimestral: se copia el trimestre anterior.
+            mes_origen = mes - 3
+            if mes_origen < 1:
+                mes_origen += 12
+                anio_origen -= 1
+        else:
+            # Mes normal: el mes anterior que NO sea cierre trimestral
+            # (un cierre tiene otra estructura y no sirve de base).
+            mes_origen = mes
+            while True:
+                mes_origen -= 1
+                if mes_origen < 1:
+                    mes_origen += 12
+                    anio_origen -= 1
+                if mes_origen not in (3, 6, 9, 12):
+                    break
         nombre_destino = f"{mes:02d} {MESES_NOMBRE[mes]} {anio}"
         nombre_origen  = f"{mes_origen:02d} {MESES_NOMBRE[mes_origen]} {anio_origen}"
         tipo = "trimestral (cierre)" if mes in (3, 6, 9, 12) else "mensual"
