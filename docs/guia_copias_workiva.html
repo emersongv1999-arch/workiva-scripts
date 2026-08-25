@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Cómo hacer copias en Workiva</title>
+<style>
+  @page { size: Letter; margin: 2cm 2.2cm; }
+  body { font-family: Calibri, "Segoe UI", Arial, sans-serif; color: #1a1a1a; font-size: 11pt; line-height: 1.45; margin: 0; }
+  h1.doc { font-size: 25pt; color: #1F3864; margin: 0 0 2px 0; }
+  p.sub { font-size: 12pt; color: #555; margin: 0 0 4px 0; padding-bottom: 8px; border-bottom: 2px solid #2E5C9A; }
+  h2 { font-size: 14pt; color: #1F3864; margin: 22px 0 8px 0; padding-bottom: 4px; border-bottom: 1px solid #2E5C9A; page-break-after: avoid; }
+  ol, ul { margin: 0 0 10px 0; padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  p { margin: 0 0 9px 0; }
+  strong { font-weight: 600; }
+  .alerta { color: #9C1B1B; font-weight: 600; }
+  figure { margin: 10px 0 14px 0; text-align: center; page-break-inside: avoid; }
+  figure img { max-width: 74%; border: 1px solid #ccd3df; }
+  figcaption { font-size: 8.5pt; color: #777; font-style: italic; margin-top: 5px; }
+  .ref { font-size: 8.5pt; color: #777; font-style: italic; margin-top: 22px; }
+  .foto-menu img { max-width: 42%; }
+</style>
+</head>
+<body>
+
+<h1 class="doc">Cómo hacer copias en Workiva</h1>
+<p class="sub">Files → clic derecho → Copy</p>
+
+<h2>Los pasos</h2>
+<ol>
+  <li>Clic derecho sobre la carpeta (o el archivo) en Files y elija <strong>Copy</strong>.</li>
+  <li>Revise la lista de archivos incluidos y presione <strong>Next</strong>. Los Filings nunca se copian.</li>
+  <li>En <strong>Copy includes</strong>, marque o desmarque las casillas según la lista de abajo.</li>
+  <li>Revise el desplegable de <strong>Links and Process References</strong>: es la única opción que puede arruinar la copia.</li>
+  <li>En <strong>Location Settings</strong>, escriba el <strong>New Folder Name</strong> del período nuevo y elija el <strong>Location</strong>: la carpeta del año, no la del mes anterior.</li>
+  <li>Presione <strong>Copy</strong>. La copia corre en segundo plano y llega un aviso por correo cuando termina.</li>
+</ol>
+
+<figure class="foto-menu">
+  <img src="img/01-menu-copy.png" alt="Menú contextual de la carpeta">
+  <figcaption>Paso 1: clic derecho sobre la carpeta y elegir Copy. Ojo: Copy URL solo copia el vínculo y Move no deja duplicado.</figcaption>
+</figure>
+
+<h2>Qué marcar en Copy includes</h2>
+<p>Entre paréntesis va el estado con que viene cada casilla por defecto.</p>
+
+<figure>
+  <img src="img/02-copy-includes.png" alt="Ventana Copy con las casillas de Copy includes">
+  <figcaption>Pasos 3 y 4: las casillas de Copy includes y el desplegable de links abierto con sus dos opciones.</figcaption>
+</figure>
+
+<ul>
+  <li><strong>All comments</strong> (desmarcada): déjela así. Los comentarios del período anterior ya no aplican.</li>
+  <li><strong>Outline labels</strong> (marcada): desmárquela, o el período nuevo nace con secciones marcadas como revisadas.</li>
+  <li><strong>Attachments</strong> (desmarcada): márquela solo si los adjuntos son parte fija del reporte y no evidencia del período.</li>
+  <li><strong>Automations</strong> (marcada): déjela marcada.</li>
+  <li><strong>Document Markup</strong> (desmarcada): déjela así. El marcado es evidencia de la revisión del período anterior.</li>
+  <li><strong>Links and Process References</strong> (marcada): déjela marcada y revise su desplegable — ver más abajo.</li>
+  <li><strong>Maintain managed destination links</strong> e <strong>Include metadata for all source smart links</strong> (ambas marcadas): déjelas marcadas; conservan los enlaces de destino y los nombres de los smart links.</li>
+  <li><strong>Connections</strong> (marcada): déjela marcada, con “Incoming and outgoing connections”.</li>
+  <li><strong>Input cell values</strong> (desmarcada): déjela así; los datos del período se cargan de cero.</li>
+  <li><strong>Input mode in enabled sections</strong> (desmarcada): márquela si el equipo carga datos con Input Mode.</li>
+</ul>
+
+<h2>El desplegable que hay que mirar sí o sí</h2>
+<p>Links and Process References viene siempre en <strong>“Create copies of all source files”</strong>: duplica también los archivos fuente y enlaza la copia a esos duplicados. Eso es lo correcto cuando las fuentes son del período y avanzan con él.</p>
+<p>Si las fuentes viven fuera de la carpeta y son únicas y permanentes, hay que cambiarlo a mano a <strong>“Keep links to original source files”</strong>: no crea copias de las fuentes y la copia sigue leyendo de las originales.</p>
+<p class="alerta">Elegir mal deja el período nuevo mostrando cifras del anterior, o llena el workspace de duplicados que nadie pidió.</p>
+
+<figure>
+  <img src="img/03-smart-links-location.png" alt="Smart links y Location Settings">
+  <figcaption>Las dos casillas de Smart links van marcadas. Abajo, New Folder Name es obligatorio y Location define dónde queda la copia.</figcaption>
+</figure>
+
+<h2>Después de copiar</h2>
+<ul>
+  <li>Abra dos o tres archivos y verifique que sus enlaces apunten a donde usted decidió, no al período anterior.</li>
+  <li>Actualice las fechas dentro de documentos y planillas, y revise Document Health.</li>
+  <li>Confirme que la carpeta quedó en la ubicación correcta y con el nombre del período nuevo.</li>
+  <li>Mantenga la nomenclatura: prefijos (CHN) / (LC) y código de sociedad (E110, E200, E205…) sin alterar, o los scripts del Auditor dejan de reconocer los archivos.</li>
+</ul>
+
+<p class="ref">Referencia: Workiva Support Center — “Copy a file or folder” (support.workiva.com/hc/en-us/articles/360035639992).</p>
+
+</body>
+</html>
