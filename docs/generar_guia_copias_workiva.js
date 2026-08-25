@@ -1,6 +1,7 @@
 const fs = require("fs");
+const path = require("path");
 const {
-  Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, BorderStyle, LevelFormat,
+  Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, BorderStyle, LevelFormat, ImageRun,
 } = require("docx");
 
 const AZUL = "1F3864", AZUL2 = "2E5C9A", ROJO = "9C1B1B";
@@ -32,6 +33,23 @@ const BUL = (runs) => new Paragraph({
     new TextRun({ text: r.t, bold: r.b, italics: r.i, size: 21, font: "Calibri", color: r.color })),
 });
 
+/* imagen centrada + pie de foto; ancho maximo util = 672 px (7") */
+const IMG_DIR = path.join(__dirname, "img");
+const foto = (archivo, w, h, pie) => [
+  new Paragraph({
+    alignment: AlignmentType.CENTER, spacing: { before: 100, after: 60 },
+    children: [new ImageRun({
+      type: "png",
+      data: fs.readFileSync(path.join(IMG_DIR, archivo)),
+      transformation: { width: w, height: h },
+    })],
+  }),
+  new Paragraph({
+    alignment: AlignmentType.CENTER, spacing: { after: 200 },
+    children: [new TextRun({ text: pie, size: 18, italics: true, color: "777777", font: "Calibri" })],
+  }),
+];
+
 const doc = new Document({
   creator: "Auditoría CGE",
   title: "Cómo hacer copias en Workiva",
@@ -59,8 +77,13 @@ const doc = new Document({
            { t: " del período nuevo y elija el " }, { t: "Location", b: true }, { t: ": la carpeta del año, no la del mes anterior." }]),
       NUM([{ t: "Presione " }, { t: "Copy", b: true }, { t: ". La copia corre en segundo plano y llega un aviso por correo cuando termina." }]),
 
+      ...foto("01-menu-copy.png", 372, 505,
+        "Paso 1: clic derecho sobre la carpeta y elegir Copy. Ojo: Copy URL solo copia el vínculo y Move no deja duplicado."),
+
       H1("Qué marcar en Copy includes"),
       P("Entre paréntesis va el estado con que viene cada casilla por defecto."),
+      ...foto("02-copy-includes.png", 620, 594,
+        "Pasos 3 y 4: las casillas de Copy includes y el desplegable de links abierto con sus dos opciones."),
       BUL([{ t: "All comments", b: true }, { t: " (desmarcada): déjela así. Los comentarios del período anterior ya no aplican." }]),
       BUL([{ t: "Outline labels", b: true }, { t: " (marcada): desmárquela, o el período nuevo nace con secciones marcadas como revisadas." }]),
       BUL([{ t: "Attachments", b: true }, { t: " (desmarcada): márquela solo si los adjuntos son parte fija del reporte y no evidencia del período." }]),
@@ -81,6 +104,8 @@ const doc = new Document({
          { t: ": no crea copias de las fuentes y la copia sigue leyendo de las originales." }]),
       P([{ t: "Elegir mal deja el período nuevo mostrando cifras del anterior, o llena el workspace de duplicados que nadie pidió.",
            color: ROJO, b: true }]),
+      ...foto("03-smart-links-location.png", 620, 381,
+        "Las dos casillas de Smart links van marcadas. Abajo, New Folder Name es obligatorio y Location define dónde queda la copia."),
 
       H1("Después de copiar"),
       BUL("Abra dos o tres archivos y verifique que sus enlaces apunten a donde usted decidió, no al período anterior."),
