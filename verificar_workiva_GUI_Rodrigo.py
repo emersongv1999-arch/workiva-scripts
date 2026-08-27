@@ -379,18 +379,32 @@ def parse_num(s):
     t = s.strip().replace('\n', '').replace(' ', '')
     if t in ('', '-', '—', '–'):
         return None
+    # El % se quita ANTES de mirar el parentesis: en los cuadros de
+    # conciliacion los negativos vienen como "(2,6)%", con el simbolo
+    # FUERA del parentesis. Buscando el parentesis primero, esos valores
+    # no calzaban con ningun patron y se leian como None, o sea la fila
+    # quedaba invisible y descuadraba la suma de todo el bloque.
+    es_pct = '%' in t
+    t = t.replace('%', '')
+    if t in ('', '-', '—', '–'):
+        return None
     neg = False
     if t.startswith('(') and t.endswith(')'):
         neg = True; t = t[1:-1]
     if t.startswith('-'):
         neg = True; t = t[1:]
-    # Porcentajes: se leen por su valor entero tal como esta impreso
-    # ("9%" -> 9, no 0.09), asi filas como "9% + 84% + 7% = 100%" se
-    # verifican con la misma logica de suma que cualquier otra columna.
-    if t.endswith('%'):
-        t = t[:-1]
-        if t in ('', '-', '—', '–'):
+    if es_pct:
+        # En un porcentaje la coma (o el punto) es separador DECIMAL, no de
+        # miles: "816,1 %" es 816,1 y no 8161. Se normaliza siempre a dos
+        # decimales (x100) para que "27 %", "27,0 %" y "27,05 %" queden en
+        # la misma escala y se puedan sumar entre si. Se mantiene entero a
+        # proposito: comparar sumas con float da falsos hallazgos por
+        # precision (823,1 - 2,6 - 4,4 no da exactamente 816,1 en float).
+        m = re.fullmatch(r'(\d+)(?:[.,](\d{1,2}))?', t)
+        if not m:
             return None
+        v = int(m.group(1)) * 100 + int(((m.group(2) or '') + '00')[:2])
+        return -v if neg else v
     # Separador de miles: coma (ENG) o punto (ESP) — ambos se eliminan
     t = t.replace(',', '')
     core = t.replace('.', '')
