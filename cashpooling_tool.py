@@ -249,14 +249,31 @@ class App(tk.Tk):
         af = tk.Frame(self, bg=BG, padx=16, pady=10)
         af.pack(fill="x")
 
-        self.btn_renombrar = self._btn(af, "Renombrar hojas",        BTN_GREEN, self._renombrar, state="disabled")
-        self.btn_renombrar.pack(side="left", padx=(0,8), ipady=5, ipadx=8)
+        # ── Botones de acción CGE ─────────────────────────────────────────────
+        tk.Label(af, text="CGE Cash Management:", font=("Segoe UI", 9, "bold"),
+                 bg=BG, fg=FG_DIM).pack(side="left", padx=(0,6))
 
-        self.btn_limpiar_cge = self._btn(af, "Limpiar CGE Cash mgmt", BTN_BLUE, self._limpiar_cge, state="disabled")
-        self.btn_limpiar_cge.pack(side="left", padx=(0,8), ipady=5, ipadx=8)
+        self.btn_renombrar = self._btn(af, "Renombrar hojas", BTN_GREEN, self._renombrar, state="disabled")
+        self.btn_renombrar.pack(side="left", padx=(0,6), ipady=5, ipadx=8)
 
-        self.btn_limpiar_fr = self._btn(af, "Limpiar Fund Request",   BTN_BLUE, self._limpiar_fr,  state="disabled")
-        self.btn_limpiar_fr.pack(side="left", padx=(0,8), ipady=5, ipadx=8)
+        self.btn_limpiar_cge = self._btn(af, "Limpiar CGE", BTN_BLUE, self._limpiar_cge, state="disabled")
+        self.btn_limpiar_cge.pack(side="left", padx=(0,6), ipady=5, ipadx=8)
+
+        self.btn_limpiar_fr = self._btn(af, "Limpiar Fund Request", BTN_BLUE, self._limpiar_fr, state="disabled")
+        self.btn_limpiar_fr.pack(side="left", padx=(0,20), ipady=5, ipadx=8)
+
+        # ── Botones de acción Chilquinta ──────────────────────────────────────
+        tk.Label(af, text="Chilquinta:", font=("Segoe UI", 9, "bold"),
+                 bg=BG, fg=FG_DIM).pack(side="left", padx=(0,6))
+
+        self.btn_renombrar_ch = self._btn(af, "Renombrar hojas", BTN_GREEN, self._renombrar_ch, state="disabled")
+        self.btn_renombrar_ch.pack(side="left", padx=(0,6), ipady=5, ipadx=8)
+
+        self.btn_limpiar_ch = self._btn(af, "Limpiar Chilquinta", BTN_BLUE, self._limpiar_ch, state="disabled")
+        self.btn_limpiar_ch.pack(side="left", padx=(0,6), ipady=5, ipadx=8)
+
+        self.btn_limpiar_ch_fr = self._btn(af, "Limpiar CC Funds request", BTN_BLUE, self._limpiar_ch_fr, state="disabled")
+        self.btn_limpiar_ch_fr.pack(side="left", padx=(0,8), ipady=5, ipadx=8)
 
         # ── Log ───────────────────────────────────────────────────────────────
         lf = tk.Frame(self, bg=BG, padx=16, pady=7)
@@ -339,32 +356,8 @@ class App(tk.Tk):
                 if hojas_b:
                     bases = leer_bases(ss_id_bases, hojas_b[0]["id"], self.log)
 
-            # Cash management
-            patron_cash = f"{mes} CGE Cash management"
-            ss_id_cash, nom_cash = buscar_spreadsheet(patron_cash, self.log)
-            if not ss_id_cash:
-                self.log("✗ No se encontró el archivo CGE Cash management.", "err")
-                self.status("No encontrado.")
-                self._set_btns(btn_buscar="normal")
-                return
-
-            hojas_cash = listar_hojas(ss_id_cash)
-            self.log(f"  {len(hojas_cash)} hojas en total")
-
-            pat_cge = re.compile(r"^CGE Cash management \d{2}\.\d{2}$")
-            pat_fr  = re.compile(r"^Fund Request \d{2}\.\d{2}$")
-
-            summary_id = None
-            fundreq_id = None
-            for h in hojas_cash:
-                nombre = h.get("name", "").strip()
-                if nombre == "CGE Cash management - Summary":
-                    summary_id = h["id"]
-                elif nombre == "Fund Request":
-                    fundreq_id = h["id"]
-
-            def construir_pares(parent_id, patron, prefijo):
-                hijos = [h for h in hojas_cash
+            def construir_pares_desde(hojas, parent_id, patron, prefijo):
+                hijos = [h for h in hojas
                          if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == parent_id
                          and patron.match(h.get("name",""))]
                 hijos.sort(key=lambda h: h.get("name",""))
@@ -377,38 +370,81 @@ class App(tk.Tk):
                     pares.append((h["id"], actual, nuevo, pid_h, idx))
                 return pares
 
-            pares_cge = construir_pares(summary_id, pat_cge, "CGE Cash management") if summary_id else []
-            pares_fr  = construir_pares(fundreq_id,  pat_fr,  "Fund Request")        if fundreq_id  else []
+            # ── CGE Cash Management ───────────────────────────────────────────
+            patron_cash = f"{mes} CGE Cash management"
+            ss_id_cash, nom_cash = buscar_spreadsheet(patron_cash, self.log)
+            pares_cge = []; pares_fr = []; subhojas_cge = []; subhojas_fr = []
 
-            subhojas_cge = [h for h in hojas_cash
-                            if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == summary_id
-                            and pat_cge.match(h.get("name",""))]
-            subhojas_cge.sort(key=lambda h: h.get("name",""))
+            if ss_id_cash:
+                hojas_cash = listar_hojas(ss_id_cash)
+                self.log(f"  CGE: {len(hojas_cash)} hojas")
+                pat_cge = re.compile(r"^CGE Cash management \d{2}\.\d{2}$")
+                pat_fr  = re.compile(r"^Fund Request \d{2}\.\d{2}$")
+                summary_id = next((h["id"] for h in hojas_cash if h.get("name","").strip() == "CGE Cash management - Summary"), None)
+                fundreq_id = next((h["id"] for h in hojas_cash if h.get("name","").strip() == "Fund Request"), None)
+                pares_cge = construir_pares_desde(hojas_cash, summary_id, pat_cge, "CGE Cash management") if summary_id else []
+                pares_fr  = construir_pares_desde(hojas_cash, fundreq_id,  pat_fr,  "Fund Request")        if fundreq_id  else []
+                subhojas_cge = sorted([h for h in hojas_cash if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == summary_id and pat_cge.match(h.get("name",""))], key=lambda h: h.get("name",""))
+                subhojas_fr  = sorted([h for h in hojas_cash if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == fundreq_id  and pat_fr.match(h.get("name",""))],  key=lambda h: h.get("name",""))
+                self.log(f"  CGE subhojas: {len(pares_cge)} | Fund Request: {len(pares_fr)}", "dim")
+            else:
+                self.log("✗ No se encontró CGE Cash management.", "err")
 
-            subhojas_fr = [h for h in hojas_cash
-                           if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == fundreq_id
-                           and pat_fr.match(h.get("name",""))]
-            subhojas_fr.sort(key=lambda h: h.get("name",""))
+            # ── Chilquinta Cash Management ────────────────────────────────────
+            patron_ch = f"{mes} Chilquinta Cash Management"
+            ss_id_ch, nom_ch = buscar_spreadsheet(patron_ch, self.log)
+            pares_ch = []; pares_ch_fr = []; subhojas_ch = []; subhojas_ch_fr = []
+
+            if ss_id_ch:
+                hojas_ch = listar_hojas(ss_id_ch)
+                self.log(f"  Chilquinta: {len(hojas_ch)} hojas")
+                pat_ch    = re.compile(r"^Chilquinta \d{2}\.\d{2}$")
+                pat_ch_fr = re.compile(r"^CC Funds request \d{2}\.\d{2}$")
+                cc_sum_id = next((h["id"] for h in hojas_ch if h.get("name","").strip() == "CC Cash management - Summary"), None)
+                cc_fr_id  = next((h["id"] for h in hojas_ch if h.get("name","").strip() == "Funds request"), None)
+                pares_ch    = construir_pares_desde(hojas_ch, cc_sum_id, pat_ch,    "Chilquinta")       if cc_sum_id else []
+                pares_ch_fr = construir_pares_desde(hojas_ch, cc_fr_id,  pat_ch_fr, "CC Funds request") if cc_fr_id  else []
+                subhojas_ch    = sorted([h for h in hojas_ch if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == cc_sum_id and pat_ch.match(h.get("name",""))],    key=lambda h: h.get("name",""))
+                subhojas_ch_fr = sorted([h for h in hojas_ch if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == cc_fr_id  and pat_ch_fr.match(h.get("name",""))], key=lambda h: h.get("name",""))
+                self.log(f"  Chilquinta subhojas: {len(pares_ch)} | CC Funds request: {len(pares_ch_fr)}", "dim")
+            else:
+                self.log("✗ No se encontró Chilquinta Cash Management.", "err")
+
+            if not ss_id_cash and not ss_id_ch:
+                self.status("No se encontró ningún archivo.")
+                self._set_btns(btn_buscar="normal")
+                return
 
             self._datos = {
-                "ss_id_cash":   ss_id_cash,
-                "pares_cge":    pares_cge,
-                "pares_fr":     pares_fr,
-                "subhojas_cge": subhojas_cge,
-                "subhojas_fr":  subhojas_fr,
+                "ss_id_cash":    ss_id_cash,
+                "ss_id_ch":      ss_id_ch,
+                "pares_cge":     pares_cge,
+                "pares_fr":      pares_fr,
+                "subhojas_cge":  subhojas_cge,
+                "subhojas_fr":   subhojas_fr,
+                "pares_ch":      pares_ch,
+                "pares_ch_fr":   pares_ch_fr,
+                "subhojas_ch":   subhojas_ch,
+                "subhojas_ch_fr":subhojas_ch_fr,
             }
 
-            n_cambios = sum(1 for _, a, n, _, _ in pares_cge + pares_fr if a != n)
-            self.log(f"  CGE Cash mgmt: {len(pares_cge)} subhojas  |  Fund Request: {len(pares_fr)} subhojas", "dim")
-            self.log(f"  Cambios de nombre pendientes: {n_cambios}", "ok" if n_cambios > 0 else "dim")
+            n_cge = sum(1 for _, a, n, _, _ in pares_cge + pares_fr if a != n)
+            n_ch  = sum(1 for _, a, n, _, _ in pares_ch + pares_ch_fr if a != n)
+            self.log(f"  Cambios CGE: {n_cge}  |  Cambios Chilquinta: {n_ch}", "ok")
 
-            self.after(0, lambda: self._poblar_tree(pares_cge, pares_fr))
+            todos_pares = pares_cge + pares_fr + pares_ch + pares_ch_fr
+            self.after(0, lambda: self._poblar_tree(todos_pares))
 
-            self._set_btns(btn_buscar="normal",
-                           btn_renombrar="normal" if n_cambios > 0 else "disabled",
-                           btn_limpiar_cge="normal" if subhojas_cge else "disabled",
-                           btn_limpiar_fr="normal"  if subhojas_fr  else "disabled")
-            self.status(f"Listo — {nom_cash}")
+            self._set_btns(
+                btn_buscar="normal",
+                btn_renombrar="normal"    if n_cge > 0         else "disabled",
+                btn_limpiar_cge="normal"  if subhojas_cge      else "disabled",
+                btn_limpiar_fr="normal"   if subhojas_fr       else "disabled",
+                btn_renombrar_ch="normal" if n_ch > 0          else "disabled",
+                btn_limpiar_ch="normal"   if subhojas_ch       else "disabled",
+                btn_limpiar_ch_fr="normal"if subhojas_ch_fr    else "disabled",
+            )
+            self.status(f"Listo — {nom_cash or ''} {nom_ch or ''}")
 
         except Exception as e:
             self.log(f"ERROR: {e}", "err")
@@ -420,45 +456,52 @@ class App(tk.Tk):
         for item in self.tree.get_children():
             self.tree.delete(item)
 
-    def _poblar_tree(self, pares_cge, pares_fr):
+    def _poblar_tree(self, todos_pares):
         self._limpiar_tree()
-        for sid, actual, nuevo, pid, idx in pares_cge:
+        for sid, actual, nuevo, pid, idx in todos_pares:
             tag = "cambia" if actual != nuevo else "igual"
             marca = "✔" if actual != nuevo else ""
-            self.tree.insert("", "end", values=("CGE Cash mgmt", actual, nuevo, marca), tags=(tag,))
-        for sid, actual, nuevo, pid, idx in pares_fr:
-            tag = "cambia" if actual != nuevo else "igual"
-            marca = "✔" if actual != nuevo else ""
-            self.tree.insert("", "end", values=("Fund Request", actual, nuevo, marca), tags=(tag,))
+            tipo = "CGE" if actual.startswith("CGE") else "Fund Request" if actual.startswith("Fund") else "Chilquinta" if actual.startswith("Chilquinta") else "CC Funds request"
+            self.tree.insert("", "end", values=(tipo, actual, nuevo, marca), tags=(tag,))
 
     # ── RENOMBRAR ─────────────────────────────────────────────────────────────
     def _renombrar(self):
         if not self._datos:
             return
-        if not messagebox.askyesno("Confirmar", "¿Aplicar renombrado de hojas en Workiva?"):
+        if not messagebox.askyesno("Confirmar", "¿Renombrar hojas CGE Cash Management en Workiva?"):
             return
-        self._set_btns(btn_renombrar="disabled", btn_buscar="disabled",
-                       btn_limpiar_cge="disabled", btn_limpiar_fr="disabled")
-        self.status("Renombrando hojas...")
-        threading.Thread(target=self._renombrar_worker, daemon=True).start()
+        self._deshabilitar_todos()
+        self.status("Renombrando hojas CGE...")
+        threading.Thread(target=self._renombrar_worker,
+                         args=(self._datos["pares_cge"] + self._datos["pares_fr"],
+                               self._datos["ss_id_cash"], "CGE"), daemon=True).start()
 
-    def _renombrar_worker(self):
+    def _renombrar_ch(self):
+        if not self._datos:
+            return
+        if not messagebox.askyesno("Confirmar", "¿Renombrar hojas Chilquinta en Workiva?"):
+            return
+        self._deshabilitar_todos()
+        self.status("Renombrando hojas Chilquinta...")
+        threading.Thread(target=self._renombrar_worker,
+                         args=(self._datos["pares_ch"] + self._datos["pares_ch_fr"],
+                               self._datos["ss_id_ch"], "Chilquinta"), daemon=True).start()
+
+    def _renombrar_worker(self, pares, ss_id, etiqueta):
         try:
-            d = self._datos
-            todos = d["pares_cge"] + d["pares_fr"]
             ok = err = 0
-            for sheet_id, actual, nuevo, pid, idx in todos:
+            for sheet_id, actual, nuevo, pid, idx in pares:
                 if actual == nuevo:
                     continue
                 body = {"name": nuevo, "index": idx}
                 if pid:
                     body["parent"] = {"id": pid}
-                st, data = api_patch(f"/platform/v1/spreadsheets/{d['ss_id_cash']}/sheets/{sheet_id}", body)
+                st, data = api_patch(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}", body)
                 if st in (200, 202, 204):
                     self.log(f"  ✓ {actual}  →  {nuevo}", "ok")
                     ok += 1
                 else:
-                    st2, data2 = api_put(f"/platform/v1/spreadsheets/{d['ss_id_cash']}/sheets/{sheet_id}", body)
+                    st2, _ = api_put(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}", body)
                     if st2 in (200, 202, 204):
                         self.log(f"  ✓ {actual}  →  {nuevo}  (PUT)", "ok")
                         ok += 1
@@ -466,15 +509,13 @@ class App(tk.Tk):
                         self.log(f"  ✗ {actual}  PATCH:{st} PUT:{st2}", "err")
                         err += 1
                 time.sleep(0.25)
-            self.log(f"Renombrado completado: {ok} OK, {err} errores.", "ok" if err == 0 else "err")
-            self.status(f"Renombrado: {ok} OK, {err} errores.")
-            self._set_btns(btn_buscar="normal",
-                           btn_limpiar_cge="normal" if d["subhojas_cge"] else "disabled",
-                           btn_limpiar_fr="normal"  if d["subhojas_fr"]  else "disabled")
+            self.log(f"Renombrado {etiqueta}: {ok} OK, {err} errores.", "ok" if err == 0 else "err")
+            self.status(f"Renombrado {etiqueta}: {ok} OK, {err} errores.")
+            self._habilitar_todos()
         except Exception as e:
             self.log(f"ERROR renombrar: {e}", "err")
             self.status("Error al renombrar.")
-            self._set_btns(btn_buscar="normal", btn_renombrar="normal")
+            self._set_btns(btn_buscar="normal")
 
     # ── LIMPIAR CGE ───────────────────────────────────────────────────────────
     def _limpiar_cge(self):
@@ -483,28 +524,50 @@ class App(tk.Tk):
         n = len(self._datos["subhojas_cge"])
         if not messagebox.askyesno("Confirmar", f"¿Limpiar rangos en {n} hojas CGE Cash management?"):
             return
-        self._set_btns(btn_buscar="disabled", btn_renombrar="disabled",
-                       btn_limpiar_cge="disabled", btn_limpiar_fr="disabled")
+        self._deshabilitar_todos()
         self.status("Limpiando hojas CGE...")
         threading.Thread(target=self._limpiar_worker,
-                         args=(self._datos["subhojas_cge"], RANGOS_CGE, "CGE"), daemon=True).start()
+                         args=(self._datos["subhojas_cge"], RANGOS_CGE,
+                               self._datos["ss_id_cash"], "CGE"), daemon=True).start()
 
-    # ── LIMPIAR FR ────────────────────────────────────────────────────────────
     def _limpiar_fr(self):
         if not self._datos or not self._datos.get("subhojas_fr"):
             return
         n = len(self._datos["subhojas_fr"])
         if not messagebox.askyesno("Confirmar", f"¿Limpiar rangos en {n} hojas Fund Request?"):
             return
-        self._set_btns(btn_buscar="disabled", btn_renombrar="disabled",
-                       btn_limpiar_cge="disabled", btn_limpiar_fr="disabled")
+        self._deshabilitar_todos()
         self.status("Limpiando hojas Fund Request...")
         threading.Thread(target=self._limpiar_worker,
-                         args=(self._datos["subhojas_fr"], RANGOS_FR, "Fund Request"), daemon=True).start()
+                         args=(self._datos["subhojas_fr"], RANGOS_FR,
+                               self._datos["ss_id_cash"], "Fund Request"), daemon=True).start()
 
-    def _limpiar_worker(self, subhojas, rangos, etiqueta):
+    def _limpiar_ch(self):
+        if not self._datos or not self._datos.get("subhojas_ch"):
+            return
+        n = len(self._datos["subhojas_ch"])
+        if not messagebox.askyesno("Confirmar", f"¿Limpiar rangos en {n} hojas Chilquinta?"):
+            return
+        self._deshabilitar_todos()
+        self.status("Limpiando hojas Chilquinta...")
+        threading.Thread(target=self._limpiar_worker,
+                         args=(self._datos["subhojas_ch"], RANGOS_CGE,
+                               self._datos["ss_id_ch"], "Chilquinta"), daemon=True).start()
+
+    def _limpiar_ch_fr(self):
+        if not self._datos or not self._datos.get("subhojas_ch_fr"):
+            return
+        n = len(self._datos["subhojas_ch_fr"])
+        if not messagebox.askyesno("Confirmar", f"¿Limpiar rangos en {n} hojas CC Funds request?"):
+            return
+        self._deshabilitar_todos()
+        self.status("Limpiando hojas CC Funds request...")
+        threading.Thread(target=self._limpiar_worker,
+                         args=(self._datos["subhojas_ch_fr"], RANGOS_FR,
+                               self._datos["ss_id_ch"], "CC Funds request"), daemon=True).start()
+
+    def _limpiar_worker(self, subhojas, rangos, ss_id, etiqueta):
         try:
-            d = self._datos
             ok = err = 0
             for h in subhojas:
                 sheet_id = h["id"]
@@ -513,7 +576,7 @@ class App(tk.Tk):
                 for rango in rangos:
                     vals = vacias(rango)
                     st, _ = api_put(
-                        f"/platform/v1/spreadsheets/{d['ss_id_cash']}/sheets/{sheet_id}/values/{rango}",
+                        f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}/values/{rango}",
                         {"values": vals}
                     )
                     if st in (200, 202, 204):
@@ -522,15 +585,31 @@ class App(tk.Tk):
                         self.log(f"    ✗ {nombre} {rango}: ERR {st}", "err")
                         err += 1
                     time.sleep(0.1)
-            self.log(f"Limpieza {etiqueta} completada: {ok} OK, {err} errores.", "ok" if err == 0 else "err")
+            self.log(f"Limpieza {etiqueta}: {ok} OK, {err} errores.", "ok" if err == 0 else "err")
             self.status(f"Limpieza {etiqueta}: {ok} OK, {err} errores.")
-            self._set_btns(btn_buscar="normal",
-                           btn_limpiar_cge="normal" if d["subhojas_cge"] else "disabled",
-                           btn_limpiar_fr="normal"  if d["subhojas_fr"]  else "disabled")
+            self._habilitar_todos()
         except Exception as e:
             self.log(f"ERROR limpiar: {e}", "err")
             self.status("Error al limpiar.")
             self._set_btns(btn_buscar="normal")
+
+    def _deshabilitar_todos(self):
+        self._set_btns(btn_buscar="disabled", btn_renombrar="disabled",
+                       btn_limpiar_cge="disabled", btn_limpiar_fr="disabled",
+                       btn_renombrar_ch="disabled", btn_limpiar_ch="disabled",
+                       btn_limpiar_ch_fr="disabled")
+
+    def _habilitar_todos(self):
+        d = self._datos
+        self._set_btns(
+            btn_buscar="normal",
+            btn_renombrar="normal"     if any(a != n for _, a, n, _, _ in d.get("pares_cge",[]) + d.get("pares_fr",[]))    else "disabled",
+            btn_limpiar_cge="normal"   if d.get("subhojas_cge")   else "disabled",
+            btn_limpiar_fr="normal"    if d.get("subhojas_fr")    else "disabled",
+            btn_renombrar_ch="normal"  if any(a != n for _, a, n, _, _ in d.get("pares_ch",[]) + d.get("pares_ch_fr",[]))  else "disabled",
+            btn_limpiar_ch="normal"    if d.get("subhojas_ch")    else "disabled",
+            btn_limpiar_ch_fr="normal" if d.get("subhojas_ch_fr") else "disabled",
+        )
 
 # ── ENTRY POINT ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
