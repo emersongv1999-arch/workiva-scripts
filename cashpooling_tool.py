@@ -257,39 +257,26 @@ class App(tk.Tk):
         # ── Botones de acción ─────────────────────────────────────────────────
         af = tk.Frame(self, bg=BG, padx=16, pady=10)
         af.pack(fill="x")
+        for c in range(3):
+            af.columnconfigure(c, weight=1, uniform="tarjetas")
 
-        # ── Botones de acción CGE ─────────────────────────────────────────────
-        tk.Label(af, text="CGE Cash Management:", font=("Segoe UI", 9, "bold"),
-                 bg=BG, fg=FG_DIM).pack(side="left", padx=(0,6))
+        # ── Tarjeta CGE Cash Management ───────────────────────────────────────
+        card_cge = self._tarjeta(af, "CGE Cash Management", 0)
+        self.btn_renombrar   = self._btn_card(card_cge, "Renombrar hojas",     BTN_GREEN, self._renombrar)
+        self.btn_limpiar_cge = self._btn_card(card_cge, "Limpiar CGE",         BTN_BLUE,  self._limpiar_cge)
+        self.btn_limpiar_fr  = self._btn_card(card_cge, "Limpiar Fund Request", BTN_BLUE, self._limpiar_fr)
 
-        self.btn_renombrar = self._btn(af, "Renombrar hojas", BTN_GREEN, self._renombrar, state="disabled")
-        self.btn_renombrar.pack(side="left", padx=(0,6), ipady=5, ipadx=8)
+        # ── Tarjeta Chilquinta ────────────────────────────────────────────────
+        card_ch = self._tarjeta(af, "Chilquinta Cash Management", 1)
+        self.btn_renombrar_ch  = self._btn_card(card_ch, "Renombrar hojas",          BTN_GREEN, self._renombrar_ch)
+        self.btn_limpiar_ch    = self._btn_card(card_ch, "Limpiar Chilquinta",       BTN_BLUE,  self._limpiar_ch)
+        self.btn_limpiar_ch_fr = self._btn_card(card_ch, "Limpiar CC Funds request", BTN_BLUE,  self._limpiar_ch_fr)
 
-        self.btn_limpiar_cge = self._btn(af, "Limpiar CGE", BTN_BLUE, self._limpiar_cge, state="disabled")
-        self.btn_limpiar_cge.pack(side="left", padx=(0,6), ipady=5, ipadx=8)
-
-        self.btn_limpiar_fr = self._btn(af, "Limpiar Fund Request", BTN_BLUE, self._limpiar_fr, state="disabled")
-        self.btn_limpiar_fr.pack(side="left", padx=(0,20), ipady=5, ipadx=8)
-
-        # ── Botones de acción Chilquinta ──────────────────────────────────────
-        tk.Label(af, text="Chilquinta:", font=("Segoe UI", 9, "bold"),
-                 bg=BG, fg=FG_DIM).pack(side="left", padx=(0,6))
-
-        self.btn_renombrar_ch = self._btn(af, "Renombrar hojas", BTN_GREEN, self._renombrar_ch, state="disabled")
-        self.btn_renombrar_ch.pack(side="left", padx=(0,6), ipady=5, ipadx=8)
-
-        self.btn_limpiar_ch = self._btn(af, "Limpiar Chilquinta", BTN_BLUE, self._limpiar_ch, state="disabled")
-        self.btn_limpiar_ch.pack(side="left", padx=(0,6), ipady=5, ipadx=8)
-
-        self.btn_limpiar_ch_fr = self._btn(af, "Limpiar CC Funds request", BTN_BLUE, self._limpiar_ch_fr, state="disabled")
-        self.btn_limpiar_ch_fr.pack(side="left", padx=(0,20), ipady=5, ipadx=8)
-
-        # ── Botón Total Cash Management (solo renombrado) ─────────────────────
-        tk.Label(af, text="Total:", font=("Segoe UI", 9, "bold"),
-                 bg=BG, fg=FG_DIM).pack(side="left", padx=(0,6))
-
-        self.btn_renombrar_tot = self._btn(af, "Renombrar hojas", BTN_GREEN, self._renombrar_tot, state="disabled")
-        self.btn_renombrar_tot.pack(side="left", padx=(0,8), ipady=5, ipadx=8)
+        # ── Tarjeta Total (solo renombrado) ───────────────────────────────────
+        card_tot = self._tarjeta(af, "Total Cash Management", 2)
+        self.btn_renombrar_tot = self._btn_card(card_tot, "Renombrar hojas", BTN_GREEN, self._renombrar_tot)
+        tk.Label(card_tot, text="(solo renombrado)", font=("Segoe UI", 8, "italic"),
+                 bg=BG2, fg=FG_DIM).pack(pady=(2,0))
 
         # ── Log ───────────────────────────────────────────────────────────────
         lf = tk.Frame(self, bg=BG, padx=16, pady=7)
@@ -317,6 +304,27 @@ class App(tk.Tk):
                       font=("Segoe UI", 8), bg=ACCENT, fg=FG_DIM,
                       anchor="w", padx=12, pady=4)
         sb.pack(fill="x", side="bottom")
+
+    def _tarjeta(self, parent, titulo, columna):
+        """Crea una tarjeta con encabezado para agrupar botones de un archivo."""
+        wrap = tk.Frame(parent, bg=BG2)
+        wrap.grid(row=0, column=columna, sticky="nsew",
+                  padx=(0 if columna == 0 else 8, 0))
+
+        cab = tk.Frame(wrap, bg=ACCENT)
+        cab.pack(fill="x")
+        tk.Label(cab, text=titulo, font=("Segoe UI", 9, "bold"),
+                 bg=ACCENT, fg=FG, pady=6).pack()
+
+        cuerpo = tk.Frame(wrap, bg=BG2, padx=10, pady=10)
+        cuerpo.pack(fill="both", expand=True)
+        return cuerpo
+
+    def _btn_card(self, parent, text, color, cmd):
+        """Botón de ancho completo dentro de una tarjeta."""
+        b = self._btn(parent, text, color, cmd, state="disabled")
+        b.pack(fill="x", pady=2, ipady=4)
+        return b
 
     def _btn(self, parent, text, color, cmd, state="normal"):
         b = tk.Button(parent, text=text, bg=color, fg="white",
