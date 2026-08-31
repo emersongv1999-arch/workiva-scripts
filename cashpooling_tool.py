@@ -15,6 +15,8 @@ CLIENT_SECRET = "wk_secret:oa2c:DzlUCmBQDv6raPxG09me"
 TOKEN_URL     = "https://api.app.wdesk.com/iam/v1/oauth2/token"
 WDESK_BASE    = "https://api.app.wdesk.com"
 
+VERSION = "v5 (2026-08-31) — match por nombre + reincorpora sueltas"
+
 CTX = ssl.create_default_context()
 CTX.check_hostname = False
 CTX.verify_mode    = ssl.CERT_NONE
@@ -105,14 +107,33 @@ def buscar_spreadsheet(patron, log):
     log(f"  ✗ No encontrado.")
     return None, None
 
-def listar_hojas(ss_id):
+def _siguiente_pagina(data):
+    """Extrae el link a la página siguiente, tolerando las variantes de la API."""
+    for clave in ("@nextLink", "nextLink", "@odata.nextLink", "next", "nextPageLink"):
+        v = data.get(clave)
+        if v:
+            return v
+    enlaces = data.get("links") or data.get("_links") or {}
+    if isinstance(enlaces, dict):
+        nxt = enlaces.get("next")
+        if isinstance(nxt, dict):
+            nxt = nxt.get("href")
+        if nxt:
+            return nxt
+    return None
+
+def listar_hojas(ss_id, log=None):
     hojas = []
     url = f"/platform/v1/spreadsheets/{ss_id}/sheets?$top=200"
+    paginas = 0
     while url:
+        paginas += 1
         data = api_get(url)
         items = data.get("value", data.get("data", []))
         hojas.extend(items)
-        url = data.get("@nextLink") or data.get("nextLink") or None
+        url = _siguiente_pagina(data)
+    if log:
+        log(f"  {len(hojas)} hojas ({paginas} página(s))", "dim")
     return hojas
 
 def leer_bases(ss_id, sheet_id, log):
@@ -379,7 +400,7 @@ class App(tk.Tk):
 
     def _buscar_worker(self, mes, anio):
         try:
-            self.log(f"── Período {mes}-{anio} ──", "dim")
+            self.log(f"── Período {mes}-{anio} ── {VERSION}", "dim")
 
             # Bases
             patron_bases = f"TE - Bases {mes}-{anio}"
@@ -421,6 +442,20 @@ class App(tk.Tk):
                 # renombrar. Filtrar por parent la dejaría fuera y el grupo se
                 # quedaría corto de hojas para las fechas disponibles.
                 hijos = [h for h in hojas if pat.match(h.get("name", ""))]
+
+                # Diagnóstico: hojas que empiezan con el prefijo pero cuyo nombre
+                # no calza exacto (espacios raros, formato de fecha distinto, etc.)
+                raras = [h for h in hojas
+                         if h.get("name", "").lower().startswith(prefijo.lower())
+                         and not pat.match(h.get("name", ""))]
+                if raras:
+                    self.log(f"    ⚠ {prefijo}: {len(raras)} hoja(s) con el prefijo pero "
+                             f"nombre que no calza con el patrón:", "err")
+                    for h in raras:
+                        n = h.get("name", "")
+                        self.log(f"        {n!r}  (codigos: {[ord(c) for c in n[len(prefijo):]][:12]})", "err")
+
+                self.log(f"    {prefijo}: {len(hijos)} hojas detectadas por nombre", "dim")
 
                 sueltas = [h for h in hijos if padre_de(h) != parent_id]
                 if sueltas:
@@ -467,7 +502,7 @@ class App(tk.Tk):
             pares_cge = []; pares_fr = []; subhojas_cge = []; subhojas_fr = []
 
             if ss_id_cash:
-                hojas_cash = listar_hojas(ss_id_cash)
+                hojas_cash = listar_hojas(ss_id_cash, self.log)
                 self.log(f"  CGE: {len(hojas_cash)} hojas")
                 pat_cge = re.compile(r"^CGE Cash management \d{2}\.\d{2}$")
                 pat_fr  = re.compile(r"^Fund Request \d{2}\.\d{2}$")
@@ -489,7 +524,7 @@ class App(tk.Tk):
             pares_ch = []; pares_ch_fr = []; subhojas_ch = []; subhojas_ch_fr = []
 
             if ss_id_ch:
-                hojas_ch = listar_hojas(ss_id_ch)
+                hojas_ch = listar_hojas(ss_id_ch, self.log)
                 self.log(f"  Chilquinta: {len(hojas_ch)} hojas")
                 pat_ch    = re.compile(r"^Chilquinta \d{2}\.\d{2}$")
                 pat_ch_fr = re.compile(r"^CC Funds request \d{2}\.\d{2}$")
@@ -511,7 +546,7 @@ class App(tk.Tk):
             pares_tot = []
 
             if ss_id_tot:
-                hojas_tot = listar_hojas(ss_id_tot)
+                hojas_tot = listar_hojas(ss_id_tot, self.log)
                 self.log(f"  Total: {len(hojas_tot)} hojas")
                 for nombre_padre, prefijo in GRUPOS_TOTAL:
                     padre_id = next((h["id"] for h in hojas_tot
