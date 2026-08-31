@@ -157,6 +157,15 @@ RANGOS_FR  = [
     "P4:Q8","P11:Q15","V4:V8","V11:V14",
 ]
 
+# Grupos del archivo "MM Total Cash Management": (hoja padre, prefijo de subhojas)
+GRUPOS_TOTAL = [
+    ("SGCH Cash management - Summary", "SGCH Cash management"),
+    ("CGE S.A.",                       "CGE S.A."),
+    ("Chilquinta",                     "Chilquinta"),
+    ("SGCI",                           "SGCI"),
+    ("SGCE",                           "SGCE"),
+]
+
 # ── VENTANA PRINCIPAL ─────────────────────────────────────────────────────────
 class App(tk.Tk):
     def __init__(self):
@@ -230,7 +239,7 @@ class App(tk.Tk):
         self.tree.heading("actual", text="Nombre actual")
         self.tree.heading("nuevo",  text="Nombre nuevo")
         self.tree.heading("cambio", text="")
-        self.tree.column("tipo",   width=160, anchor="w")
+        self.tree.column("tipo",   width=200, anchor="w")
         self.tree.column("actual", width=230, anchor="w")
         self.tree.column("nuevo",  width=230, anchor="w")
         self.tree.column("cambio", width=50,  anchor="center")
@@ -273,7 +282,14 @@ class App(tk.Tk):
         self.btn_limpiar_ch.pack(side="left", padx=(0,6), ipady=5, ipadx=8)
 
         self.btn_limpiar_ch_fr = self._btn(af, "Limpiar CC Funds request", BTN_BLUE, self._limpiar_ch_fr, state="disabled")
-        self.btn_limpiar_ch_fr.pack(side="left", padx=(0,8), ipady=5, ipadx=8)
+        self.btn_limpiar_ch_fr.pack(side="left", padx=(0,20), ipady=5, ipadx=8)
+
+        # ── Botón Total Cash Management (solo renombrado) ─────────────────────
+        tk.Label(af, text="Total:", font=("Segoe UI", 9, "bold"),
+                 bg=BG, fg=FG_DIM).pack(side="left", padx=(0,6))
+
+        self.btn_renombrar_tot = self._btn(af, "Renombrar hojas", BTN_GREEN, self._renombrar_tot, state="disabled")
+        self.btn_renombrar_tot.pack(side="left", padx=(0,8), ipady=5, ipadx=8)
 
         # ── Log ───────────────────────────────────────────────────────────────
         lf = tk.Frame(self, bg=BG, padx=16, pady=7)
@@ -356,11 +372,24 @@ class App(tk.Tk):
                 if hojas_b:
                     bases = leer_bases(ss_id_bases, hojas_b[0]["id"], self.log)
 
-            def construir_pares_desde(hojas, parent_id, patron, prefijo):
+            def construir_pares_desde(hojas, parent_id, prefijo):
+                """
+                Toma las subhojas de parent_id cuyo nombre es "<prefijo> DD.MM"
+                o "<prefijo> xx.xx[N]" (hojas de reserva) y les asigna las fechas
+                de TE - Bases en orden. Las fechadas van primero, las xx.xx al
+                final, para que absorban fechas extra si el período es más largo.
+                """
+                pat = re.compile(rf"^{re.escape(prefijo)} (\d{{2}}\.\d{{2}}|xx\.xx\d*)$", re.IGNORECASE)
                 hijos = [h for h in hojas
                          if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == parent_id
-                         and patron.match(h.get("name",""))]
-                hijos.sort(key=lambda h: h.get("name",""))
+                         and pat.match(h.get("name",""))]
+                # Fechadas primero (orden natural), reservas xx.xx al final
+                def orden(h):
+                    nombre = h.get("name","")
+                    es_reserva = "xx.xx" in nombre.lower()
+                    return (1 if es_reserva else 0, nombre)
+                hijos.sort(key=orden)
+
                 pares = []
                 for i, h in enumerate(hijos):
                     actual = h.get("name","")
@@ -382,8 +411,8 @@ class App(tk.Tk):
                 pat_fr  = re.compile(r"^Fund Request \d{2}\.\d{2}$")
                 summary_id = next((h["id"] for h in hojas_cash if h.get("name","").strip() == "CGE Cash management - Summary"), None)
                 fundreq_id = next((h["id"] for h in hojas_cash if h.get("name","").strip() == "Fund Request"), None)
-                pares_cge = construir_pares_desde(hojas_cash, summary_id, pat_cge, "CGE Cash management") if summary_id else []
-                pares_fr  = construir_pares_desde(hojas_cash, fundreq_id,  pat_fr,  "Fund Request")        if fundreq_id  else []
+                pares_cge = construir_pares_desde(hojas_cash, summary_id, "CGE Cash management") if summary_id else []
+                pares_fr  = construir_pares_desde(hojas_cash, fundreq_id,  "Fund Request")        if fundreq_id  else []
                 subhojas_cge = sorted([h for h in hojas_cash if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == summary_id and pat_cge.match(h.get("name",""))], key=lambda h: h.get("name",""))
                 subhojas_fr  = sorted([h for h in hojas_cash if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == fundreq_id  and pat_fr.match(h.get("name",""))],  key=lambda h: h.get("name",""))
                 self.log(f"  CGE subhojas: {len(pares_cge)} | Fund Request: {len(pares_fr)}", "dim")
@@ -402,15 +431,36 @@ class App(tk.Tk):
                 pat_ch_fr = re.compile(r"^CC Funds request \d{2}\.\d{2}$")
                 cc_sum_id = next((h["id"] for h in hojas_ch if h.get("name","").strip() == "CC Cash management - Summary"), None)
                 cc_fr_id  = next((h["id"] for h in hojas_ch if h.get("name","").strip() == "Funds request"), None)
-                pares_ch    = construir_pares_desde(hojas_ch, cc_sum_id, pat_ch,    "Chilquinta")       if cc_sum_id else []
-                pares_ch_fr = construir_pares_desde(hojas_ch, cc_fr_id,  pat_ch_fr, "CC Funds request") if cc_fr_id  else []
+                pares_ch    = construir_pares_desde(hojas_ch, cc_sum_id, "Chilquinta")       if cc_sum_id else []
+                pares_ch_fr = construir_pares_desde(hojas_ch, cc_fr_id,  "CC Funds request") if cc_fr_id  else []
                 subhojas_ch    = sorted([h for h in hojas_ch if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == cc_sum_id and pat_ch.match(h.get("name",""))],    key=lambda h: h.get("name",""))
                 subhojas_ch_fr = sorted([h for h in hojas_ch if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == cc_fr_id  and pat_ch_fr.match(h.get("name",""))], key=lambda h: h.get("name",""))
                 self.log(f"  Chilquinta subhojas: {len(pares_ch)} | CC Funds request: {len(pares_ch_fr)}", "dim")
             else:
                 self.log("✗ No se encontró Chilquinta Cash Management.", "err")
 
-            if not ss_id_cash and not ss_id_ch:
+            # ── Total Cash Management (solo renombrado) ───────────────────────
+            patron_tot = f"{mes} Total Cash Management"
+            ss_id_tot, nom_tot = buscar_spreadsheet(patron_tot, self.log)
+            pares_tot = []
+
+            if ss_id_tot:
+                hojas_tot = listar_hojas(ss_id_tot)
+                self.log(f"  Total: {len(hojas_tot)} hojas")
+                for nombre_padre, prefijo in GRUPOS_TOTAL:
+                    padre_id = next((h["id"] for h in hojas_tot
+                                     if h.get("name","").strip() == nombre_padre), None)
+                    if not padre_id:
+                        self.log(f"    ⚠ No se encontró el grupo '{nombre_padre}'", "err")
+                        continue
+                    grupo = construir_pares_desde(hojas_tot, padre_id, prefijo)
+                    pares_tot.extend(grupo)
+                    n_g = sum(1 for _, a, n, _, _ in grupo if a != n)
+                    self.log(f"    {prefijo}: {len(grupo)} subhojas ({n_g} cambian)", "dim")
+            else:
+                self.log("✗ No se encontró Total Cash Management.", "err")
+
+            if not ss_id_cash and not ss_id_ch and not ss_id_tot:
                 self.status("No se encontró ningún archivo.")
                 self._set_btns(btn_buscar="normal")
                 return
@@ -418,6 +468,7 @@ class App(tk.Tk):
             self._datos = {
                 "ss_id_cash":    ss_id_cash,
                 "ss_id_ch":      ss_id_ch,
+                "ss_id_tot":     ss_id_tot,
                 "pares_cge":     pares_cge,
                 "pares_fr":      pares_fr,
                 "subhojas_cge":  subhojas_cge,
@@ -426,25 +477,28 @@ class App(tk.Tk):
                 "pares_ch_fr":   pares_ch_fr,
                 "subhojas_ch":   subhojas_ch,
                 "subhojas_ch_fr":subhojas_ch_fr,
+                "pares_tot":     pares_tot,
             }
 
             n_cge = sum(1 for _, a, n, _, _ in pares_cge + pares_fr if a != n)
             n_ch  = sum(1 for _, a, n, _, _ in pares_ch + pares_ch_fr if a != n)
-            self.log(f"  Cambios CGE: {n_cge}  |  Cambios Chilquinta: {n_ch}", "ok")
+            n_tot = sum(1 for _, a, n, _, _ in pares_tot if a != n)
+            self.log(f"  Cambios — CGE: {n_cge} | Chilquinta: {n_ch} | Total: {n_tot}", "ok")
 
-            todos_pares = pares_cge + pares_fr + pares_ch + pares_ch_fr
+            todos_pares = pares_cge + pares_fr + pares_ch + pares_ch_fr + pares_tot
             self.after(0, lambda: self._poblar_tree(todos_pares))
 
             self._set_btns(
                 btn_buscar="normal",
-                btn_renombrar="normal"    if n_cge > 0         else "disabled",
-                btn_limpiar_cge="normal"  if subhojas_cge      else "disabled",
-                btn_limpiar_fr="normal"   if subhojas_fr       else "disabled",
-                btn_renombrar_ch="normal" if n_ch > 0          else "disabled",
-                btn_limpiar_ch="normal"   if subhojas_ch       else "disabled",
-                btn_limpiar_ch_fr="normal"if subhojas_ch_fr    else "disabled",
+                btn_renombrar="normal"     if n_cge > 0      else "disabled",
+                btn_limpiar_cge="normal"   if subhojas_cge   else "disabled",
+                btn_limpiar_fr="normal"    if subhojas_fr    else "disabled",
+                btn_renombrar_ch="normal"  if n_ch > 0       else "disabled",
+                btn_limpiar_ch="normal"    if subhojas_ch    else "disabled",
+                btn_limpiar_ch_fr="normal" if subhojas_ch_fr else "disabled",
+                btn_renombrar_tot="normal" if n_tot > 0      else "disabled",
             )
-            self.status(f"Listo — {nom_cash or ''} {nom_ch or ''}")
+            self.status(f"Listo — {nom_cash or ''} {nom_ch or ''} {nom_tot or ''}")
 
         except Exception as e:
             self.log(f"ERROR: {e}", "err")
@@ -459,9 +513,10 @@ class App(tk.Tk):
     def _poblar_tree(self, todos_pares):
         self._limpiar_tree()
         for sid, actual, nuevo, pid, idx in todos_pares:
-            tag = "cambia" if actual != nuevo else "igual"
+            tag   = "cambia" if actual != nuevo else "igual"
             marca = "✔" if actual != nuevo else ""
-            tipo = "CGE" if actual.startswith("CGE") else "Fund Request" if actual.startswith("Fund") else "Chilquinta" if actual.startswith("Chilquinta") else "CC Funds request"
+            # El tipo es el nombre sin la fecha final (ej: "CGE S.A. 03.08" -> "CGE S.A.")
+            tipo  = re.sub(r"\s+(\d{2}\.\d{2}|xx\.xx\d*)$", "", actual, flags=re.IGNORECASE) or actual
             self.tree.insert("", "end", values=(tipo, actual, nuevo, marca), tags=(tag,))
 
     # ── RENOMBRAR ─────────────────────────────────────────────────────────────
@@ -486,6 +541,17 @@ class App(tk.Tk):
         threading.Thread(target=self._renombrar_worker,
                          args=(self._datos["pares_ch"] + self._datos["pares_ch_fr"],
                                self._datos["ss_id_ch"], "Chilquinta"), daemon=True).start()
+
+    def _renombrar_tot(self):
+        if not self._datos:
+            return
+        if not messagebox.askyesno("Confirmar", "¿Renombrar hojas de Total Cash Management en Workiva?"):
+            return
+        self._deshabilitar_todos()
+        self.status("Renombrando hojas Total...")
+        threading.Thread(target=self._renombrar_worker,
+                         args=(self._datos["pares_tot"],
+                               self._datos["ss_id_tot"], "Total"), daemon=True).start()
 
     def _renombrar_worker(self, pares, ss_id, etiqueta):
         try:
@@ -597,7 +663,7 @@ class App(tk.Tk):
         self._set_btns(btn_buscar="disabled", btn_renombrar="disabled",
                        btn_limpiar_cge="disabled", btn_limpiar_fr="disabled",
                        btn_renombrar_ch="disabled", btn_limpiar_ch="disabled",
-                       btn_limpiar_ch_fr="disabled")
+                       btn_limpiar_ch_fr="disabled", btn_renombrar_tot="disabled")
 
     def _habilitar_todos(self):
         d = self._datos
@@ -609,6 +675,7 @@ class App(tk.Tk):
             btn_renombrar_ch="normal"  if any(a != n for _, a, n, _, _ in d.get("pares_ch",[]) + d.get("pares_ch_fr",[]))  else "disabled",
             btn_limpiar_ch="normal"    if d.get("subhojas_ch")    else "disabled",
             btn_limpiar_ch_fr="normal" if d.get("subhojas_ch_fr") else "disabled",
+            btn_renombrar_tot="normal" if any(a != n for _, a, n, _, _ in d.get("pares_tot",[]))                           else "disabled",
         )
 
 # ── ENTRY POINT ───────────────────────────────────────────────────────────────
