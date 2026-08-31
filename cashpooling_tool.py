@@ -15,7 +15,7 @@ CLIENT_SECRET = "wk_secret:oa2c:DzlUCmBQDv6raPxG09me"
 TOKEN_URL     = "https://api.app.wdesk.com/iam/v1/oauth2/token"
 WDESK_BASE    = "https://api.app.wdesk.com"
 
-VERSION = "v5 (2026-08-31) — match por nombre + reincorpora sueltas"
+VERSION = "v6 (2026-08-31) — tolera espacios dobles en los nombres"
 
 CTX = ssl.create_default_context()
 CTX.check_hostname = False
@@ -430,7 +430,11 @@ class App(tk.Tk):
                 se ordenara por nombre las fechas quedarían asignadas a posiciones
                 equivocadas y las hojas se verían desordenadas.
                 """
-                pat = re.compile(rf"^{re.escape(prefijo)} (\d{{2}}\.\d{{2}}|xx\.xx\d*)$", re.IGNORECASE)
+                # \s+ y no un espacio simple: hay hojas guardadas con espacio
+                # doble ("SGCH Cash management  19.08") que si no quedan fuera.
+                # Al renombrar se normalizan a un solo espacio.
+                pat = re.compile(rf"^{re.escape(prefijo)}\s+(\d{{2}}\.\d{{2}}|xx\.xx\d*)\s*$",
+                                 re.IGNORECASE)
 
                 def padre_de(h):
                     return h.get("parentId") or (h.get("parent") or {}).get("id", "")
@@ -445,9 +449,12 @@ class App(tk.Tk):
 
                 # Diagnóstico: hojas que empiezan con el prefijo pero cuyo nombre
                 # no calza exacto (espacios raros, formato de fecha distinto, etc.)
+                # Solo interesan las que parecen hoja fechada (traen dígitos tras
+                # el prefijo); las hojas padre tipo "... - Summary" no son error.
                 raras = [h for h in hojas
                          if h.get("name", "").lower().startswith(prefijo.lower())
-                         and not pat.match(h.get("name", ""))]
+                         and not pat.match(h.get("name", ""))
+                         and any(c.isdigit() for c in h.get("name", "")[len(prefijo):])]
                 if raras:
                     self.log(f"    ⚠ {prefijo}: {len(raras)} hoja(s) con el prefijo pero "
                              f"nombre que no calza con el patrón:", "err")
