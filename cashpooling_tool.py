@@ -400,9 +400,25 @@ class App(tk.Tk):
                 equivocadas y las hojas se verían desordenadas.
                 """
                 pat = re.compile(rf"^{re.escape(prefijo)} (\d{{2}}\.\d{{2}}|xx\.xx\d*)$", re.IGNORECASE)
-                hijos = [h for h in hojas
-                         if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == parent_id
-                         and pat.match(h.get("name",""))]
+
+                def padre_de(h):
+                    return h.get("parentId") or (h.get("parent") or {}).get("id", "")
+
+                hijos    = []
+                huerfanas = []   # nombre correcto pero cuelgan de otro padre
+                for h in hojas:
+                    if not pat.match(h.get("name", "")):
+                        continue
+                    if padre_de(h) == parent_id:
+                        hijos.append(h)
+                    else:
+                        huerfanas.append(h)
+
+                if huerfanas:
+                    self.log(f"    ⚠ {prefijo}: {len(huerfanas)} hoja(s) con el nombre correcto "
+                             f"pero fuera del grupo (no se renombrarán):", "err")
+                    for h in huerfanas:
+                        self.log(f"        '{h.get('name','')}' parent={padre_de(h) or '(ninguno)'}", "err")
 
                 # Orden físico. Si la API no entrega índice, se respeta el orden
                 # en que vinieron las hojas (que ya es el orden del documento).
@@ -582,28 +598,70 @@ class App(tk.Tk):
                          args=(self._datos["pares_tot"],
                                self._datos["ss_id_tot"], "Total"), daemon=True).start()
 
+    def _aplicar_nombre(self, ss_id, sheet_id, nombre, pid, idx):
+        """PATCH y, si falla, PUT. Devuelve (ok, detalle_del_error)."""
+        body = {"name": nombre, "index": idx}
+        if pid:
+            body["parent"] = {"id": pid}
+        st, data = api_patch(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}", body)
+        if st in (200, 202, 204):
+            return True, ""
+        st2, data2 = api_put(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}", body)
+        if st2 in (200, 202, 204):
+            return True, ""
+        return False, f"PATCH:{st} {data} PUT:{st2} {data2}"
+
     def _renombrar_worker(self, pares, ss_id, etiqueta):
         try:
+            cambios = [p for p in pares if p[1] != p[2]]
+            if not cambios:
+                self.log(f"Renombrado {etiqueta}: no hay cambios que aplicar.", "dim")
+                self.status(f"{etiqueta}: sin cambios.")
+                self._habilitar_todos()
+                return
+
+            # ¿Algún nombre nuevo ya lo tiene otra hoja del grupo? (ej: intercambio
+            # 24.09 <-> 25.09). Workiva rechaza con 400 si el nombre está ocupado,
+            # así que en ese caso hay que pasar por un nombre temporal.
+            nombres_actuales = {a for _, a, _, _, _ in pares}
+            necesita_temp = any(nuevo in nombres_actuales for _, _, nuevo, _, _ in cambios)
+
             ok = err = 0
-            for sheet_id, actual, nuevo, pid, idx in pares:
-                if actual == nuevo:
-                    continue
-                body = {"name": nuevo, "index": idx}
-                if pid:
-                    body["parent"] = {"id": pid}
-                st, data = api_patch(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}", body)
-                if st in (200, 202, 204):
-                    self.log(f"  ✓ {actual}  →  {nuevo}", "ok")
-                    ok += 1
-                else:
-                    st2, _ = api_put(f"/platform/v1/spreadsheets/{ss_id}/sheets/{sheet_id}", body)
-                    if st2 in (200, 202, 204):
-                        self.log(f"  ✓ {actual}  →  {nuevo}  (PUT)", "ok")
+
+            if necesita_temp:
+                self.log(f"  Hay nombres cruzados: se renombra en dos pasos.", "dim")
+                # Paso 1: a nombres temporales únicos
+                temporales = []
+                for i, (sheet_id, actual, nuevo, pid, idx) in enumerate(cambios):
+                    tmp = f"~tmp{i}~ {actual}"[:100]
+                    bien, detalle = self._aplicar_nombre(ss_id, sheet_id, tmp, pid, idx)
+                    if bien:
+                        temporales.append((sheet_id, actual, nuevo, pid, idx))
+                    else:
+                        self.log(f"  ✗ {actual} (paso 1) {detalle}", "err")
+                        err += 1
+                    time.sleep(0.25)
+                # Paso 2: del temporal al nombre definitivo
+                for sheet_id, actual, nuevo, pid, idx in temporales:
+                    bien, detalle = self._aplicar_nombre(ss_id, sheet_id, nuevo, pid, idx)
+                    if bien:
+                        self.log(f"  ✓ {actual}  →  {nuevo}", "ok")
                         ok += 1
                     else:
-                        self.log(f"  ✗ {actual}  PATCH:{st} PUT:{st2}", "err")
+                        self.log(f"  ✗ {actual}  →  {nuevo} (paso 2) {detalle}", "err")
                         err += 1
-                time.sleep(0.25)
+                    time.sleep(0.25)
+            else:
+                for sheet_id, actual, nuevo, pid, idx in cambios:
+                    bien, detalle = self._aplicar_nombre(ss_id, sheet_id, nuevo, pid, idx)
+                    if bien:
+                        self.log(f"  ✓ {actual}  →  {nuevo}", "ok")
+                        ok += 1
+                    else:
+                        self.log(f"  ✗ {actual}  →  {nuevo}  {detalle}", "err")
+                        err += 1
+                    time.sleep(0.25)
+
             self.log(f"Renombrado {etiqueta}: {ok} OK, {err} errores.", "ok" if err == 0 else "err")
             self.status(f"Renombrado {etiqueta}: {ok} OK, {err} errores.")
             self._habilitar_todos()
