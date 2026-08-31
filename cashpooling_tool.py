@@ -4,6 +4,7 @@ Herramienta GUI para renombrar hojas y limpiar rangos en Workiva.
 """
 
 import json, re, ssl, time, threading, datetime
+from collections import namedtuple
 import tkinter as tk
 from tkinter import ttk, messagebox
 import urllib.request, urllib.error
@@ -156,6 +157,15 @@ RANGOS_FR  = [
     "F28:L32","F36:L40","F42:L46","F48:L52","F54:L58",
     "P4:Q8","P11:Q15","V4:V8","V11:V14",
 ]
+
+# Una hoja a renombrar. 'parent' es el grupo al que debe pertenecer y
+# 'parent_orig' el que tiene hoy: si difieren, la hoja está suelta y hay que
+# volver a colgarla aunque su nombre no cambie.
+Par = namedtuple("Par", "sheet_id actual nuevo parent idx parent_orig")
+
+def par_cambia(p):
+    """True si hay que tocar la hoja: cambia de nombre o está fuera de su grupo."""
+    return p.actual != p.nuevo or p.parent_orig != p.parent
 
 # Grupos del archivo "MM Total Cash Management": (hoja padre, prefijo de subhojas)
 GRUPOS_TOTAL = [
@@ -404,21 +414,20 @@ class App(tk.Tk):
                 def padre_de(h):
                     return h.get("parentId") or (h.get("parent") or {}).get("id", "")
 
-                hijos    = []
-                huerfanas = []   # nombre correcto pero cuelgan de otro padre
-                for h in hojas:
-                    if not pat.match(h.get("name", "")):
-                        continue
-                    if padre_de(h) == parent_id:
-                        hijos.append(h)
-                    else:
-                        huerfanas.append(h)
+                # Se identifican por NOMBRE, no por parent: el prefijo es único
+                # dentro del archivo, así que el nombre ya dice a qué grupo
+                # pertenece la hoja. Si alguna quedó suelta (perdió el vínculo de
+                # subhoja), igual entra y se la vuelve a colgar del grupo al
+                # renombrar. Filtrar por parent la dejaría fuera y el grupo se
+                # quedaría corto de hojas para las fechas disponibles.
+                hijos = [h for h in hojas if pat.match(h.get("name", ""))]
 
-                if huerfanas:
-                    self.log(f"    ⚠ {prefijo}: {len(huerfanas)} hoja(s) con el nombre correcto "
-                             f"pero fuera del grupo (no se renombrarán):", "err")
-                    for h in huerfanas:
-                        self.log(f"        '{h.get('name','')}' parent={padre_de(h) or '(ninguno)'}", "err")
+                sueltas = [h for h in hijos if padre_de(h) != parent_id]
+                if sueltas:
+                    self.log(f"    ↻ {prefijo}: {len(sueltas)} hoja(s) fuera del grupo, "
+                             f"se reincorporan al renombrar:", "dim")
+                    for h in sueltas:
+                        self.log(f"        '{h.get('name','')}' parent={padre_de(h) or '(ninguno)'}", "dim")
 
                 # Orden físico. Si la API no entrega índice, se respeta el orden
                 # en que vinieron las hojas (que ya es el orden del documento).
@@ -429,14 +438,27 @@ class App(tk.Tk):
                 hijos.sort(key=orden)
 
                 pares = []
+                sobrantes = 0
                 for i, h in enumerate(hijos):
                     actual = h.get("name","")
-                    nuevo  = f"{prefijo} {bases[i]}" if i < len(bases) and bases[i] else actual
-                    pid_h  = h.get("parentId") or (h.get("parent") or {}).get("id","")
-                    idx    = indice_hoja(h)
+                    if i < len(bases) and bases[i]:
+                        nuevo = f"{prefijo} {bases[i]}"
+                    else:
+                        # Sin fecha disponible: vuelve a ser hoja de reserva. Si
+                        # conservara su fecha vieja podría chocar con el nombre
+                        # que se le asignó a otra hoja del mismo grupo.
+                        sufijo = "xx.xx" if sobrantes == 0 else f"xx.xx{sobrantes}"
+                        nuevo  = f"{prefijo} {sufijo}"
+                        sobrantes += 1
+                    idx = indice_hoja(h)
                     if idx is None:
                         idx = i
-                    pares.append((h["id"], actual, nuevo, pid_h, idx))
+                    # Se apunta siempre al parent del grupo: así una hoja suelta
+                    # vuelve a quedar como subhoja en lugar de seguir rota.
+                    pares.append(Par(h["id"], actual, nuevo, parent_id, idx, padre_de(h)))
+
+                if sobrantes:
+                    self.log(f"    {prefijo}: {sobrantes} hoja(s) sin fecha quedan como reserva (xx.xx)", "dim")
                 return pares
 
             # ── CGE Cash Management ───────────────────────────────────────────
@@ -499,7 +521,7 @@ class App(tk.Tk):
                         continue
                     grupo = construir_pares_desde(hojas_tot, padre_id, prefijo)
                     pares_tot.extend(grupo)
-                    n_g = sum(1 for _, a, n, _, _ in grupo if a != n)
+                    n_g = sum(1 for p in grupo if par_cambia(p))
                     self.log(f"    {prefijo}: {len(grupo)} subhojas ({n_g} cambian)", "dim")
                     self._avisar_duplicados(grupo, prefijo)
             else:
@@ -525,9 +547,9 @@ class App(tk.Tk):
                 "pares_tot":     pares_tot,
             }
 
-            n_cge = sum(1 for _, a, n, _, _ in pares_cge + pares_fr if a != n)
-            n_ch  = sum(1 for _, a, n, _, _ in pares_ch + pares_ch_fr if a != n)
-            n_tot = sum(1 for _, a, n, _, _ in pares_tot if a != n)
+            n_cge = sum(1 for p in pares_cge + pares_fr if par_cambia(p))
+            n_ch  = sum(1 for p in pares_ch + pares_ch_fr if par_cambia(p))
+            n_tot = sum(1 for p in pares_tot if par_cambia(p))
             self.log(f"  Cambios — CGE: {n_cge} | Chilquinta: {n_ch} | Total: {n_tot}", "ok")
 
             todos_pares = pares_cge + pares_fr + pares_ch + pares_ch_fr + pares_tot
@@ -557,12 +579,18 @@ class App(tk.Tk):
 
     def _poblar_tree(self, todos_pares):
         self._limpiar_tree()
-        for sid, actual, nuevo, pid, idx in todos_pares:
-            tag   = "cambia" if actual != nuevo else "igual"
-            marca = "✔" if actual != nuevo else ""
+        for p in todos_pares:
+            cambia = par_cambia(p)
+            tag    = "cambia" if cambia else "igual"
+            if p.actual != p.nuevo:
+                marca = "✔"
+            elif cambia:
+                marca = "↻"          # solo se reincorpora al grupo
+            else:
+                marca = ""
             # El tipo es el nombre sin la fecha final (ej: "CGE S.A. 03.08" -> "CGE S.A.")
-            tipo  = re.sub(r"\s+(\d{2}\.\d{2}|xx\.xx\d*)$", "", actual, flags=re.IGNORECASE) or actual
-            self.tree.insert("", "end", values=(tipo, actual, nuevo, marca), tags=(tag,))
+            tipo = re.sub(r"\s+(\d{2}\.\d{2}|xx\.xx\d*)$", "", p.actual, flags=re.IGNORECASE) or p.actual
+            self.tree.insert("", "end", values=(tipo, p.actual, p.nuevo, marca), tags=(tag,))
 
     # ── RENOMBRAR ─────────────────────────────────────────────────────────────
     def _renombrar(self):
@@ -613,7 +641,7 @@ class App(tk.Tk):
 
     def _renombrar_worker(self, pares, ss_id, etiqueta):
         try:
-            cambios = [p for p in pares if p[1] != p[2]]
+            cambios = [p for p in pares if par_cambia(p)]
             if not cambios:
                 self.log(f"Renombrado {etiqueta}: no hay cambios que aplicar.", "dim")
                 self.status(f"{etiqueta}: sin cambios.")
@@ -623,42 +651,45 @@ class App(tk.Tk):
             # ¿Algún nombre nuevo ya lo tiene otra hoja del grupo? (ej: intercambio
             # 24.09 <-> 25.09). Workiva rechaza con 400 si el nombre está ocupado,
             # así que en ese caso hay que pasar por un nombre temporal.
-            nombres_actuales = {a for _, a, _, _, _ in pares}
-            necesita_temp = any(nuevo in nombres_actuales for _, _, nuevo, _, _ in cambios)
+            nombres_actuales = {p.actual for p in pares}
+            necesita_temp = any(p.nuevo in nombres_actuales for p in cambios if p.nuevo != p.actual)
 
             ok = err = 0
 
             if necesita_temp:
-                self.log(f"  Hay nombres cruzados: se renombra en dos pasos.", "dim")
-                # Paso 1: a nombres temporales únicos
+                self.log("  Hay nombres cruzados: se renombra en dos pasos.", "dim")
+                # Paso 1: todas a un nombre temporal único, para liberar los
+                # nombres que otra hoja necesita ocupar.
                 temporales = []
-                for i, (sheet_id, actual, nuevo, pid, idx) in enumerate(cambios):
-                    tmp = f"~tmp{i}~ {actual}"[:100]
-                    bien, detalle = self._aplicar_nombre(ss_id, sheet_id, tmp, pid, idx)
+                for i, p in enumerate(cambios):
+                    tmp = f"~tmp{i}~"
+                    bien, detalle = self._aplicar_nombre(ss_id, p.sheet_id, tmp, p.parent, p.idx)
                     if bien:
-                        temporales.append((sheet_id, actual, nuevo, pid, idx))
+                        temporales.append(p)
                     else:
-                        self.log(f"  ✗ {actual} (paso 1) {detalle}", "err")
+                        self.log(f"  ✗ {p.actual} (paso 1) {detalle}", "err")
                         err += 1
                     time.sleep(0.25)
                 # Paso 2: del temporal al nombre definitivo
-                for sheet_id, actual, nuevo, pid, idx in temporales:
-                    bien, detalle = self._aplicar_nombre(ss_id, sheet_id, nuevo, pid, idx)
+                for p in temporales:
+                    bien, detalle = self._aplicar_nombre(ss_id, p.sheet_id, p.nuevo, p.parent, p.idx)
                     if bien:
-                        self.log(f"  ✓ {actual}  →  {nuevo}", "ok")
+                        self.log(f"  ✓ {p.actual}  →  {p.nuevo}", "ok")
                         ok += 1
                     else:
-                        self.log(f"  ✗ {actual}  →  {nuevo} (paso 2) {detalle}", "err")
+                        self.log(f"  ✗ {p.actual}  →  {p.nuevo} (paso 2) {detalle}", "err")
                         err += 1
                     time.sleep(0.25)
             else:
-                for sheet_id, actual, nuevo, pid, idx in cambios:
-                    bien, detalle = self._aplicar_nombre(ss_id, sheet_id, nuevo, pid, idx)
+                for p in cambios:
+                    bien, detalle = self._aplicar_nombre(ss_id, p.sheet_id, p.nuevo, p.parent, p.idx)
                     if bien:
-                        self.log(f"  ✓ {actual}  →  {nuevo}", "ok")
+                        flecha = f"{p.actual}  →  {p.nuevo}" if p.actual != p.nuevo \
+                                 else f"{p.actual}  (reincorporada al grupo)"
+                        self.log(f"  ✓ {flecha}", "ok")
                         ok += 1
                     else:
-                        self.log(f"  ✗ {actual}  →  {nuevo}  {detalle}", "err")
+                        self.log(f"  ✗ {p.actual}  →  {p.nuevo}  {detalle}", "err")
                         err += 1
                     time.sleep(0.25)
 
@@ -749,10 +780,10 @@ class App(tk.Tk):
     def _avisar_duplicados(self, pares, etiqueta):
         """Avisa en el log si el renombrado dejaría dos hojas con el mismo nombre."""
         vistos, repetidos = set(), set()
-        for _, _, nuevo, _, _ in pares:
-            if nuevo in vistos:
-                repetidos.add(nuevo)
-            vistos.add(nuevo)
+        for p in pares:
+            if p.nuevo in vistos:
+                repetidos.add(p.nuevo)
+            vistos.add(p.nuevo)
         if repetidos:
             self.log(f"    ⚠ {etiqueta}: nombres duplicados → {', '.join(sorted(repetidos))}", "err")
 
@@ -766,13 +797,13 @@ class App(tk.Tk):
         d = self._datos
         self._set_btns(
             btn_buscar="normal",
-            btn_renombrar="normal"     if any(a != n for _, a, n, _, _ in d.get("pares_cge",[]) + d.get("pares_fr",[]))    else "disabled",
+            btn_renombrar="normal"     if any(par_cambia(p) for p in d.get("pares_cge",[]) + d.get("pares_fr",[]))    else "disabled",
             btn_limpiar_cge="normal"   if d.get("subhojas_cge")   else "disabled",
             btn_limpiar_fr="normal"    if d.get("subhojas_fr")    else "disabled",
-            btn_renombrar_ch="normal"  if any(a != n for _, a, n, _, _ in d.get("pares_ch",[]) + d.get("pares_ch_fr",[]))  else "disabled",
+            btn_renombrar_ch="normal"  if any(par_cambia(p) for p in d.get("pares_ch",[]) + d.get("pares_ch_fr",[]))  else "disabled",
             btn_limpiar_ch="normal"    if d.get("subhojas_ch")    else "disabled",
             btn_limpiar_ch_fr="normal" if d.get("subhojas_ch_fr") else "disabled",
-            btn_renombrar_tot="normal" if any(a != n for _, a, n, _, _ in d.get("pares_tot",[]))                           else "disabled",
+            btn_renombrar_tot="normal" if any(par_cambia(p) for p in d.get("pares_tot",[]))                           else "disabled",
         )
 
 # ── ENTRY POINT ───────────────────────────────────────────────────────────────
