@@ -380,22 +380,36 @@ class App(tk.Tk):
                 if hojas_b:
                     bases = leer_bases(ss_id_bases, hojas_b[0]["id"], self.log)
 
+            def indice_hoja(h):
+                """Índice físico de la hoja en Workiva (None si no viene)."""
+                for clave in ("index", "position", "order"):
+                    v = h.get(clave)
+                    if v is not None:
+                        return v
+                return None
+
             def construir_pares_desde(hojas, parent_id, prefijo):
                 """
                 Toma las subhojas de parent_id cuyo nombre es "<prefijo> DD.MM"
                 o "<prefijo> xx.xx[N]" (hojas de reserva) y les asigna las fechas
-                de TE - Bases en orden. Las fechadas van primero, las xx.xx al
-                final, para que absorban fechas extra si el período es más largo.
+                de TE - Bases en orden.
+
+                IMPORTANTE: se ordenan por su POSICIÓN FÍSICA en Workiva, no por
+                nombre. Al renombrar se conserva el index de cada hoja, así que si
+                se ordenara por nombre las fechas quedarían asignadas a posiciones
+                equivocadas y las hojas se verían desordenadas.
                 """
                 pat = re.compile(rf"^{re.escape(prefijo)} (\d{{2}}\.\d{{2}}|xx\.xx\d*)$", re.IGNORECASE)
                 hijos = [h for h in hojas
                          if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == parent_id
                          and pat.match(h.get("name",""))]
-                # Fechadas primero (orden natural), reservas xx.xx al final
+
+                # Orden físico. Si la API no entrega índice, se respeta el orden
+                # en que vinieron las hojas (que ya es el orden del documento).
+                orig = {id(h): i for i, h in enumerate(hijos)}
                 def orden(h):
-                    nombre = h.get("name","")
-                    es_reserva = "xx.xx" in nombre.lower()
-                    return (1 if es_reserva else 0, nombre)
+                    idx = indice_hoja(h)
+                    return (idx if idx is not None else orig[id(h)],)
                 hijos.sort(key=orden)
 
                 pares = []
@@ -403,7 +417,9 @@ class App(tk.Tk):
                     actual = h.get("name","")
                     nuevo  = f"{prefijo} {bases[i]}" if i < len(bases) and bases[i] else actual
                     pid_h  = h.get("parentId") or (h.get("parent") or {}).get("id","")
-                    idx    = h.get("index") or h.get("position") or i
+                    idx    = indice_hoja(h)
+                    if idx is None:
+                        idx = i
                     pares.append((h["id"], actual, nuevo, pid_h, idx))
                 return pares
 
@@ -424,6 +440,8 @@ class App(tk.Tk):
                 subhojas_cge = sorted([h for h in hojas_cash if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == summary_id and pat_cge.match(h.get("name",""))], key=lambda h: h.get("name",""))
                 subhojas_fr  = sorted([h for h in hojas_cash if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == fundreq_id  and pat_fr.match(h.get("name",""))],  key=lambda h: h.get("name",""))
                 self.log(f"  CGE subhojas: {len(pares_cge)} | Fund Request: {len(pares_fr)}", "dim")
+                self._avisar_duplicados(pares_cge, "CGE Cash management")
+                self._avisar_duplicados(pares_fr,  "Fund Request")
             else:
                 self.log("✗ No se encontró CGE Cash management.", "err")
 
@@ -444,6 +462,8 @@ class App(tk.Tk):
                 subhojas_ch    = sorted([h for h in hojas_ch if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == cc_sum_id and pat_ch.match(h.get("name",""))],    key=lambda h: h.get("name",""))
                 subhojas_ch_fr = sorted([h for h in hojas_ch if (h.get("parentId") or (h.get("parent") or {}).get("id","")) == cc_fr_id  and pat_ch_fr.match(h.get("name",""))], key=lambda h: h.get("name",""))
                 self.log(f"  Chilquinta subhojas: {len(pares_ch)} | CC Funds request: {len(pares_ch_fr)}", "dim")
+                self._avisar_duplicados(pares_ch,    "Chilquinta")
+                self._avisar_duplicados(pares_ch_fr, "CC Funds request")
             else:
                 self.log("✗ No se encontró Chilquinta Cash Management.", "err")
 
@@ -465,6 +485,7 @@ class App(tk.Tk):
                     pares_tot.extend(grupo)
                     n_g = sum(1 for _, a, n, _, _ in grupo if a != n)
                     self.log(f"    {prefijo}: {len(grupo)} subhojas ({n_g} cambian)", "dim")
+                    self._avisar_duplicados(grupo, prefijo)
             else:
                 self.log("✗ No se encontró Total Cash Management.", "err")
 
@@ -666,6 +687,16 @@ class App(tk.Tk):
             self.log(f"ERROR limpiar: {e}", "err")
             self.status("Error al limpiar.")
             self._set_btns(btn_buscar="normal")
+
+    def _avisar_duplicados(self, pares, etiqueta):
+        """Avisa en el log si el renombrado dejaría dos hojas con el mismo nombre."""
+        vistos, repetidos = set(), set()
+        for _, _, nuevo, _, _ in pares:
+            if nuevo in vistos:
+                repetidos.add(nuevo)
+            vistos.add(nuevo)
+        if repetidos:
+            self.log(f"    ⚠ {etiqueta}: nombres duplicados → {', '.join(sorted(repetidos))}", "err")
 
     def _deshabilitar_todos(self):
         self._set_btns(btn_buscar="disabled", btn_renombrar="disabled",
