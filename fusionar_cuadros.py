@@ -420,6 +420,44 @@ def fusionar(origen, salida, verbose=False, donante=None, solo_workiva=False):
     return hojas, estilos
 
 
+def docprops(hojas):
+    """core.xml y app.xml minimos pero completos.
+
+    Faltaban en versiones anteriores del fusionador: un .xlsm sin ellos
+    sigue siendo un ZIP valido y Excel lo abre, pero al parecer lo trata
+    como un archivo que necesito 'reparar' en silencio, y ese estado deja
+    inestable el ActiveWorkbook.Save que hace Copiar_columna -- error 1004
+    'no se puede obtener acceso' aunque el archivo no este ni bloqueado ni
+    de solo lectura. Los .xlsm originales de DBNeT si las traen."""
+    ahora = __import__("datetime").datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    core = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/'
+            '2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"'
+            ' xmlns:dcterms="http://purl.org/dc/terms/" '
+            'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+            '<dc:creator>fusionar_cuadros.py</dc:creator>'
+            '<cp:lastModifiedBy>fusionar_cuadros.py</cp:lastModifiedBy>'
+            '<dcterms:created xsi:type="dcterms:W3CDTF">%s</dcterms:created>'
+            '<dcterms:modified xsi:type="dcterms:W3CDTF">%s</dcterms:modified>'
+            '</cp:coreProperties>' % (ahora, ahora))
+    titulos = "".join("<vt:lpstr>%s</vt:lpstr>" % escapa(n) for n, _, _ in hojas)
+    app = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+           '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/'
+           'extended-properties" xmlns:vt="http://schemas.openxmlformats.org/'
+           'officeDocument/2006/docPropsVTypes">'
+           '<Application>Microsoft Excel</Application><DocSecurity>0</DocSecurity>'
+           '<ScaleCrop>false</ScaleCrop>'
+           '<HeadingPairs><vt:vector size="2" baseType="variant">'
+           '<vt:variant><vt:lpstr>Hojas de c\u00e1lculo</vt:lpstr></vt:variant>'
+           '<vt:variant><vt:i4>%d</vt:i4></vt:variant></vt:vector></HeadingPairs>'
+           '<TitlesOfParts><vt:vector size="%d" baseType="lpstr">%s</vt:vector>'
+           '</TitlesOfParts>'
+           '<LinksUpToDate>false</LinksUpToDate><SharedDoc>false</SharedDoc>'
+           '<HyperlinksChanged>false</HyperlinksChanged><AppVersion>16.0300</AppVersion>'
+           '</Properties>' % (len(hojas), len(hojas), titulos))
+    return core, app
+
+
 def escribe_paquete(salida, hojas, estilos, ejemplar, donante=None):
     tema = zipfile.ZipFile(ejemplar).read("xl/theme/theme1.xml")
     n = len(hojas)
@@ -483,6 +521,10 @@ def escribe_paquete(salida, hojas, estilos, ejemplar, donante=None):
     if macro:
         ov.append('<Override PartName="/xl/vbaProject.bin" ContentType="application/vnd.'
                   'ms-office.vbaProject"/>')
+    ov.append('<Override PartName="/docProps/core.xml" ContentType="application/vnd.'
+              'openxmlformats-package.core-properties+xml"/>')
+    ov.append('<Override PartName="/docProps/app.xml" ContentType="application/vnd.'
+              'openxmlformats-officedocument.extended-properties+xml"/>')
     defaults = ['<Default Extension="rels" ContentType="application/vnd.openxmlformats-'
                 'package.relationships+xml"/>',
                 '<Default Extension="xml" ContentType="application/xml"/>']
@@ -496,12 +538,19 @@ def escribe_paquete(salida, hojas, estilos, ejemplar, donante=None):
     raiz = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/'
             'relationships"><Relationship Id="rId1" Type="%sofficeDocument" '
-            'Target="xl/workbook.xml"/></Relationships>' % REL)
+            'Target="xl/workbook.xml"/>'
+            '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/'
+            '2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>'
+            '<Relationship Id="rId3" Type="%sextended-properties" '
+            'Target="docProps/app.xml"/></Relationships>' % (REL, REL))
 
     salida.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(salida, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("[Content_Types].xml", tipos)
         z.writestr("_rels/.rels", raiz)
+        core_xml, app_xml = docprops(hojas)
+        z.writestr("docProps/core.xml", core_xml)
+        z.writestr("docProps/app.xml", app_xml)
         z.writestr("xl/workbook.xml", workbook)
         z.writestr("xl/_rels/workbook.xml.rels", wb_rels)
         z.writestr("xl/styles.xml", estilos.xml())
