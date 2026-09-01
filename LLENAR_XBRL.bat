@@ -94,13 +94,12 @@ if "!CON_MACROS!"=="1" (
     echo   PARA DBNeT   .xlsm : %~dp0!BASE!.xlsm   ^(con macros y botones^)
     echo                .xlsx : %~dp0!BASE!.xlsx   ^(sin macros, para revisar^)
 ) else (
-    echo   AVISO: no se pudo armar el .xlsm con macros ^(hace falta Excel
-    echo   instalado en esta maquina; revisa el mensaje de arriba^).
+    echo   AVISO: no se pudo armar el .xlsm con macros. Revisa el mensaje
+    echo   de arriba ^(hace falta Excel instalado en esta maquina^).
     echo   .xlsx : %~dp0!BASE!.xlsx   ^(sin macros, para revisar^)
     echo.
     echo   Los 41 archivos de salida\ si tienen sus macros y botones
-    echo   funcionando cada uno por su cuenta. Para fusionarlos a mano en
-    echo   un computador que si tenga Excel, ver plantilla_fusion.bas.
+    echo   funcionando cada uno por su cuenta.
 )
 echo.
 echo   Archivos sueltos: %~dp0salida    (los 41 .xlsm originales)
