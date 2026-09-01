@@ -70,18 +70,30 @@ echo.
 py llenar_dbnet_desde_workiva.py --plantillas "xls" --workiva "%WK%" --salida "salida" --reporte "reporte_llenado.csv"
 if errorlevel 1 goto error
 
+rem ---- 5. fusion en un solo archivo para DBNeT ----------------------------
+echo.
+echo ------------------------------------------------------------
+echo   Fusionando los cuadros en un solo archivo
+echo ------------------------------------------------------------
+echo.
+for %%f in ("%WK%") do set "FUSION=%%~nf_LLENADO.xlsx"
+py fusionar_cuadros.py --origen "salida" --salida "!FUSION!"
+if errorlevel 1 goto error
+
 echo.
 echo ============================================================
 echo   LISTO
 echo ============================================================
 echo.
-echo   Archivos llenos : %~dp0salida
+echo   PARA DBNeT      : %~dp0!FUSION!
+echo.
+echo   Archivos sueltos: %~dp0salida    (los 41 .xlsm con macro)
 echo   Reporte         : %~dp0reporte_llenado.csv
 echo.
 echo   Revisa el reporte antes de entregar: ahi queda marcado
 echo   todo lo que no calzo.
 echo.
-start "" "%~dp0salida"
+start "" "%~dp0"
 echo.
 pause
 goto :eof

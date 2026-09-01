@@ -470,15 +470,18 @@ def cmd_llenar(args):
                 cambios[dest.hojas[hoja_d]] = xml
                 escritas_archivo += n
                 total_hojas += 1
-        estado = "—"
         if cambios:
             cambios["xl/workbook.xml"] = recalculo(
                 dest.z.read("xl/workbook.xml").decode("utf-8"))
-            if not args.dry_run:
-                reescribe_zip(ruta, salida / ruta.name, cambios)
-                archivos_escritos += 1
             estado = "escrito" if not args.dry_run else "(dry-run)"
             total_celdas += escritas_archivo
+        else:
+            # Sin datos que escribir igual va a la salida: la entrega a DBNeT
+            # es la carpeta completa, y un cuadro que no aplica se manda vacio.
+            estado = "copiado sin datos" if not args.dry_run else "(sin datos)"
+        if not args.dry_run:
+            reescribe_zip(ruta, salida / ruta.name, cambios)
+            archivos_escritos += 1
         print(f"  {ruta.name[:48]:50} {escritas_archivo:6} celdas  {estado}")
 
     for w in sobrantes:
