@@ -1110,48 +1110,59 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
                          "script esta corrupto, no un archivo suelto.")
 
             base = app.Workbooks.Open(str(plantilla_base), ReadOnly=False, UpdateLinks=0)
+            try:
+                # las hojas propias de la base no son datos de ninguna
+                # empresa: se renombran para que jamas puedan chocar con una
+                # hoja real que entre despues, y se borran al final por ese
+                # nombre temporal.
+                propias = []
+                for i, hoja in enumerate(base.Worksheets):
+                    propias.append(f"_BASE_{i}")
+                    hoja.Name = f"_BASE_{i}"
 
-            # las hojas propias de la base no son datos de ninguna empresa: se
-            # renombran para que jamas puedan chocar con una hoja real que
-            # entre despues, y se borran al final por ese nombre temporal.
-            propias = []
-            for i, hoja in enumerate(base.Worksheets):
-                propias.append(f"_BASE_{i}")
-                hoja.Name = f"_BASE_{i}"
-
-            vistos = set()
-            for ruta in libros:
-                libro = None
-                try:
-                    libro = app.Workbooks.Open(str(ruta.resolve()), ReadOnly=True, UpdateLinks=0)
-                except Exception:
-                    fallidos.append(ruta.name)
-                    continue
-                n_libro = 0
-                for hoja in _hojas_cuadro_com(libro):
-                    nombre = hoja.Name
-                    if nombre in vistos:
+                vistos = set()
+                for ruta in libros:
+                    libro = None
+                    try:
+                        libro = app.Workbooks.Open(str(ruta.resolve()), ReadOnly=True, UpdateLinks=0)
+                    except Exception:
+                        fallidos.append(ruta.name)
                         continue
-                    if not permitida(ruta.name, nombre):
-                        omitidas.append(nombre)
-                        continue
-                    hoja.Copy(After=base.Worksheets(base.Worksheets.Count))
-                    vistos.add(nombre)
-                    total += 1
-                    n_libro += 1
-                libro.Close(SaveChanges=False)
-                if verbose:
-                    print(f"  {ruta.name[:52]:54} {n_libro:3} hojas")
+                    n_libro = 0
+                    for hoja in _hojas_cuadro_com(libro):
+                        nombre = hoja.Name
+                        if nombre in vistos:
+                            continue
+                        if not permitida(ruta.name, nombre):
+                            omitidas.append(nombre)
+                            continue
+                        hoja.Copy(After=base.Worksheets(base.Worksheets.Count))
+                        # DBNeT trae varias hojas ocultas por defecto (las
+                        # que no aplican a cada plantilla). La copia hereda
+                        # ese estado, y si TODAS las que entran quedan
+                        # ocultas, Excel se niega a borrar la ultima hoja
+                        # propia de la base mas abajo ("el libro debe
+                        # contener al menos una hoja visible"). Se fuerzan
+                        # visibles: es lo correcto ademas, el archivo que se
+                        # entrega no deberia llevar pestanas escondidas.
+                        base.Worksheets(base.Worksheets.Count).Visible = -1  # xlSheetVisible
+                        vistos.add(nombre)
+                        total += 1
+                        n_libro += 1
+                    libro.Close(SaveChanges=False)
+                    if verbose:
+                        print(f"  {ruta.name[:52]:54} {n_libro:3} hojas")
 
-            if total == 0:
-                sys.exit("No se copio ninguna hoja de cuadro: revisa --solo-workiva "
-                         "y que origen apunte a la carpeta correcta.")
+                if total == 0:
+                    sys.exit("No se copio ninguna hoja de cuadro: revisa --solo-workiva "
+                             "y que origen apunte a la carpeta correcta.")
 
-            for nombre in propias:
-                base.Worksheets(nombre).Delete()
+                for nombre in propias:
+                    base.Worksheets(nombre).Delete()
 
-            base.SaveAs(str(salida), FileFormat=52)   # xlOpenXMLWorkbookMacroEnabled
-            base.Close(SaveChanges=False)
+                base.SaveAs(str(salida), FileFormat=52)   # xlOpenXMLWorkbookMacroEnabled
+            finally:
+                base.Close(SaveChanges=False)
     finally:
         app.Quit()
 
