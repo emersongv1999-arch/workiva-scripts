@@ -42,10 +42,34 @@ FUERA = ("drawing", "legacyDrawing", "legacyDrawingHF", "picture", "oleObjects",
          "pageSetup")
 
 
+_CACHE_TAG = {}
+
+
 def elementos(xml, tag):
-    """Cada <tag ...>...</tag> o <tag .../> de primer nivel, como texto."""
-    return [m.group(0) for m in
-            re.finditer(r"<%s(?:\s[^>]*)?(?:/>|>.*?</%s>)" % (tag, tag), xml, re.S)]
+    """Cada <tag .../> o <tag ...>...</tag> de primer nivel, como texto.
+
+    La forma auto-cerrada va primero a proposito: si se prueba antes la
+    pareja, un <xf/> sin cierre hace que .*?</xf> siga buscando y se trague
+    todos los elementos que vengan hasta el primer </xf> de verdad."""
+    rx = _CACHE_TAG.get(tag)
+    if rx is None:
+        rx = _CACHE_TAG[tag] = re.compile(
+            r"<%s(?:\s[^>]*?)?/>|<%s(?:\s[^>]*?)?>.*?</%s>" % (tag, tag, tag), re.S)
+    return [m.group(0) for m in rx.finditer(xml)]
+
+
+def elementos_contados(xml, contenedor, tag):
+    """Como elementos(), pero contrasta contra el count= que declara el XML.
+
+    Es la red de seguridad del parser: si vuelve a descuadrar, revienta aqui
+    en vez de producir un libro con los formatos corridos."""
+    lst = elementos(seccion(xml, contenedor), tag)
+    m = re.search(r'<%s[^>]*count="(\d+)"' % contenedor, xml)
+    if m and int(m.group(1)) != len(lst):
+        raise ValueError(
+            f"{contenedor}: el XML declara {m.group(1)} elementos <{tag}> "
+            f"y se leyeron {len(lst)}")
+    return lst
 
 
 def seccion(xml, tag):
@@ -81,9 +105,9 @@ class Estilos:
     def absorbe(self, styles_xml):
         """Devuelve (mapa_cellXfs, mapa_dxfs) del libro a los indices nuevos."""
         fuente = {
-            "font": elementos(seccion(styles_xml, "fonts"), "font"),
-            "fill": elementos(seccion(styles_xml, "fills"), "fill"),
-            "border": elementos(seccion(styles_xml, "borders"), "border"),
+            "font": elementos_contados(styles_xml, "fonts", "font"),
+            "fill": elementos_contados(styles_xml, "fills", "fill"),
+            "border": elementos_contados(styles_xml, "borders", "border"),
         }
         fmt_local = {re.search(r'numFmtId="(\d+)"', n).group(1):
                      re.search(r'formatCode="([^"]*)"', n).group(1)
@@ -121,15 +145,15 @@ class Estilos:
             return out
 
         mapa_csxf = {}
-        for i, xf in enumerate(elementos(seccion(styles_xml, "cellStyleXfs"), "xf")):
+        for i, xf in enumerate(elementos_contados(styles_xml, "cellStyleXfs", "xf")):
             mapa_csxf[i] = self._mete(self.cellStyleXfs, "csxf", reescribe(xf))
 
         mapa_xf = {}
-        for i, xf in enumerate(elementos(seccion(styles_xml, "cellXfs"), "xf")):
+        for i, xf in enumerate(elementos_contados(styles_xml, "cellXfs", "xf")):
             mapa_xf[i] = self._mete(self.cellXfs, "xf", reescribe(xf, mapa_csxf))
 
         mapa_dxf = {}
-        for i, dxf in enumerate(elementos(seccion(styles_xml, "dxfs"), "dxf")):
+        for i, dxf in enumerate(elementos_contados(styles_xml, "dxfs", "dxf")):
             mapa_dxf[i] = self._mete(self.dxfs, "dxf", dxf)
         return mapa_xf, mapa_dxf
 
