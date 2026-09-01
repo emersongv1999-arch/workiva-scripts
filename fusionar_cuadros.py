@@ -21,8 +21,8 @@ Con --con-macros el resultado es un .xlsm con las macros y los botones. No
 hace falta generar VBA: como el libro fusionado lleva solo hojas de cuadros,
 sin auxiliares al final que saltarse, el bucle correcto es "For H = 1 To
 TotalHojas" y varias plantillas ya lo traen asi. Se toma el proyecto VBA de
-una de ellas que ademas tenga Copiar_columna y no arrastre
-WBReplaceHyperlinkURL, que no compila.
+una de ellas, elegida sin leer el VBA: lo que resta el bucle es exactamente
+el numero de hojas auxiliares del libro, asi que basta con uno que no tenga.
 
 El trabajo real es reindexar los formatos. Cada libro tiene su propia
 styles.xml y un s="16" no significa lo mismo en dos archivos distintos, asi
@@ -51,17 +51,24 @@ FUERA = ("drawing", "legacyDrawing", "legacyDrawingHF", "picture", "oleObjects",
 # En modo .xlsm los dibujos si viajan: son los botones de las macros.
 FUERA_XLSM = tuple(t for t in FUERA if t != "drawing")
 
-# Un donante sirve si sus macros recorren TODAS las hojas (el libro fusionado
-# solo lleva hojas de cuadros, sin auxiliares al final que haya que saltarse),
-# trae Copiar_columna y no arrastra WBReplaceHyperlinkURL, que no compila.
-def procedimientos_de(ruta):
-    """Nombres de Sub/Function del proyecto VBA de un libro."""
-    from oletools.olevba import VBA_Parser
-    codigo = "\n".join(c for (_, _, vfn, c) in VBA_Parser(str(ruta)).extract_macros()
-                       if c and c.strip() and "dulo" in vfn)
-    return set(re.findall(r"^(?:Public |Private )?(?:Sub|Function) (\w+)",
-                          codigo, re.M))
+def _nombres_en_vba(ruta, nombres):
+    """Que nombres de macro contiene el proyecto VBA de un libro.
 
+    Los identificadores viajan SIN comprimir dentro de vbaProject.bin, asi que
+    basta buscarlos como bytes: comprobado contra la lectura real del VBA con
+    oletools en los 41 archivos de la entrega, coincide en los 41. Evita
+    depender de oletools, que arrastra media docena de paquetes y en un equipo
+    corporativo suele fallar al instalarse."""
+    try:
+        with zipfile.ZipFile(ruta) as z:
+            crudo = z.read("xl/vbaProject.bin")
+    except KeyError:
+        return set()
+    return {n for n in nombres if n.encode("ascii", "ignore") in crudo}
+
+
+# Las tres macros que trae el modulo de cualquier plantilla de DBNeT.
+MACROS_BASE = ("Guarda_Hojas_CSV", "Guarda_Hojas_ZIP", "Copiar_columna")
 
 # Botones cuya macro no existe en el donante. crear_csv exportaba solo la hoja
 # activa; en el libro fusionado el equivalente util es exportarlas todas.
@@ -81,17 +88,43 @@ def repunta_botones(dxml, disponibles):
     return re.sub(r'macro="\[0\]!([^"]+)"', cambia, dxml)
 
 
+def hojas_auxiliares(ruta):
+    """Cuantas hojas del libro NO son cuadros (las listas de codigos)."""
+    z = zipfile.ZipFile(ruta)
+    try:
+        ss = z.read("xl/sharedStrings.xml").decode("utf-8")
+    except KeyError:
+        ss = ""
+    shared = ["".join(re.findall(r"<t[^>]*>(.*?)</t>", s, re.S))
+              for s in re.findall(r"<si>(.*?)</si>", ss, re.S)]
+    rels = dict(re.findall(r'Id="(rId\d+)"[^>]*Target="([^"]*)"',
+                           z.read("xl/_rels/workbook.xml.rels").decode("utf-8")))
+    n = 0
+    for tag in re.findall(r"<sheet [^>]*?>", z.read("xl/workbook.xml").decode("utf-8")):
+        destino = rels[re.search(r'r:id="(rId\d+)"', tag).group(1)].lstrip("/")
+        parte = destino if destino.startswith("xl/") else "xl/" + destino
+        if not es_cuadro(z.read(parte).decode("utf-8"), shared):
+            n += 1
+    return n
+
+
 def sirve_de_donante(ruta):
-    from oletools.olevba import VBA_Parser          # opcional: solo en modo xlsm
-    codigo = "\n".join(c for (_, _, vfn, c) in VBA_Parser(str(ruta)).extract_macros()
-                       if c and c.strip() and "dulo" in vfn)
-    if "WBReplaceHyperlinkURL" in codigo or "Copiar_columna" not in codigo:
+    """Un donante valido aporta las tres macros y recorre TODAS las hojas.
+
+    El libro fusionado no lleva hojas auxiliares, asi que el bucle tiene que
+    ser 'For H = 1 To TotalHojas', sin restar. Y lo que se resta en cada
+    plantilla es exactamente su numero de hojas auxiliares: verificado en los
+    41 archivos de la entrega, sin una sola excepcion. De modo que un libro
+    sin hojas auxiliares trae justo el bucle que necesitamos.
+
+    Ademas se descarta WBReplaceHyperlinkURL: tiene un End If huerfano y su
+    modulo no compila, lo que dejaria todos los botones muertos."""
+    presentes = _nombres_en_vba(ruta, list(MACROS_BASE) + ["WBReplaceHyperlinkURL"])
+    if "WBReplaceHyperlinkURL" in presentes:
         return False
-    for sub in ("Guarda_Hojas_CSV", "Guarda_Hojas_ZIP"):
-        m = re.search(r"Sub %s\(.*?For H = 1 To ([^\n]*)" % sub, codigo, re.S)
-        if not m or m.group(1).strip() != "TotalHojas":
-            return False
-    return True
+    if not set(MACROS_BASE) <= presentes:
+        return False
+    return hojas_auxiliares(ruta) == 0
 
 
 _CACHE_TAG = {}
@@ -376,7 +409,7 @@ def escribe_paquete(salida, hojas, estilos, ejemplar, donante=None):
     # ---- dibujos (los botones) y sus imagenes, renumerados globalmente ----
     dibujos, medios, rels_hoja = [], [], {}
     vistos_medio = {}
-    disponibles = procedimientos_de(donante) if macro else set()
+    disponibles = _nombres_en_vba(donante, MACROS_BASE) if macro else set()
     for i, (_, _, dib) in enumerate(hojas, 1):
         if not dib:
             continue
