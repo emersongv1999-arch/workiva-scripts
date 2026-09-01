@@ -17,12 +17,17 @@ Que se conserva y que no
   NO   hipervinculos entre hojas y validaciones de datos: las listas
        desplegables apuntan a las hojas auxiliares, que no viajan
 
-Con --con-macros el resultado es un .xlsm con las macros y los botones. No
-hace falta generar VBA: como el libro fusionado lleva solo hojas de cuadros,
-sin auxiliares al final que saltarse, el bucle correcto es "For H = 1 To
-TotalHojas" y varias plantillas ya lo traen asi. Se toma el proyecto VBA de
-una de ellas, elegida sin leer el VBA: lo que resta el bucle es exactamente
-el numero de hojas auxiliares del libro, asi que basta con uno que no tenga.
+Con --con-macros el resultado es un .xlsm con las macros y los botones
+funcionando de verdad. Esto lo arma Excel mismo por COM (pywin32), no
+Python: un .xlsm ensamblado a mano (ZIP/XML, sin pasar por Excel) abre y se
+ve bien pero su ActiveWorkbook.Save revienta con error 1004 de forma
+consistente -- probado en OneDrive, SharePoint y disco local, causa nunca
+aislada del todo. Lo unico que resulto confiable es un libro que Excel
+mismo construyo con Worksheets.Copy nativo, asi que --con-macros abre Excel
+en segundo plano, toma una de las 41 plantillas como base (trae las tres
+macros de fabrica) y le copia encima las hojas de cuadro del resto. Requiere
+Excel instalado en la maquina donde se corre esto (no sirve en un servidor
+sin Office) y `pip install pywin32`.
 
 El trabajo real es reindexar los formatos. Cada libro tiene su propia
 styles.xml y un s="16" no significa lo mismo en dos archivos distintos, asi
@@ -591,6 +596,135 @@ def escribe_paquete(salida, hojas, estilos, ejemplar, donante=None):
                        zipfile.ZipFile(donante).read("xl/vbaProject.bin"))
 
 
+def _sirve_de_donante_com(ruta):
+    """Solo hace falta que traiga las tres macros y no traiga la rota.
+
+    A diferencia de sirve_de_donante() (para el ensamblado a mano, ya
+    retirado de --con-macros), aqui no importa cuantas hojas auxiliares
+    tenga el libro elegido como base: se borran despues de copiar todo,
+    asi que el 'For H = 1 To TotalHojas' de Guarda_Hojas_CSV/ZIP queda
+    correcto igual, sea cual sea el donante."""
+    presentes = _nombres_en_vba(ruta, list(MACROS_BASE) + ["WBReplaceHyperlinkURL"])
+    return set(MACROS_BASE) <= presentes and "WBReplaceHyperlinkURL" not in presentes
+
+
+def _hojas_cuadro_com(libro):
+    """Hojas del libro COM que llevan URI de taxonomia en la columna C."""
+    cuadros = []
+    for hoja in libro.Worksheets:
+        valores = hoja.Range("C1:C500").Value
+        if valores and any(isinstance(v, str) and ".xsd#" in v
+                            for fila in valores for v in fila):
+            cuadros.append(hoja)
+    return cuadros
+
+
+def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
+    """Arma el .xlsm fusionado dejando que Excel mismo copie las hojas.
+
+    Ver el docstring del modulo: el ensamblado a mano (ZIP/XML) quedo
+    descartado porque el Save() de la macro Copiar_columna reventaba con
+    error 1004 sin causa aislada. Esto abre Excel real por COM (pywin32) y
+    hace lo mismo que hacia el usuario a mano con VBA (Worksheets.Copy),
+    pero automatico y desde el mismo script."""
+    try:
+        import win32com.client
+    except ImportError:
+        sys.exit(
+            "Para --con-macros hace falta pywin32 y Excel instalado en esta "
+            "maquina: pip install pywin32\n"
+            "El .xlsm con macros lo arma Excel mismo (Worksheets.Copy), no "
+            "es un archivo hecho a mano por Python -- por eso hace falta el "
+            "Excel real, no solo la libreria.")
+
+    libros = sorted(p for p in Path(origen).rglob("*.xlsm")
+                    if not p.name.startswith("~$") and p.resolve() != Path(salida).resolve())
+    if not libros:
+        sys.exit(f"No hay .xlsm en {origen}")
+
+    con_datos = lee_hojas_de_workiva(origen) if solo_workiva else None
+    if solo_workiva and con_datos is None:
+        sys.exit("Para --solo-workiva hace falta _hojas_de_workiva.txt, que "
+                 "genera llenar_dbnet_desde_workiva.py en la carpeta de salida.")
+
+    donante = next((p for p in libros if _sirve_de_donante_com(p)), None)
+    if donante is None:
+        sys.exit("Ninguna plantilla sirve de base: hace falta una con "
+                 "Guarda_Hojas_CSV, Guarda_Hojas_ZIP, Copiar_columna y sin "
+                 "WBReplaceHyperlinkURL.")
+    print(f"Macros tomadas de: {donante.name}")
+
+    salida = Path(salida)
+    if salida.suffix.lower() != ".xlsm":
+        salida = salida.with_suffix(".xlsm")
+    salida = salida.resolve()
+    if salida.exists():
+        salida.unlink()
+
+    def permitida(archivo, nombre):
+        return con_datos is None or (archivo, nombre) in con_datos
+
+    app = win32com.client.DispatchEx("Excel.Application")
+    app.Visible = False
+    app.DisplayAlerts = False
+    app.AskToUpdateLinks = False
+    app.ScreenUpdating = False
+
+    total = 0
+    omitidas = []
+    fallidos = []
+    try:
+        base = app.Workbooks.Open(str(donante.resolve()), ReadOnly=False, UpdateLinks=0)
+        vistos = set()
+        for hoja in _hojas_cuadro_com(base):
+            if permitida(donante.name, hoja.Name):
+                vistos.add(hoja.Name)
+                total += 1
+            else:
+                omitidas.append(hoja.Name)
+
+        for ruta in libros:
+            if ruta == donante:
+                continue
+            libro = None
+            try:
+                libro = app.Workbooks.Open(str(ruta.resolve()), ReadOnly=True, UpdateLinks=0)
+            except Exception:
+                fallidos.append(ruta.name)
+                continue
+            n_libro = 0
+            for hoja in _hojas_cuadro_com(libro):
+                nombre = hoja.Name
+                if nombre in vistos:
+                    continue
+                if not permitida(ruta.name, nombre):
+                    omitidas.append(nombre)
+                    continue
+                hoja.Copy(After=base.Worksheets(base.Worksheets.Count))
+                vistos.add(nombre)
+                total += 1
+                n_libro += 1
+            libro.Close(SaveChanges=False)
+            if verbose:
+                print(f"  {ruta.name[:52]:54} {n_libro:3} hojas")
+
+        # las hojas auxiliares del donante (listas de codigos) no viajan
+        for hoja in list(base.Worksheets):
+            if hoja.Name not in vistos:
+                hoja.Delete()
+
+        base.SaveAs(str(salida), FileFormat=52)   # xlOpenXMLWorkbookMacroEnabled
+        base.Close(SaveChanges=False)
+    finally:
+        app.Quit()
+
+    if omitidas:
+        print(f"  omitidas por no estar en Workiva: {len(omitidas)}")
+    if fallidos:
+        print(f"  no se pudieron abrir: {', '.join(fallidos)}")
+    return total, salida
+
+
 def main():
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -601,30 +735,24 @@ def main():
                    help="deja fuera los cuadros que no existen en el export de "
                         "Workiva (los que no le aplican a la empresa)")
     p.add_argument("--con-macros", action="store_true",
-                   help="genera un .xlsm con las macros y los botones, tomando "
-                        "el proyecto VBA de una de las plantillas de origen")
+                   help="genera un .xlsm con las macros y los botones "
+                        "funcionando de verdad. Requiere Excel instalado en "
+                        "esta maquina y 'pip install pywin32': lo arma Excel "
+                        "mismo por COM, no es un archivo hecho a mano")
     args = p.parse_args()
 
-    salida = Path(args.salida)
-    donante = None
     if args.con_macros:
-        if salida.suffix.lower() != ".xlsm":
-            salida = salida.with_suffix(".xlsm")
-        for cand in sorted(Path(args.origen).rglob("*.xlsm")):
-            if sirve_de_donante(cand):
-                donante = cand
-                break
-        if donante is None:
-            sys.exit("Ninguna plantilla sirve de donante de macros: hace falta una "
-                     "con 'For H = 1 To TotalHojas', Copiar_columna y sin "
-                     "WBReplaceHyperlinkURL.")
-        print(f"Macros tomadas de: {donante.name}")
+        total, salida = fusionar_con_macros(Path(args.origen), Path(args.salida),
+                                            args.verbose, args.solo_workiva)
+        print(f"\n{total} hojas de cuadros -> {salida}")
+        print(f"   botones y macros: funcionando (libro armado por Excel)")
+        print(f"   tamano: {salida.stat().st_size/1024:.0f} KB")
+        return
 
-    hojas, estilos = fusionar(Path(args.origen), salida, args.verbose, donante,
+    salida = Path(args.salida)
+    hojas, estilos = fusionar(Path(args.origen), salida, args.verbose, None,
                               args.solo_workiva)
     print(f"\n{len(hojas)} hojas de cuadros -> {salida}")
-    if donante:
-        print(f"   botones conservados: {sum(1 for h in hojas if h[2])} hojas")
     print(f"   formatos fusionados: {len(estilos.cellXfs)} cellXfs, "
           f"{len(estilos.fonts)} fuentes, {len(estilos.fills)} rellenos, "
           f"{len(estilos.borders)} bordes")

@@ -14,7 +14,7 @@ echo.
 py --version >nul 2>&1
 if errorlevel 1 goto sin_python
 
-py -m pip install openpyxl --quiet --trusted-host pypi.org --trusted-host files.pythonhosted.org >nul 2>&1
+py -m pip install openpyxl pywin32 --quiet --trusted-host pypi.org --trusted-host files.pythonhosted.org >nul 2>&1
 
 if not exist "xls"     mkdir "xls"
 if not exist "workiva" mkdir "workiva"
@@ -70,15 +70,18 @@ echo.
 py llenar_dbnet_desde_workiva.py --plantillas "xls" --workiva "%WK%" --salida "salida" --reporte "reporte_llenado.csv"
 if errorlevel 1 goto error
 
-rem ---- 5. fusion en un solo archivo para DBNeT ----------------------------
+rem ---- 5. fusion en un solo archivo, con macros funcionando ---------------
 echo.
 echo ------------------------------------------------------------
 echo   Fusionando los cuadros en un solo archivo
 echo ------------------------------------------------------------
 echo.
 for %%f in ("%WK%") do set "BASE=%%~nf_LLENADO"
+
+set "CON_MACROS=1"
 py fusionar_cuadros.py --origen "salida" --salida "!BASE!.xlsm" --con-macros --solo-workiva
-if errorlevel 1 goto error
+if errorlevel 1 set "CON_MACROS=0"
+
 py fusionar_cuadros.py --origen "salida" --salida "!BASE!.xlsx" --solo-workiva
 if errorlevel 1 goto error
 echo.
@@ -87,10 +90,20 @@ echo ============================================================
 echo   LISTO
 echo ============================================================
 echo.
-echo   PARA DBNeT   .xlsm : %~dp0!BASE!.xlsm   (con macros y botones)
-echo                .xlsx : %~dp0!BASE!.xlsx   (sin macros)
+if "!CON_MACROS!"=="1" (
+    echo   PARA DBNeT   .xlsm : %~dp0!BASE!.xlsm   ^(con macros y botones^)
+    echo                .xlsx : %~dp0!BASE!.xlsx   ^(sin macros, para revisar^)
+) else (
+    echo   AVISO: no se pudo armar el .xlsm con macros ^(hace falta Excel
+    echo   instalado en esta maquina; revisa el mensaje de arriba^).
+    echo   .xlsx : %~dp0!BASE!.xlsx   ^(sin macros, para revisar^)
+    echo.
+    echo   Los 41 archivos de salida\ si tienen sus macros y botones
+    echo   funcionando cada uno por su cuenta. Para fusionarlos a mano en
+    echo   un computador que si tenga Excel, ver plantilla_fusion.bas.
+)
 echo.
-echo   Archivos sueltos: %~dp0salida    (los 41 .xlsm con macro)
+echo   Archivos sueltos: %~dp0salida    (los 41 .xlsm originales)
 echo   Reporte         : %~dp0reporte_llenado.csv
 echo.
 echo   Revisa el reporte antes de entregar: ahi queda marcado
