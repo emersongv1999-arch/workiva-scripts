@@ -428,9 +428,16 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
 
 
 def cmd_llenar(args):
-    plantillas = sorted(Path(args.plantillas).glob("*.xlsm"))
+    # Busca en subcarpetas: al descomprimir la entrega de DBNeT es normal
+    # terminar con xls\xls\*.xlsm porque el .zip ya trae su propia carpeta.
+    plantillas = sorted(p for p in Path(args.plantillas).rglob("*.xlsm")
+                        if not p.name.startswith("~$"))
     if not plantillas:
-        sys.exit(f"No hay .xlsm en {args.plantillas}")
+        sys.exit(f"No hay .xlsm en {args.plantillas} ni en sus subcarpetas")
+    hondas = {p.parent for p in plantillas if p.parent != Path(args.plantillas)}
+    if hondas:
+        print("  (encontrados en subcarpeta: "
+              + ", ".join(sorted(str(h) for h in hondas)[:3]) + ")")
     wv = Libro(args.workiva)
     print(f"Plantillas: {len(plantillas)}   Workiva: {len(wv.hojas)} hojas\n")
 
@@ -504,9 +511,12 @@ def botones(z):
 def verificar(dir_orig, dir_nuevo):
     print("Verificacion de integridad:")
     fallos = 0
+    # el original puede estar en una subcarpeta (xls\xls\ tras descomprimir)
+    originales = {p.name: p for p in Path(dir_orig).rglob("*.xlsm")
+                  if not p.name.startswith("~$")}
     for nuevo in sorted(Path(dir_nuevo).glob("*.xlsm")):
-        orig = Path(dir_orig) / nuevo.name
-        if not orig.exists():
+        orig = originales.get(nuevo.name)
+        if orig is None:
             print(f"   {nuevo.name}: sin original"); fallos += 1; continue
         with zipfile.ZipFile(orig) as a, zipfile.ZipFile(nuevo) as b:
             na, nb = set(a.namelist()), set(b.namelist())

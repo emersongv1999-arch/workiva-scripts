@@ -21,7 +21,7 @@ if not exist "workiva" mkdir "workiva"
 
 rem ---- 1. plantillas de DBNeT --------------------------------------------
 set /a N=0
-for %%f in ("xls\*.xlsm") do set /a N+=1
+for /f "delims=" %%f in ('dir /b /s "xls\*.xlsm" 2^>nul') do set /a N+=1
 if !N!==0 goto sin_plantillas
 echo   Plantillas DBNeT : !N! archivos en la carpeta xls\
 
@@ -91,7 +91,8 @@ rem ---- mensajes -----------------------------------------------------------
 echo   ERROR: no hay archivos .xlsm en la carpeta xls\
 echo.
 echo   Copia ahi los archivos que te entrega DBNeT (los 41 .xlsm).
-echo   Si vienen en un .zip, descomprimelo primero: el .zip no sirve.
+echo   Si vienen en un .zip hay que descomprimirlo. No importa si
+echo   quedan dentro de otra subcarpeta: igual los encuentra.
 echo.
 start "" "%~dp0xls"
 echo.
