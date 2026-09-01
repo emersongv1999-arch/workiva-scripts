@@ -76,8 +76,10 @@ echo ------------------------------------------------------------
 echo   Fusionando los cuadros en un solo archivo
 echo ------------------------------------------------------------
 echo.
-for %%f in ("%WK%") do set "FUSION=%%~nf_LLENADO.xlsm"
-py fusionar_cuadros.py --origen "salida" --salida "!FUSION!" --con-macros
+for %%f in ("%WK%") do set "BASE=%%~nf_LLENADO"
+py fusionar_cuadros.py --origen "salida" --salida "!BASE!.xlsm" --con-macros
+if errorlevel 1 goto error
+py fusionar_cuadros.py --origen "salida" --salida "!BASE!.xlsx"
 if errorlevel 1 goto error
 
 echo.
@@ -85,7 +87,8 @@ echo ============================================================
 echo   LISTO
 echo ============================================================
 echo.
-echo   PARA DBNeT      : %~dp0!FUSION!
+echo   PARA DBNeT   .xlsm : %~dp0!BASE!.xlsm   (con macros y botones)
+echo                .xlsx : %~dp0!BASE!.xlsx   (sin macros)
 echo.
 echo   Archivos sueltos: %~dp0salida    (los 41 .xlsm con macro)
 echo   Reporte         : %~dp0reporte_llenado.csv

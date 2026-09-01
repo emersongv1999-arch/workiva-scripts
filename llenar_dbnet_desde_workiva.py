@@ -451,6 +451,7 @@ def cmd_llenar(args):
     for ruta, hoja_d, hoja_w, metodo in pares:
         por_archivo[ruta].append((hoja_d, hoja_w, metodo))
 
+    con_datos = []
     reporte = [["archivo", "hoja_dbnet", "hoja_workiva", "concepto",
                 "columna", "periodo", "bloque", "estado"]]
     salida = Path(args.salida)
@@ -470,6 +471,7 @@ def cmd_llenar(args):
                 cambios[dest.hojas[hoja_d]] = xml
                 escritas_archivo += n
                 total_hojas += 1
+                con_datos.append(f"{ruta.name}|{hoja_d}")
         if cambios:
             cambios["xl/workbook.xml"] = recalculo(
                 dest.z.read("xl/workbook.xml").decode("utf-8"))
@@ -489,6 +491,11 @@ def cmd_llenar(args):
 
     print(f"\nTotal: {total_celdas} celdas en {total_hojas} hojas "
           f"de {archivos_escritos} archivos")
+    if not args.dry_run and con_datos:
+        # lo lee fusionar_cuadros.py --solo-aplicables: es el dato exacto de
+        # que cuadros aplican, en vez de adivinarlo mirando las celdas
+        (salida / "_hojas_con_datos.txt").write_text(
+            "\n".join(con_datos), encoding="utf-8")
 
     ruta_rep = Path(args.reporte)
     with open(ruta_rep, "w", newline="", encoding="utf-8-sig") as fh:
