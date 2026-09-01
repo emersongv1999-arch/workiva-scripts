@@ -24,10 +24,15 @@ ve bien pero su ActiveWorkbook.Save revienta con error 1004 de forma
 consistente -- probado en OneDrive, SharePoint y disco local, causa nunca
 aislada del todo. Lo unico que resulto confiable es un libro que Excel
 mismo construyo con Worksheets.Copy nativo, asi que --con-macros abre Excel
-en segundo plano, toma una de las 41 plantillas como base (trae las tres
-macros de fabrica) y le copia encima las hojas de cuadro del resto. Requiere
-Excel instalado en la maquina donde se corre esto (no sirve en un servidor
-sin Office) y `pip install pywin32`.
+en segundo plano y le copia hojas de cuadro a un libro base.
+
+Ese libro base es SIEMPRE plantilla_base_macros.xlsm, fijo en el repo junto
+a este script -- nunca una de las 41 plantillas que entrega DBNeT ese
+periodo. Asi la macro no depende de que trae la entrega de turno: las 41
+solo aportan hojas con datos, la base solo aporta las macros, y sus propias
+hojas (sin datos de ninguna empresa) se descartan siempre. Requiere Excel
+instalado en la maquina donde se corre esto (no sirve en un servidor sin
+Office) y `pip install pywin32`.
 
 El trabajo real es reindexar los formatos. Cada libro tiene su propia
 styles.xml y un s="16" no significa lo mismo en dos archivos distintos, asi
@@ -596,14 +601,19 @@ def escribe_paquete(salida, hojas, estilos, ejemplar, donante=None):
                        zipfile.ZipFile(donante).read("xl/vbaProject.bin"))
 
 
-def _sirve_de_donante_com(ruta):
-    """Solo hace falta que traiga las tres macros y no traiga la rota.
+PLANTILLA_BASE = Path(__file__).parent / "plantilla_base_macros.xlsm"
 
-    A diferencia de sirve_de_donante() (para el ensamblado a mano, ya
-    retirado de --con-macros), aqui no importa cuantas hojas auxiliares
-    tenga el libro elegido como base: se borran despues de copiar todo,
-    asi que el 'For H = 1 To TotalHojas' de Guarda_Hojas_CSV/ZIP queda
-    correcto igual, sea cual sea el donante."""
+
+def _plantilla_base_valida(ruta):
+    """Chequeo de integridad del activo fijo, no una busqueda de candidatos.
+
+    plantilla_base_macros.xlsm es un .xlsm real de DBNeT, congelado en el
+    repo solo por su vbaProject.bin -- sus propias hojas se descartan en
+    tiempo de ejecucion, nunca aportan datos. Esta funcion no elige entre
+    varios candidatos (eso es justamente lo que se saco: que la macro del
+    archivo final dependiera de cual de las 41 plantillas del periodo
+    calificara); solo confirma que el archivo fijo sigue teniendo lo que
+    tiene que tener, por si alguien lo reemplaza por error."""
     presentes = _nombres_en_vba(ruta, list(MACROS_BASE) + ["WBReplaceHyperlinkURL"])
     return set(MACROS_BASE) <= presentes and "WBReplaceHyperlinkURL" not in presentes
 
@@ -626,7 +636,16 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
     descartado porque el Save() de la macro Copiar_columna reventaba con
     error 1004 sin causa aislada. Esto abre Excel real por COM (pywin32) y
     hace lo mismo que hacia el usuario a mano con VBA (Worksheets.Copy),
-    pero automatico y desde el mismo script."""
+    pero automatico y desde el mismo script.
+
+    Las macros salen SIEMPRE de plantilla_base_macros.xlsm, un archivo fijo
+    versionado en el repo -- nunca de las 41 plantillas que entrega DBNeT
+    cada periodo. Eso es a proposito: si la macro saliera de "la primera de
+    las 41 que califique", el resultado dependeria de que trae DBNeT ese
+    periodo puntual, no de algo que controlamos nosotros. Las 41 solo
+    aportan hojas con datos; la base solo aporta las macros. Sus propias
+    hojas (que no tienen datos reales de ninguna empresa) se descartan
+    siempre, nunca terminan en el archivo final."""
     try:
         import win32com.client
     except ImportError:
@@ -637,8 +656,18 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
             "es un archivo hecho a mano por Python -- por eso hace falta el "
             "Excel real, no solo la libreria.")
 
+    if not PLANTILLA_BASE.exists():
+        sys.exit(f"Falta {PLANTILLA_BASE.name} junto al script: es el archivo "
+                 "fijo que aporta las macros. No se genera solo.")
+    if not _plantilla_base_valida(PLANTILLA_BASE):
+        sys.exit(f"{PLANTILLA_BASE.name} no tiene las macros esperadas "
+                 "(Guarda_Hojas_CSV, Guarda_Hojas_ZIP, Copiar_columna sin "
+                 "WBReplaceHyperlinkURL). Se reemplazo por error?")
+
     libros = sorted(p for p in Path(origen).rglob("*.xlsm")
-                    if not p.name.startswith("~$") and p.resolve() != Path(salida).resolve())
+                    if not p.name.startswith("~$")
+                    and p.resolve() != Path(salida).resolve()
+                    and p.resolve() != PLANTILLA_BASE.resolve())
     if not libros:
         sys.exit(f"No hay .xlsm en {origen}")
 
@@ -646,13 +675,6 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
     if solo_workiva and con_datos is None:
         sys.exit("Para --solo-workiva hace falta _hojas_de_workiva.txt, que "
                  "genera llenar_dbnet_desde_workiva.py en la carpeta de salida.")
-
-    donante = next((p for p in libros if _sirve_de_donante_com(p)), None)
-    if donante is None:
-        sys.exit("Ninguna plantilla sirve de base: hace falta una con "
-                 "Guarda_Hojas_CSV, Guarda_Hojas_ZIP, Copiar_columna y sin "
-                 "WBReplaceHyperlinkURL.")
-    print(f"Macros tomadas de: {donante.name}")
 
     salida = Path(salida)
     if salida.suffix.lower() != ".xlsm":
@@ -674,18 +696,18 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
     omitidas = []
     fallidos = []
     try:
-        base = app.Workbooks.Open(str(donante.resolve()), ReadOnly=False, UpdateLinks=0)
-        vistos = set()
-        for hoja in _hojas_cuadro_com(base):
-            if permitida(donante.name, hoja.Name):
-                vistos.add(hoja.Name)
-                total += 1
-            else:
-                omitidas.append(hoja.Name)
+        base = app.Workbooks.Open(str(PLANTILLA_BASE.resolve()), ReadOnly=False, UpdateLinks=0)
 
+        # las hojas propias de la base no son datos de ninguna empresa: se
+        # renombran para que jamas puedan chocar con una hoja real que
+        # entre despues, y se borran al final por ese nombre temporal.
+        propias = []
+        for i, hoja in enumerate(base.Worksheets):
+            propias.append(f"_BASE_{i}")
+            hoja.Name = f"_BASE_{i}"
+
+        vistos = set()
         for ruta in libros:
-            if ruta == donante:
-                continue
             libro = None
             try:
                 libro = app.Workbooks.Open(str(ruta.resolve()), ReadOnly=True, UpdateLinks=0)
@@ -708,10 +730,12 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
             if verbose:
                 print(f"  {ruta.name[:52]:54} {n_libro:3} hojas")
 
-        # las hojas auxiliares del donante (listas de codigos) no viajan
-        for hoja in list(base.Worksheets):
-            if hoja.Name not in vistos:
-                hoja.Delete()
+        if total == 0:
+            sys.exit("No se copio ninguna hoja de cuadro: revisa --solo-workiva "
+                     "y que origen apunte a la carpeta correcta.")
+
+        for nombre in propias:
+            base.Worksheets(nombre).Delete()
 
         base.SaveAs(str(salida), FileFormat=52)   # xlOpenXMLWorkbookMacroEnabled
         base.Close(SaveChanges=False)
