@@ -77,9 +77,18 @@ echo   Fusionando los cuadros en un solo archivo
 echo ------------------------------------------------------------
 echo.
 for %%f in ("%WK%") do set "BASE=%%~nf_LLENADO"
-py fusionar_cuadros.py --origen "salida" --salida "!BASE!.xlsm" --con-macros
+py fusionar_cuadros.py --origen "salida" --salida "!BASE!.xlsm" --con-macros --solo-workiva
 if errorlevel 1 goto error
-py fusionar_cuadros.py --origen "salida" --salida "!BASE!.xlsx"
+py fusionar_cuadros.py --origen "salida" --salida "!BASE!.xlsx" --solo-workiva
+if errorlevel 1 goto error
+
+rem ---- 6. los CSV, sin depender de la macro ------------------------------
+echo.
+echo ------------------------------------------------------------
+echo   Generando los CSV
+echo ------------------------------------------------------------
+echo.
+py generar_csv.py --origen "!BASE!.xlsm" --salida "csv" --zip "csv.zip"
 if errorlevel 1 goto error
 
 echo.
@@ -89,6 +98,8 @@ echo ============================================================
 echo.
 echo   PARA DBNeT   .xlsm : %~dp0!BASE!.xlsm   (con macros y botones)
 echo                .xlsx : %~dp0!BASE!.xlsx   (sin macros)
+echo.
+echo   CSV          .zip  : %~dp0csv.zip     (y sueltos en csv\)
 echo.
 echo   Archivos sueltos: %~dp0salida    (los 41 .xlsm con macro)
 echo   Reporte         : %~dp0reporte_llenado.csv

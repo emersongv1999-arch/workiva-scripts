@@ -262,9 +262,9 @@ class Estilos:
             "</styleSheet>")
 
 
-def lee_hojas_con_datos(origen):
-    """{(archivo, hoja)} que el llenado marco como llenadas, o None."""
-    f = Path(origen) / "_hojas_con_datos.txt"
+def lee_hojas_de_workiva(origen):
+    """{(archivo, hoja)} que existen en el export de Workiva, o None."""
+    f = Path(origen) / "_hojas_de_workiva.txt"
     if not f.exists():
         return None
     return {tuple(l.split("|", 1)) for l in
@@ -359,7 +359,7 @@ def dibujo_de_hoja(z, parte_hoja):
     return dxml, medios
 
 
-def fusionar(origen, salida, verbose=False, donante=None, solo_aplicables=False):
+def fusionar(origen, salida, verbose=False, donante=None, solo_workiva=False):
     libros = sorted(p for p in Path(origen).rglob("*.xls[mx]")
                     if not p.name.startswith("~$") and p.resolve() != salida.resolve())
     if not libros:
@@ -370,9 +370,9 @@ def fusionar(origen, salida, verbose=False, donante=None, solo_aplicables=False)
     vistos = collections.Counter()
     omitidas = []
     con_botones = donante is not None
-    con_datos = lee_hojas_con_datos(origen) if solo_aplicables else None
-    if solo_aplicables and con_datos is None:
-        sys.exit("Para --solo-aplicables hace falta _hojas_con_datos.txt, que "
+    con_datos = lee_hojas_de_workiva(origen) if solo_workiva else None
+    if solo_workiva and con_datos is None:
+        sys.exit("Para --solo-workiva hace falta _hojas_de_workiva.txt, que "
                  "genera llenar_dbnet_desde_workiva.py en la carpeta de salida.")
 
     for ruta in libros:
@@ -415,7 +415,7 @@ def fusionar(origen, salida, verbose=False, donante=None, solo_aplicables=False)
         sys.exit("No se encontro ninguna hoja de cuadros.")
 
     if omitidas:
-        print(f"  omitidas por no traer datos: {len(omitidas)}")
+        print(f"  omitidas por no estar en Workiva: {len(omitidas)}")
     escribe_paquete(salida, hojas, estilos, libros[0], donante)
     return hojas, estilos
 
@@ -548,9 +548,9 @@ def main():
     p.add_argument("--origen", required=True, help="carpeta con los .xlsm llenos")
     p.add_argument("--salida", required=True, help="archivo .xlsx a generar")
     p.add_argument("-v", "--verbose", action="store_true")
-    p.add_argument("--solo-aplicables", action="store_true",
-                   help="deja fuera los cuadros que quedaron sin datos (los que "
-                        "no le aplican a la empresa)")
+    p.add_argument("--solo-workiva", action="store_true",
+                   help="deja fuera los cuadros que no existen en el export de "
+                        "Workiva (los que no le aplican a la empresa)")
     p.add_argument("--con-macros", action="store_true",
                    help="genera un .xlsm con las macros y los botones, tomando "
                         "el proyecto VBA de una de las plantillas de origen")
@@ -572,7 +572,7 @@ def main():
         print(f"Macros tomadas de: {donante.name}")
 
     hojas, estilos = fusionar(Path(args.origen), salida, args.verbose, donante,
-                              args.solo_aplicables)
+                              args.solo_workiva)
     print(f"\n{len(hojas)} hojas de cuadros -> {salida}")
     if donante:
         print(f"   botones conservados: {sum(1 for h in hojas if h[2])} hojas")

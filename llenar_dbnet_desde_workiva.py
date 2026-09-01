@@ -334,6 +334,25 @@ def _inserta(xml, ref, cuerpo, attr_tipo):
     return xml[:mf.start()] + f'<row r="{fila}"{attrs}>{inner}</row>' + xml[mf.end():]
 
 
+def actualiza_cache(xml, ref, valor):
+    """Refresca el <v> de una celda con formula, sin tocar la formula.
+
+    La plantilla llega con el subtotal en cache 0 y Excel lo recalcula al
+    abrir, pero cualquier lector que no evalue formulas (el generador de CSV)
+    veria ese 0. Se guarda el valor que ya trae calculado Workiva; si Excel
+    llega a otro numero al abrir, lo pisa con el suyo."""
+    pat = re.compile(r'(<c r="%s"[^>]*>)(.*?)(</c>)' % re.escape(ref), re.S)
+    m = pat.search(xml)
+    if not m or "<f" not in m.group(2):
+        return xml, False
+    cuerpo = m.group(2)
+    nuevo = (re.sub(r"<v>.*?</v>", "<v>%s</v>" % valor, cuerpo, count=1, flags=re.S)
+             if "<v>" in cuerpo else cuerpo + "<v>%s</v>" % valor)
+    if nuevo == cuerpo:
+        return xml, False
+    return xml[:m.start()] + m.group(1) + nuevo + m.group(3) + xml[m.end():], True
+
+
 def recalculo(wb_xml):
     if "fullCalcOnLoad" in wb_xml:
         return wb_xml
@@ -386,7 +405,7 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
     idx_w = {(co, ma, n): f for f, co, ma, n in filas_indexadas(cw)}
     filas_d = filas_indexadas(cd)
     usadas_w = set()
-    escritas = 0
+    escritas = cacheadas = 0
 
     for fila_d, concepto, marca, orden in filas_d:
         fila_w = idx_w.get((concepto, marca, orden))
@@ -415,7 +434,16 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
                 continue
             destino = cd.get((fila_d, col_d), (None, False, None))
             if destino[1]:
-                continue                       # formula: la recalcula Excel
+                # formula: no se toca, pero su cache se pone al dia con el
+                # valor de Workiva para que el CSV no salga con ceros
+                try:
+                    float(val)
+                except (TypeError, ValueError):
+                    continue
+                xml, cambio = actualiza_cache(xml, f"{col_d}{fila_d}", val)
+                if cambio:
+                    cacheadas += 1
+                continue
             xml, cambio = escribe(xml, f"{col_d}{fila_d}", val, tipo)
             if cambio:
                 escritas += 1
@@ -424,7 +452,10 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
         if clave not in usadas_w:
             reporte.append([archivo, hoja_d, hoja_w, clave[0], "", clave[1], clave[2],
                             "DATO DE WORKIVA SIN DESTINO"])
-    return xml, escritas
+    if cacheadas:
+        reporte.append([archivo, hoja_d, hoja_w, "", "", "", cacheadas,
+                        "SUBTOTALES CON CACHE ACTUALIZADO"])
+    return xml, escritas + cacheadas
 
 
 def cmd_llenar(args):
@@ -451,7 +482,7 @@ def cmd_llenar(args):
     for ruta, hoja_d, hoja_w, metodo in pares:
         por_archivo[ruta].append((hoja_d, hoja_w, metodo))
 
-    con_datos = []
+    en_workiva = []
     reporte = [["archivo", "hoja_dbnet", "hoja_workiva", "concepto",
                 "columna", "periodo", "bloque", "estado"]]
     salida = Path(args.salida)
@@ -465,13 +496,14 @@ def cmd_llenar(args):
                 reporte.append([ruta.name, hoja_d, "", "", "", "", "",
                                 "NO APLICA (sin hoja en Workiva)"])
                 continue
+            en_workiva.append(f"{ruta.name}|{hoja_d}")
             xml = dest.xml(hoja_d)
             xml, n = procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, ruta.name)
             if n:
                 cambios[dest.hojas[hoja_d]] = xml
                 escritas_archivo += n
                 total_hojas += 1
-                con_datos.append(f"{ruta.name}|{hoja_d}")
+
         if cambios:
             cambios["xl/workbook.xml"] = recalculo(
                 dest.z.read("xl/workbook.xml").decode("utf-8"))
@@ -491,11 +523,11 @@ def cmd_llenar(args):
 
     print(f"\nTotal: {total_celdas} celdas en {total_hojas} hojas "
           f"de {archivos_escritos} archivos")
-    if not args.dry_run and con_datos:
-        # lo lee fusionar_cuadros.py --solo-aplicables: es el dato exacto de
-        # que cuadros aplican, en vez de adivinarlo mirando las celdas
-        (salida / "_hojas_con_datos.txt").write_text(
-            "\n".join(con_datos), encoding="utf-8")
+    if not args.dry_run and en_workiva:
+        # lo lee fusionar_cuadros.py --solo-workiva: que cuadros existen en el
+        # export, en vez de adivinarlo mirando las celdas
+        (salida / "_hojas_de_workiva.txt").write_text(
+            "\n".join(en_workiva), encoding="utf-8")
 
     ruta_rep = Path(args.reporte)
     with open(ruta_rep, "w", newline="", encoding="utf-8-sig") as fh:
