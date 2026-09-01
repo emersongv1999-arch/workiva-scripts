@@ -76,8 +76,8 @@ echo ------------------------------------------------------------
 echo   Fusionando los cuadros en un solo archivo
 echo ------------------------------------------------------------
 echo.
-for %%f in ("%WK%") do set "FUSION=%%~nf_LLENADO.xlsx"
-py fusionar_cuadros.py --origen "salida" --salida "!FUSION!"
+for %%f in ("%WK%") do set "FUSION=%%~nf_LLENADO.xlsm"
+py fusionar_cuadros.py --origen "salida" --salida "!FUSION!" --con-macros
 if errorlevel 1 goto error
 
 echo.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Fusiona las hojas de cuadros XBRL de varios .xlsm en un unico .xlsx.
+Fusiona las hojas de cuadros XBRL de varios .xlsm en un unico libro.
 
 Pensado para el paso final: una vez que llenar_dbnet_desde_workiva.py escribio
 los .xlsm de DBNeT con los datos de Workiva, este junta todas sus hojas de
@@ -14,9 +14,15 @@ Que se conserva y que no
 ------------------------
   SI   valores, formulas, formatos, anchos de columna, alto de fila,
        celdas combinadas y formato condicional
-  NO   macros (un .xlsx no puede llevarlas), botones, imagenes,
-       hipervinculos entre hojas y validaciones de datos: las listas
+  NO   hipervinculos entre hojas y validaciones de datos: las listas
        desplegables apuntan a las hojas auxiliares, que no viajan
+
+Con --con-macros el resultado es un .xlsm con las macros y los botones. No
+hace falta generar VBA: como el libro fusionado lleva solo hojas de cuadros,
+sin auxiliares al final que saltarse, el bucle correcto es "For H = 1 To
+TotalHojas" y varias plantillas ya lo traen asi. Se toma el proyecto VBA de
+una de ellas que ademas tenga Copiar_columna y no arrastre
+WBReplaceHyperlinkURL, que no compila.
 
 El trabajo real es reindexar los formatos. Cada libro tiene su propia
 styles.xml y un s="16" no significa lo mismo en dos archivos distintos, asi
@@ -25,6 +31,7 @@ deduplicando, y reescribir el indice de cada celda.
 
 Uso:
     python fusionar_cuadros.py --origen ./salida --salida E211_XBRL.xlsx
+    python fusionar_cuadros.py --origen ./salida --salida E211_XBRL.xlsm --con-macros
 """
 
 import argparse
@@ -40,6 +47,51 @@ CELDA_RE = re.compile(r'<c ([^>]*?)(?:/>|>(.*?)</c>)', re.S)
 FUERA = ("drawing", "legacyDrawing", "legacyDrawingHF", "picture", "oleObjects",
          "controls", "tableParts", "hyperlinks", "dataValidations", "extLst",
          "pageSetup")
+
+# En modo .xlsm los dibujos si viajan: son los botones de las macros.
+FUERA_XLSM = tuple(t for t in FUERA if t != "drawing")
+
+# Un donante sirve si sus macros recorren TODAS las hojas (el libro fusionado
+# solo lleva hojas de cuadros, sin auxiliares al final que haya que saltarse),
+# trae Copiar_columna y no arrastra WBReplaceHyperlinkURL, que no compila.
+def procedimientos_de(ruta):
+    """Nombres de Sub/Function del proyecto VBA de un libro."""
+    from oletools.olevba import VBA_Parser
+    codigo = "\n".join(c for (_, _, vfn, c) in VBA_Parser(str(ruta)).extract_macros()
+                       if c and c.strip() and "dulo" in vfn)
+    return set(re.findall(r"^(?:Public |Private )?(?:Sub|Function) (\w+)",
+                          codigo, re.M))
+
+
+# Botones cuya macro no existe en el donante. crear_csv exportaba solo la hoja
+# activa; en el libro fusionado el equivalente util es exportarlas todas.
+EQUIVALE = {"crear_csv": "Guarda_Hojas_CSV"}
+
+
+def repunta_botones(dxml, disponibles):
+    """Reapunta o desactiva las formas que llaman a una macro inexistente."""
+    def cambia(m):
+        nombre = m.group(1)
+        if nombre in disponibles:
+            return m.group(0)
+        destino = EQUIVALE.get(nombre)
+        if destino in disponibles:
+            return 'macro="[0]!%s"' % destino
+        return 'macro=""'          # sin macro antes que un error al pulsarlo
+    return re.sub(r'macro="\[0\]!([^"]+)"', cambia, dxml)
+
+
+def sirve_de_donante(ruta):
+    from oletools.olevba import VBA_Parser          # opcional: solo en modo xlsm
+    codigo = "\n".join(c for (_, _, vfn, c) in VBA_Parser(str(ruta)).extract_macros()
+                       if c and c.strip() and "dulo" in vfn)
+    if "WBReplaceHyperlinkURL" in codigo or "Copiar_columna" not in codigo:
+        return False
+    for sub in ("Guarda_Hojas_CSV", "Guarda_Hojas_ZIP"):
+        m = re.search(r"Sub %s\(.*?For H = 1 To ([^\n]*)" % sub, codigo, re.S)
+        if not m or m.group(1).strip() != "TotalHojas":
+            return False
+    return True
 
 
 _CACHE_TAG = {}
@@ -185,7 +237,7 @@ def es_cuadro(xml, shared):
     return False
 
 
-def limpia_hoja(xml, mapa_xf, mapa_dxf, shared_si):
+def limpia_hoja(xml, mapa_xf, mapa_dxf, shared_si, con_botones=False):
     """Reindexa formatos, pasa los textos a inline y saca lo que no viaja."""
     # 1. formato de cada celda y de las filas
     def re_s(m):
@@ -212,10 +264,16 @@ def limpia_hoja(xml, mapa_xf, mapa_dxf, shared_si):
     xml = CELDA_RE.sub(re_str, xml)
 
     # 3. lo que necesitaria relaciones propias de la hoja
-    for tag in FUERA:
+    for tag in (FUERA_XLSM if con_botones else FUERA):
         xml = re.sub(r"<%s(?:\s[^>]*)?/>" % tag, "", xml)
         xml = re.sub(r"<%s(?:\s[^>]*)?>.*?</%s>" % (tag, tag), "", xml, flags=re.S)
-    xml = re.sub(r'\sr:id="[^"]*"', "", xml)
+    if con_botones:
+        # el dibujo se queda, y su relacion pasa a ser siempre rId1
+        xml = re.sub(r'<drawing[^>]*/>', '<drawing r:id="rId1"/>', xml)
+        xml = re.sub(r'\sr:id="[^"]*"',
+                     lambda m: m.group(0) if "rId1" in m.group(0) else "", xml)
+    else:
+        xml = re.sub(r'\sr:id="[^"]*"', "", xml)
     return xml
 
 
@@ -224,15 +282,51 @@ def escapa(s):
             .replace('"', "&quot;")
 
 
-def fusionar(origen, salida, verbose=False):
+def dibujo_de_hoja(z, parte_hoja):
+    """(xml del dibujo, [(rId, ruta del medio)]) o None."""
+    rels_p = re.sub(r"([^/]+)$", r"_rels/\1.rels", parte_hoja)
+    try:
+        rels = z.read(rels_p).decode("utf-8")
+    except KeyError:
+        return None
+    hoja = z.read(parte_hoja).decode("utf-8")
+    m = re.search(r'<drawing[^>]*r:id="(rId\d+)"', hoja)
+    if not m:
+        return None
+    md = re.search(r'Id="%s"[^>]*Target="([^"]*)"' % m.group(1), rels)
+    if not md:
+        return None
+    destino = md.group(1).replace("../", "xl/")
+    if not destino.startswith("xl/"):
+        destino = "xl/drawings/" + destino.lstrip("/")
+    try:
+        dxml = z.read(destino).decode("utf-8")
+    except KeyError:
+        return None
+    medios = []
+    drels_p = re.sub(r"([^/]+)$", r"_rels/\1.rels", destino)
+    try:
+        drels = z.read(drels_p).decode("utf-8")
+        for rid, tgt in re.findall(r'Id="(rId\d+)"[^>]*Target="([^"]*)"', drels):
+            t = tgt.replace("../", "xl/")
+            if not t.startswith("xl/"):
+                t = "xl/media/" + t.lstrip("/")
+            medios.append((rid, t, z.read(t)))
+    except KeyError:
+        pass
+    return dxml, medios
+
+
+def fusionar(origen, salida, verbose=False, donante=None):
     libros = sorted(p for p in Path(origen).rglob("*.xls[mx]")
                     if not p.name.startswith("~$") and p.resolve() != salida.resolve())
     if not libros:
         sys.exit(f"No hay .xlsm ni .xlsx en {origen}")
 
     estilos = Estilos()
-    hojas = []                                   # (nombre, xml)
+    hojas = []                                   # (nombre, xml, dibujo|None)
     vistos = collections.Counter()
+    con_botones = donante is not None
 
     for ruta in libros:
         z = zipfile.ZipFile(ruta)
@@ -258,7 +352,11 @@ def fusionar(origen, salida, verbose=False):
             vistos[nombre] += 1
             if vistos[nombre] > 1:               # no deberia pasar, pero por si acaso
                 nombre = f"{nombre[:27]}_{vistos[nombre]}"
-            hojas.append((nombre, limpia_hoja(xml, mapa_xf, mapa_dxf, shared_si)))
+            dib = dibujo_de_hoja(z, parte) if con_botones else None
+            hojas.append((nombre,
+                          limpia_hoja(xml, mapa_xf, mapa_dxf, shared_si,
+                                      con_botones and dib is not None),
+                          dib))
             n_libro += 1
         if verbose:
             print(f"  {ruta.name[:52]:54} {n_libro:3} hojas")
@@ -266,55 +364,87 @@ def fusionar(origen, salida, verbose=False):
     if not hojas:
         sys.exit("No se encontro ninguna hoja de cuadros.")
 
-    escribe_paquete(salida, hojas, estilos, libros[0])
+    escribe_paquete(salida, hojas, estilos, libros[0], donante)
     return hojas, estilos
 
 
-def escribe_paquete(salida, hojas, estilos, ejemplar):
+def escribe_paquete(salida, hojas, estilos, ejemplar, donante=None):
     tema = zipfile.ZipFile(ejemplar).read("xl/theme/theme1.xml")
+    n = len(hojas)
+    macro = donante is not None
 
-    sheets_xml = "".join(
-        '<sheet name="%s" sheetId="%d" r:id="rId%d"/>' % (escapa(n), i, i)
-        for i, (n, _) in enumerate(hojas, 1))
+    # ---- dibujos (los botones) y sus imagenes, renumerados globalmente ----
+    dibujos, medios, rels_hoja = [], [], {}
+    vistos_medio = {}
+    disponibles = procedimientos_de(donante) if macro else set()
+    for i, (_, _, dib) in enumerate(hojas, 1):
+        if not dib:
+            continue
+        dxml, mds = dib
+        for rid, ruta, datos in mds:
+            if datos not in vistos_medio:
+                ext = ruta.rsplit(".", 1)[-1].lower()
+                vistos_medio[datos] = "image%d.%s" % (len(medios) + 1, ext)
+                medios.append((vistos_medio[datos], datos))
+        if macro:
+            dxml = repunta_botones(dxml, disponibles)
+        dibujos.append((len(dibujos) + 1, dxml,
+                        [(rid, vistos_medio[d]) for rid, _, d in mds]))
+        rels_hoja[i] = len(dibujos)
+
+    sheets_xml = "".join('<sheet name="%s" sheetId="%d" r:id="rId%d"/>'
+                         % (escapa(nom), i, i)
+                         for i, (nom, _, _) in enumerate(hojas, 1))
     workbook = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
         ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-        '<sheets>%s</sheets>'
-        '<calcPr calcId="191029" fullCalcOnLoad="1"/>'
-        "</workbook>" % sheets_xml)
+        + ('<workbookPr codeName="ThisWorkbook"/>' if macro else "")
+        + '<sheets>%s</sheets>'
+          '<calcPr calcId="191029" fullCalcOnLoad="1"/>'
+          "</workbook>" % sheets_xml)
 
-    n = len(hojas)
+    REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/"
+    rel = ['<Relationship Id="rId%d" Type="%sworksheet" Target="worksheets/sheet%d.xml"/>'
+           % (i, REL, i) for i in range(1, n + 1)]
+    rel.append('<Relationship Id="rId%d" Type="%sstyles" Target="styles.xml"/>' % (n + 1, REL))
+    rel.append('<Relationship Id="rId%d" Type="%stheme" Target="theme/theme1.xml"/>' % (n + 2, REL))
+    if macro:
+        rel.append('<Relationship Id="rId%d" Type="http://schemas.microsoft.com/office/2006/'
+                   'relationships/vbaProject" Target="vbaProject.bin"/>' % (n + 3))
     wb_rels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-               '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-               + "".join('<Relationship Id="rId%d" Type="http://schemas.openxmlformats.org/'
-                         'officeDocument/2006/relationships/worksheet" Target="worksheets/sheet%d.xml"/>'
-                         % (i, i) for i in range(1, n + 1))
-               + '<Relationship Id="rId%d" Type="http://schemas.openxmlformats.org/'
-                 'officeDocument/2006/relationships/styles" Target="styles.xml"/>' % (n + 1)
-               + '<Relationship Id="rId%d" Type="http://schemas.openxmlformats.org/'
-                 'officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>' % (n + 2)
-               + "</Relationships>")
+               '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/'
+               'relationships">' + "".join(rel) + "</Relationships>")
 
+    tipo_wb = ("application/vnd.ms-excel.sheet.macroEnabled.main+xml" if macro else
+               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml")
+    ov = ['<Override PartName="/xl/workbook.xml" ContentType="%s"/>' % tipo_wb]
+    ov += ['<Override PartName="/xl/worksheets/sheet%d.xml" ContentType="application/vnd.'
+           'openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' % i
+           for i in range(1, n + 1)]
+    ov.append('<Override PartName="/xl/styles.xml" ContentType="application/vnd.'
+              'openxmlformats-officedocument.spreadsheetml.styles+xml"/>')
+    ov.append('<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.'
+              'openxmlformats-officedocument.theme+xml"/>')
+    ov += ['<Override PartName="/xl/drawings/drawing%d.xml" ContentType="application/vnd.'
+           'openxmlformats-officedocument.drawing+xml"/>' % k for k, _, _ in dibujos]
+    if macro:
+        ov.append('<Override PartName="/xl/vbaProject.bin" ContentType="application/vnd.'
+                  'ms-office.vbaProject"/>')
+    defaults = ['<Default Extension="rels" ContentType="application/vnd.openxmlformats-'
+                'package.relationships+xml"/>',
+                '<Default Extension="xml" ContentType="application/xml"/>']
+    for ext in sorted({m[0].rsplit(".", 1)[-1] for m in medios}):
+        defaults.append('<Default Extension="%s" ContentType="image/%s"/>'
+                        % (ext, "jpeg" if ext in ("jpg", "jpeg") else ext))
     tipos = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
              '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-             '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-             '<Default Extension="xml" ContentType="application/xml"/>'
-             '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-'
-             'officedocument.spreadsheetml.sheet.main+xml"/>'
-             + "".join('<Override PartName="/xl/worksheets/sheet%d.xml" ContentType="application/'
-                       'vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' % i
-                       for i in range(1, n + 1))
-             + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-'
-               'officedocument.spreadsheetml.styles+xml"/>'
-               '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-'
-               'officedocument.theme+xml"/>'
-             + "</Types>")
+             + "".join(defaults) + "".join(ov) + "</Types>")
 
     raiz = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
-            'relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/'
+            'relationships"><Relationship Id="rId1" Type="%sofficeDocument" '
+            'Target="xl/workbook.xml"/></Relationships>' % REL)
 
     salida.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(salida, "w", zipfile.ZIP_DEFLATED) as z:
@@ -324,8 +454,40 @@ def escribe_paquete(salida, hojas, estilos, ejemplar):
         z.writestr("xl/_rels/workbook.xml.rels", wb_rels)
         z.writestr("xl/styles.xml", estilos.xml())
         z.writestr("xl/theme/theme1.xml", tema)
-        for i, (_, xml) in enumerate(hojas, 1):
+        for i, (_, xml, _) in enumerate(hojas, 1):
+            # Cada hoja llega con el codeName de su libro de origen y al
+            # juntarlas se repiten. Se quitan todos y se pone Hoja1 en la
+            # primera, que es el modulo de documento que trae el donante.
+            xml = re.sub(r'(<sheetPr\b[^>]*?)\s*codeName="[^"]*"', r"\1", xml, count=1)
+            if macro and i == 1:
+                if re.search(r"<sheetPr\b", xml):
+                    xml = re.sub(r"<sheetPr\b", '<sheetPr codeName="Hoja1"', xml, count=1)
+                else:
+                    xml = re.sub(r"(<worksheet[^>]*>)",
+                                 r'\1<sheetPr codeName="Hoja1"/>', xml, count=1)
             z.writestr("xl/worksheets/sheet%d.xml" % i, xml)
+            if i in rels_hoja:
+                z.writestr("xl/worksheets/_rels/sheet%d.xml.rels" % i,
+                           '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                           '<Relationships xmlns="http://schemas.openxmlformats.org/'
+                           'package/2006/relationships"><Relationship Id="rId1" '
+                           'Type="%sdrawing" Target="../drawings/drawing%d.xml"/>'
+                           "</Relationships>" % (REL, rels_hoja[i]))
+        for k, dxml, mds in dibujos:
+            z.writestr("xl/drawings/drawing%d.xml" % k, dxml)
+            if mds:
+                z.writestr("xl/drawings/_rels/drawing%d.xml.rels" % k,
+                           '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                           '<Relationships xmlns="http://schemas.openxmlformats.org/'
+                           'package/2006/relationships">'
+                           + "".join('<Relationship Id="%s" Type="%simage" '
+                                     'Target="../media/%s"/>' % (rid, REL, nom)
+                                     for rid, nom in mds) + "</Relationships>")
+        for nom, datos in medios:
+            z.writestr("xl/media/" + nom, datos)
+        if macro:
+            z.writestr("xl/vbaProject.bin",
+                       zipfile.ZipFile(donante).read("xl/vbaProject.bin"))
 
 
 def main():
@@ -334,11 +496,30 @@ def main():
     p.add_argument("--origen", required=True, help="carpeta con los .xlsm llenos")
     p.add_argument("--salida", required=True, help="archivo .xlsx a generar")
     p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument("--con-macros", action="store_true",
+                   help="genera un .xlsm con las macros y los botones, tomando "
+                        "el proyecto VBA de una de las plantillas de origen")
     args = p.parse_args()
 
     salida = Path(args.salida)
-    hojas, estilos = fusionar(Path(args.origen), salida, args.verbose)
+    donante = None
+    if args.con_macros:
+        if salida.suffix.lower() != ".xlsm":
+            salida = salida.with_suffix(".xlsm")
+        for cand in sorted(Path(args.origen).rglob("*.xlsm")):
+            if sirve_de_donante(cand):
+                donante = cand
+                break
+        if donante is None:
+            sys.exit("Ninguna plantilla sirve de donante de macros: hace falta una "
+                     "con 'For H = 1 To TotalHojas', Copiar_columna y sin "
+                     "WBReplaceHyperlinkURL.")
+        print(f"Macros tomadas de: {donante.name}")
+
+    hojas, estilos = fusionar(Path(args.origen), salida, args.verbose, donante)
     print(f"\n{len(hojas)} hojas de cuadros -> {salida}")
+    if donante:
+        print(f"   botones conservados: {sum(1 for h in hojas if h[2])} hojas")
     print(f"   formatos fusionados: {len(estilos.cellXfs)} cellXfs, "
           f"{len(estilos.fonts)} fuentes, {len(estilos.fills)} rellenos, "
           f"{len(estilos.borders)} bordes")
