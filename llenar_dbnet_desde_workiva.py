@@ -376,19 +376,27 @@ def actualiza_cache(xml, ref, valor):
     veria ese 0. Se guarda el valor que ya trae calculado Workiva; si Excel
     llega a otro numero al abrir, lo pisa con el suyo.
 
-    El patron prueba primero la celda autocerrada, igual que CELDA_RE: con
-    '<c r="X"[^>]*>' una celda como <c r="D5" s="3"/> tambien hacia match
-    -- [^>]* se come el '/' -- y entonces el (.*?)(</c>) seguia de largo
-    hasta el cierre de una celda POSTERIOR. El <v> que se reescribia era
-    el de esa otra celda: el valor terminaba en la celda equivocada, sin
-    error y sin dejar rastro."""
+    Dos formas autocerradas hay que tener en cuenta, y las dos mordieron:
+
+    La celda: con '<c r="X"[^>]*>' una celda como <c r="D5" s="3"/> tambien
+    hacia match -- [^>]* se come el '/' -- y el (.*?)(</c>) seguia de largo
+    hasta el cierre de una celda POSTERIOR, cuyo <v> era el que se
+    reescribia. El valor terminaba en la celda equivocada.
+
+    El cache: una formula sin valor calculado llega como <f>..</f><v/>, y
+    preguntar por '<v>' da falso ahi. Entonces en vez de reemplazar el
+    cache se AGREGABA otro, dejando la celda con <v/><v>0</v>. Eso es XML
+    bien formado -- pasa cualquier validador -- pero el esquema de Excel
+    admite un solo <v> por celda: el archivo abre pidiendo repararse, y
+    Workbooks.Open falla porque no puede mostrar esa pregunta."""
     pat = re.compile(r'<c r="%s"([^>]*?)(?:/>|>(.*?)</c>)' % re.escape(ref), re.S)
     m = pat.search(xml)
     if not m or m.group(2) is None or "<f" not in m.group(2):
         return xml, False           # sin cuerpo no hay formula que refrescar
     cuerpo = m.group(2)
-    nuevo = (re.sub(r"<v>.*?</v>", "<v>%s</v>" % valor, cuerpo, count=1, flags=re.S)
-             if "<v>" in cuerpo else cuerpo + "<v>%s</v>" % valor)
+    V = re.compile(r"<v(?:\s[^>]*)?/>|<v(?:\s[^>]*)?>.*?</v>", re.S)
+    nuevo = (V.sub("<v>%s</v>" % valor, cuerpo, count=1)
+             if V.search(cuerpo) else cuerpo + "<v>%s</v>" % valor)
     if nuevo == cuerpo:
         return xml, False
     celda = '<c r="%s"%s>%s</c>' % (ref, m.group(1), nuevo)
@@ -421,14 +429,23 @@ def reescribe_zip(origen, destino, cambios):
             raise ValueError(
                 f"{destino.name}: el XML de {parte} quedo invalido ({e}). "
                 "El archivo NO se escribio.") from None
-        # Y que ninguna celda pase el limite de Excel: el XML seria valido
-        # igual, pero el archivo no se podria abrir por automatizacion.
-        for t in raiz.iter("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t"):
+        # Estar bien formado no basta: hay cosas que cualquier parser acepta
+        # y el esquema de Excel no. Las dos que ya nos costaron un archivo
+        # que no se podia abrir por automatizacion:
+        NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+        for t in raiz.iter(NS + "t"):
             if t.text and len(t.text) > MAX_CELDA:
                 raise ValueError(
                     f"{destino.name}: una celda de {parte} quedo con "
                     f"{len(t.text)} caracteres (el maximo de Excel es "
                     f"{MAX_CELDA}). El archivo NO se escribio.")
+        for c in raiz.iter(NS + "c"):
+            n_v = len(c.findall(NS + "v"))
+            if n_v > 1:
+                raise ValueError(
+                    f"{destino.name}: la celda {c.get('r')} de {parte} quedo "
+                    f"con {n_v} elementos <v>; Excel admite uno solo. "
+                    "El archivo NO se escribio.")
 
     destino.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(origen) as zin, \
