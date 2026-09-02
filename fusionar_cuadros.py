@@ -50,6 +50,7 @@ import collections
 import re
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -1282,11 +1283,22 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
 
                 vistos = set()
                 for ruta in libros:
+                    # Un archivo que no abre deja fuera TODAS sus hojas, y el
+                    # .xlsm sale corto sin que se note. Suele ser transitorio
+                    # (OneDrive bajandolo, el archivo abierto en otra ventana),
+                    # asi que se reintenta antes de darlo por perdido.
                     libro = None
-                    try:
-                        libro = app.Workbooks.Open(str(ruta.resolve()), ReadOnly=True, UpdateLinks=0)
-                    except Exception:
-                        fallidos.append(ruta.name)
+                    for intento in range(2):
+                        try:
+                            libro = app.Workbooks.Open(str(ruta.resolve()),
+                                                       ReadOnly=True, UpdateLinks=0)
+                            break
+                        except Exception as e:
+                            motivo = str(e)
+                            if intento == 0:
+                                time.sleep(2)
+                    if libro is None:
+                        fallidos.append(f"{ruta.name}: {motivo[:120]}")
                         continue
                     n_libro = 0
                     for hoja in _hojas_cuadro_com(libro):
@@ -1348,7 +1360,24 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
     if omitidas:
         print(f"  omitidas por no estar en Workiva: {len(omitidas)}")
     if fallidos:
-        print(f"  no se pudieron abrir: {', '.join(fallidos)}")
+        # Esto NO es un aviso al pasar: el archivo quedo incompleto y no se
+        # nota mirandolo. Se corta con codigo de salida distinto de cero para
+        # que el .bat pare aqui en vez de anunciar "LISTO".
+        print("\n" + "!" * 60)
+        print("  ATENCION: el .xlsm quedo INCOMPLETO, no lo entregues asi.")
+        print("!" * 60)
+        print(f"\n  Se guardo en {salida}")
+        print(f"  pero {len(fallidos)} archivo(s) no se pudieron abrir, asi que")
+        print("  NINGUNA de sus hojas quedo adentro:\n")
+        for f in fallidos:
+            print(f"    - {f}")
+        print("\n  Que hacer:")
+        print("    1. Cierra todas las ventanas de Excel.")
+        print("    2. En la carpeta salida\\, clic derecho sobre esos archivos")
+        print('       > "Conservar siempre en este dispositivo" (OneDrive a')
+        print("       veces los deja solo en la nube y Excel no los abre).")
+        print("    3. Vuelve a correr esto.")
+        sys.exit(1)
     return total, salida
 
 
