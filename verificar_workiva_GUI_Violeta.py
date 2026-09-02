@@ -1006,6 +1006,38 @@ NAV_ITEMS = [
     ("Publicar Linking",       "mod8"),
 ]
 
+def dir_datos_app():
+    """Carpeta de trabajo del Auditor, garantizada escribible.
+
+    Antes se usaban rutas relativas (Path("docx_tmp_verif")) y rutas junto
+    al propio archivo (Path(__file__).parent). Ninguna de las dos sirve en
+    el .exe: la relativa apunta a la carpeta DESDE DONDE se lanzo el
+    ejecutable, y si esa carpeta esta protegida Windows responde
+    "[WinError 5] Acceso denegado"; la de __file__, en modo --onefile,
+    cae dentro del temporal que PyInstaller borra al salir.
+
+    Se prueba escribir de verdad en cada candidata antes de devolverla,
+    porque en equipos corporativos una carpeta puede existir y aun asi no
+    permitir escritura."""
+    import tempfile
+    candidatas = []
+    base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+    if base:
+        candidatas.append(Path(base) / "AuditorCGE")
+    candidatas.append(Path(tempfile.gettempdir()) / "AuditorCGE")
+    for d in candidatas:
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            prueba = d / ".escritura_ok"
+            prueba.write_text("ok", encoding="utf-8")
+            prueba.unlink()
+            return d
+        except OSError:
+            continue
+    # Ultimo recurso: un temporal recien creado, que siempre es escribible.
+    return Path(tempfile.mkdtemp(prefix="auditor_"))
+
+
 def guardar_xlsx_seguro(wb, ruta, log=None):
     """Guarda el libro en 'ruta'. Igual que al descargar el mismo archivo
     varias veces desde el navegador: si el nombre ya existe (exista o no,
@@ -3007,8 +3039,12 @@ class App(tk.Tk):
                 self.log(f"  {len(docs)} documento(s) encontrado(s).", "ok")
             periodo = f"{mes}-{anio}"
             self._ss_name  = f"Verificación de sumas {periodo}"
-            self._ss_cache = Path(__file__).parent / f".ss_verif_id_{periodo}"
-            self._docx_dir = Path("docx_tmp_verif")
+            # Ambas rutas van a una carpeta garantizada escribible: la
+            # relativa fallaba con "Acceso denegado" segun desde donde se
+            # lanzara el .exe, y la de __file__ se perdia en cada corrida.
+            _dir_app = dir_datos_app()
+            self._ss_cache = _dir_app / f".ss_verif_id_{periodo}"
+            self._docx_dir = _dir_app / "docx_tmp_verif"
             self.after(0, lambda: self._render_docs(self._docs))
             if self._docs:
                 self.after(0, lambda: self._btn_verificar.configure(state="normal"))
@@ -3038,7 +3074,7 @@ class App(tk.Tk):
                 self.log(f"No se encontro '{self._ss_name}'.", "err")
                 return
             self.log(f"  Spreadsheet encontrado.", "ok")
-            self._docx_dir.mkdir(exist_ok=True)
+            self._docx_dir.mkdir(parents=True, exist_ok=True)
 
             total_hall = 0
             for i, doc in enumerate(seleccionados, 1):
