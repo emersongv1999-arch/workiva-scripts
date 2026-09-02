@@ -1136,16 +1136,27 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
                         if not permitida(ruta.name, nombre):
                             omitidas.append(nombre)
                             continue
-                        hoja.Copy(After=base.Worksheets(base.Worksheets.Count))
+                        antes = base.Worksheets.Count
+                        # Posicional, no por nombre: con COM en despacho
+                        # dinamico (sin type library registrada localmente,
+                        # que es como se abre Excel.Application aqui) el
+                        # argumento con nombre After=... no siempre se
+                        # resuelve contra el parametro correcto -- y si no
+                        # se resuelve, Worksheet.Copy() sin destino crea un
+                        # libro nuevo aparte en vez de pegar en el actual,
+                        # sin avisar de ningun error.
+                        hoja.Copy(None, base.Worksheets(antes))
+                        if base.Worksheets.Count != antes + 1:
+                            sys.exit(f"'{nombre}' no quedo copiada dentro del libro "
+                                     "fusionado (Worksheets.Count no aumento). Esto "
+                                     "no deberia pasar -- avisar para revisar.")
+                        nueva = base.Worksheets(base.Worksheets.Count)
                         # DBNeT trae varias hojas ocultas por defecto (las
                         # que no aplican a cada plantilla). La copia hereda
-                        # ese estado, y si TODAS las que entran quedan
-                        # ocultas, Excel se niega a borrar la ultima hoja
-                        # propia de la base mas abajo ("el libro debe
-                        # contener al menos una hoja visible"). Se fuerzan
-                        # visibles: es lo correcto ademas, el archivo que se
-                        # entrega no deberia llevar pestanas escondidas.
-                        base.Worksheets(base.Worksheets.Count).Visible = -1  # xlSheetVisible
+                        # ese estado; se fuerza visible ademas porque el
+                        # archivo que se entrega no deberia llevar pestanas
+                        # escondidas.
+                        nueva.Visible = -1  # xlSheetVisible
                         vistos.add(nombre)
                         total += 1
                         n_libro += 1
@@ -1156,6 +1167,11 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
                 if total == 0:
                     sys.exit("No se copio ninguna hoja de cuadro: revisa --solo-workiva "
                              "y que origen apunte a la carpeta correcta.")
+
+                if base.Worksheets.Count <= len(propias):
+                    sys.exit(f"El libro fusionado quedo con {base.Worksheets.Count} "
+                             f"hoja(s) pero se copiaron {total} -- algo las esta "
+                             "mandando a otro lado en vez de pegarlas aqui.")
 
                 for nombre in propias:
                     base.Worksheets(nombre).Delete()
