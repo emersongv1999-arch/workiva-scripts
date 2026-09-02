@@ -92,7 +92,18 @@ def desescapa(s):
              .replace("&apos;", "'").replace("&#xA;", "\n").replace("&amp;", "&"))
 
 
+# Caracteres que XML 1.0 no admite en ningun caso: los de control salvo
+# tabulador, salto de linea y retorno de carro. Ni siquiera valen escapados
+# como &#xB;. Excel tampoco los puede guardar: si alguno se cuela en un <t>,
+# el .xlsm queda con XML invalido y al abrirlo sale "Hemos encontrado un
+# problema con contenido de ...", con "Registros reparados: Propiedades de
+# cadena de /xl/worksheets/sheetN.xml". Se cuelan sin que nadie los vea,
+# arrastrados por un copiar y pegar en el texto de origen.
+ILEGALES_XML = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
 def escapa(s):
+    s = ILEGALES_XML.sub("", s)
     return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
@@ -371,7 +382,23 @@ def recalculo(wb_xml):
 
 def reescribe_zip(origen, destino, cambios):
     """Copia el paquete entero cambiando solo las partes de `cambios`.
-    vbaProject.bin, drawings, styles y media pasan byte a byte."""
+    vbaProject.bin, drawings, styles y media pasan byte a byte.
+
+    Antes de escribir se valida el XML de cada parte modificada. Un .xlsm con
+    XML invalido igual se genera y hasta se abre -- Excel ofrece repararlo --
+    pero deja de servir para automatizar: Workbooks.Open falla, porque para
+    preguntar si repara necesita mostrar un dialogo, y el script corre con los
+    avisos apagados. Sale mas barato parar aqui que descubrirlo tres pasos
+    despues, cuando ya no se sabe de donde vino."""
+    import xml.etree.ElementTree as ET
+    for parte, texto in cambios.items():
+        try:
+            ET.fromstring(texto)
+        except ET.ParseError as e:
+            raise ValueError(
+                f"{destino.name}: el XML de {parte} quedo invalido ({e}). "
+                "El archivo NO se escribio.") from None
+
     destino.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(origen) as zin, \
          zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as zout:
