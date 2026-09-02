@@ -1262,6 +1262,7 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
     total = 0
     omitidas = []
     fallidos = []
+    reparados = []
     try:
         # ignore_cleanup_errors: si algo revienta a mitad de camino puede
         # quedar un libro abierto reteniendo un archivo de la carpeta
@@ -1315,6 +1316,18 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
                             motivo = str(e)
                             if intento < 2:
                                 time.sleep(2 + 3 * intento)
+                    if libro is None:
+                        # Ultimo recurso: abrirlo reparandolo. Si Excel
+                        # considera el archivo danado quiere preguntar si lo
+                        # repara, y con DisplayAlerts=False no puede preguntar
+                        # -- el Open falla y punto. CorruptLoad:=xlRepairFile
+                        # le dice que repare sin preguntar.
+                        try:
+                            libro = app.Workbooks.Open(str(local), ReadOnly=True,
+                                                       UpdateLinks=0, CorruptLoad=1)
+                            reparados.append(ruta.name)
+                        except Exception:
+                            pass
                     if libro is None:
                         fallidos.append(f"{ruta.name}: {motivo[:120]}")
                         continue
@@ -1377,6 +1390,12 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
 
     if omitidas:
         print(f"  omitidas por no estar en Workiva: {len(omitidas)}")
+    if reparados:
+        print("\n  OJO: Excel solo pudo abrir estos archivos reparandolos, o sea")
+        print("  que los considera danados. Sus hojas SI entraron, pero revisa")
+        print("  sus cuadros contra el reporte antes de entregar:")
+        for r in reparados:
+            print(f"    - {r}")
     if fallidos:
         # Esto NO es un aviso al pasar: el archivo quedo incompleto y no se
         # nota mirandolo. Se corta con codigo de salida distinto de cero para

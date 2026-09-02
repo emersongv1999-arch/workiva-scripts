@@ -340,17 +340,25 @@ def actualiza_cache(xml, ref, valor):
     La plantilla llega con el subtotal en cache 0 y Excel lo recalcula al
     abrir, pero cualquier lector que no evalue formulas (el generador de CSV)
     veria ese 0. Se guarda el valor que ya trae calculado Workiva; si Excel
-    llega a otro numero al abrir, lo pisa con el suyo."""
-    pat = re.compile(r'(<c r="%s"[^>]*>)(.*?)(</c>)' % re.escape(ref), re.S)
+    llega a otro numero al abrir, lo pisa con el suyo.
+
+    El patron prueba primero la celda autocerrada, igual que CELDA_RE: con
+    '<c r="X"[^>]*>' una celda como <c r="D5" s="3"/> tambien hacia match
+    -- [^>]* se come el '/' -- y entonces el (.*?)(</c>) seguia de largo
+    hasta el cierre de una celda POSTERIOR. El <v> que se reescribia era
+    el de esa otra celda: el valor terminaba en la celda equivocada, sin
+    error y sin dejar rastro."""
+    pat = re.compile(r'<c r="%s"([^>]*?)(?:/>|>(.*?)</c>)' % re.escape(ref), re.S)
     m = pat.search(xml)
-    if not m or "<f" not in m.group(2):
-        return xml, False
+    if not m or m.group(2) is None or "<f" not in m.group(2):
+        return xml, False           # sin cuerpo no hay formula que refrescar
     cuerpo = m.group(2)
     nuevo = (re.sub(r"<v>.*?</v>", "<v>%s</v>" % valor, cuerpo, count=1, flags=re.S)
              if "<v>" in cuerpo else cuerpo + "<v>%s</v>" % valor)
     if nuevo == cuerpo:
         return xml, False
-    return xml[:m.start()] + m.group(1) + nuevo + m.group(3) + xml[m.end():], True
+    celda = '<c r="%s"%s>%s</c>' % (ref, m.group(1), nuevo)
+    return xml[:m.start()] + celda + xml[m.end():], True
 
 
 def recalculo(wb_xml):
