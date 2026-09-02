@@ -150,6 +150,7 @@ class Libro:
             self.hojas[nombre] = destino if destino.startswith("xl/") else "xl/" + destino
         self._cache = {}
         self._xml = {}
+        self.layout_cambiado = False
 
     def xml(self, hoja):
         if hoja in self._xml:
@@ -164,6 +165,7 @@ class Libro:
         equivocada."""
         self._xml[hoja] = xml
         self._cache.pop(hoja, None)
+        self.layout_cambiado = True
 
     def celdas(self, hoja):
         """{(fila, col): (valor, es_formula, tipo)}"""
@@ -431,7 +433,25 @@ def recalculo(wb_xml):
     return wb_xml.replace("</workbook>", '<calcPr fullCalcOnLoad="1"/></workbook>')
 
 
-def reescribe_zip(origen, destino, cambios):
+def sin_calcchain(zin, cambios):
+    """Saca xl/calcChain.xml del paquete, con sus dos referencias.
+
+    calcChain es la cache del orden en que Excel evalua las formulas, y
+    apunta a las celdas por posicion. Al insertar columnas las formulas se
+    corren, la cache queda apuntando a celdas que ya no las tienen, y Excel
+    abre el archivo pidiendo repararlo -- lo que rompe Workbooks.Open, que
+    no puede mostrar esa pregunta. Es una cache: se borra y Excel la
+    reconstruye sola al abrir."""
+    ct = zin.read("[Content_Types].xml").decode("utf-8")
+    cambios["[Content_Types].xml"] = re.sub(
+        r'<Override PartName="/xl/calcChain\.xml"[^>]*/>', "", ct)
+    rels = zin.read("xl/_rels/workbook.xml.rels").decode("utf-8")
+    cambios["xl/_rels/workbook.xml.rels"] = re.sub(
+        r'<Relationship[^>]*Target="calcChain\.xml"[^>]*/>', "", rels)
+    return {"xl/calcChain.xml"}
+
+
+def reescribe_zip(origen, destino, cambios, quitar=()):
     """Copia el paquete entero cambiando solo las partes de `cambios`.
     vbaProject.bin, drawings, styles y media pasan byte a byte.
 
@@ -471,6 +491,8 @@ def reescribe_zip(origen, destino, cambios):
     with zipfile.ZipFile(origen) as zin, \
          zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as zout:
         for info in zin.infolist():
+            if info.filename in quitar:
+                continue
             datos = cambios.get(info.filename)
             datos = datos.encode("utf-8") if datos is not None else zin.read(info.filename)
             nuevo = zipfile.ZipInfo(info.filename, date_time=info.date_time)
@@ -874,8 +896,11 @@ def cmd_llenar(args):
             # Sin datos que escribir igual va a la salida: la entrega a DBNeT
             # es la carpeta completa, y un cuadro que no aplica se manda vacio.
             estado = "copiado sin datos" if not args.dry_run else "(sin datos)"
+        quitar = ()
+        if dest.layout_cambiado and "xl/calcChain.xml" in dest.z.namelist():
+            quitar = sin_calcchain(dest.z, cambios)
         if not args.dry_run:
-            reescribe_zip(ruta, salida / ruta.name, cambios)
+            reescribe_zip(ruta, salida / ruta.name, cambios, quitar)
             archivos_escritos += 1
         print(f"  {ruta.name[:48]:50} {escritas_archivo:6} celdas  {estado}")
 
@@ -924,7 +949,9 @@ def verificar(dir_orig, dir_nuevo):
         with zipfile.ZipFile(orig) as a, zipfile.ZipFile(nuevo) as b:
             na, nb = set(a.namelist()), set(b.namelist())
             problemas = []
-            if na != nb:
+            # calcChain se quita a proposito al insertar columnas: es la cache
+            # del orden de calculo y queda apuntando a las celdas viejas.
+            if na - nb - {"xl/calcChain.xml"} or nb - na:
                 problemas.append(f"partes {len(na)}->{len(nb)}")
             if "xl/vbaProject.bin" in na & nb:
                 if hashlib.md5(a.read("xl/vbaProject.bin")).hexdigest() != \
