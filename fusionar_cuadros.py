@@ -1039,6 +1039,136 @@ def _hojas_cuadro_com(libro):
     return cuadros
 
 
+# ---------------------------------------------------------------------------
+# El codigo VBA que lleva el archivo fusionado, en texto plano y editable.
+#
+# La plantilla base embebida aporta un proyecto VBA valido (un .xlsm sin uno
+# no puede tener macros), pero sus macros son las originales de DBNeT, con dos
+# bugs: calculan la carpeta destino cortandole 3 caracteres a la ruta completa
+# -- da por hecho que el libro vive en una carpeta llamada 'xls' -- y esa ruta,
+# en OneDrive, ni siquiera es una ruta: Excel la entrega como URL de SharePoint.
+# El resultado era que el boton recorria las hojas y no dejaba ningun CSV.
+#
+# Este texto reemplaza ese modulo cuando se arma el archivo. Editarlo aqui es
+# suficiente: no hay que recompilar nada ni tocar el .xlsm embebido.
+# ---------------------------------------------------------------------------
+_VBA_MODULO = r'''
+Sub Guarda_Hojas_CSV()
+    Dim wb As Workbook, v_direc As String, v_nombre As String
+    Dim TotalHojas As Long, H As Long, fd As Object
+
+    Set wb = ActiveWorkbook
+    Set fd = Application.FileDialog(4)          ' 4 = selector de carpeta
+    fd.Title = "Elige la carpeta donde dejar los CSV"
+    If fd.Show <> -1 Then Exit Sub              ' cancelo
+    v_direc = fd.SelectedItems(1)
+    If Right(v_direc, 1) <> "\" Then v_direc = v_direc & "\"
+
+    TotalHojas = wb.Worksheets.Count
+    Application.DisplayAlerts = False
+    Application.EnableEvents = False
+    Application.ScreenUpdating = False
+    On Error GoTo limpiar
+
+    For H = 1 To TotalHojas
+        v_nombre = wb.Worksheets(H).Name
+        wb.Worksheets(H).Copy
+        ActiveWorkbook.SaveAs Filename:=v_direc & v_nombre & ".csv" _
+            , FileFormat:=xlCSVWindows, CreateBackup:=False, Local:=True
+        ActiveWorkbook.Close SaveChanges:=False
+    Next
+
+limpiar:
+    Application.DisplayAlerts = True
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+    If Err.Number <> 0 Then
+        MsgBox "Se detuvo en la hoja '" & v_nombre & "'." & vbCrLf & vbCrLf & _
+               "Error " & Err.Number & ": " & Err.Description, vbExclamation
+    Else
+        MsgBox "Listo: " & TotalHojas & " csv en" & vbCrLf & v_direc, vbInformation
+    End If
+End Sub
+
+Sub Guarda_Hojas_ZIP()
+    ' Los CSV los hace la misma rutina de arriba. El .zip que armaba el
+    ' original necesitaba un zip.exe al lado del archivo, que no existe.
+    Guarda_Hojas_CSV
+End Sub
+
+Sub Copiar_columna()
+    ActiveWorkbook.Save
+    Dim MyColumn As String, Here As String, column As String, x As Integer
+
+    Here = ActiveCell.Address
+    x = ActiveCell.column
+
+    ' .Address viene como $<letra>$<fila>: se queda con la letra
+    If x > 6 Then
+        MyColumn = Mid(Here, InStr(Here, "$") + 1, InStr(2, Here, "$") - 2)
+        column = MyColumn & ":" & MyColumn
+        Columns(column).Select
+        Selection.Copy
+        Selection.Insert Shift:=xlToRight
+    End If
+End Sub
+
+Sub Reparar_Botones()
+    ' Por si algun boton quedara apuntando al archivo de origen. El script
+    ' ya los deja bien al armar el libro; esto es la red de seguridad para
+    ' hojas pegadas a mano despues.
+    Dim ws As Worksheet, sh As Shape, accion As String, n As Long
+    For Each ws In ThisWorkbook.Worksheets
+        For Each sh In ws.Shapes
+            accion = ""
+            On Error Resume Next
+            accion = sh.OnAction
+            On Error GoTo 0
+            If accion <> "" Then
+                If InStr(accion, "!") > 0 Then
+                    accion = Mid(accion, InStrRev(accion, "!") + 1)
+                End If
+                On Error Resume Next
+                sh.OnAction = accion
+                On Error GoTo 0
+                n = n + 1
+            End If
+        Next sh
+    Next ws
+    MsgBox "Botones reapuntados: " & n, vbInformation
+End Sub
+'''
+
+AVISO_CONFIANZA = (
+    "Excel no deja tocar el codigo VBA desde fuera mientras no se active\n"
+    "  Archivo > Opciones > Centro de confianza > Configuracion del Centro\n"
+    "  de confianza > Configuracion de macros >\n"
+    "  [x] Confiar en el acceso al modelo de objetos de proyectos de VBA\n"
+    "Es una casilla que se marca una sola vez en este equipo.")
+
+
+def _inyecta_macros_com(libro, codigo):
+    """Reemplaza los modulos estandar del libro por el VBA de este script.
+
+    Sin esto el archivo se queda con las macros originales de DBNeT, que
+    no encuentran la carpeta donde dejar los CSV."""
+    try:
+        proyecto = libro.VBProject
+        componentes = proyecto.VBComponents
+        nombres = [c.Name for c in componentes if c.Type == 1]   # StdModule
+    except Exception:
+        raise RuntimeError(AVISO_CONFIANZA)
+
+    for nombre in nombres:
+        componentes.Remove(componentes(nombre))
+    modulo = componentes.Add(1)                                  # StdModule
+    try:
+        modulo.Name = "Modulo1"
+    except Exception:
+        pass                       # el nombre da igual, el codigo es lo que importa
+    modulo.CodeModule.AddFromString(codigo.strip())
+
+
 def _reapunta_botones_com(hoja):
     """Deja los botones de la hoja apuntando al VBA de SU libro.
 
@@ -1207,6 +1337,8 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
                 for nombre in propias:
                     base.Worksheets(nombre).Delete()
 
+                _inyecta_macros_com(base, _VBA_MODULO)
+
                 base.SaveAs(str(salida), FileFormat=52)   # xlOpenXMLWorkbookMacroEnabled
             finally:
                 base.Close(SaveChanges=False)
@@ -1237,8 +1369,11 @@ def main():
     args = p.parse_args()
 
     if args.con_macros:
-        total, salida = fusionar_con_macros(Path(args.origen), Path(args.salida),
-                                            args.verbose, args.solo_workiva)
+        try:
+            total, salida = fusionar_con_macros(Path(args.origen), Path(args.salida),
+                                                args.verbose, args.solo_workiva)
+        except RuntimeError as e:
+            sys.exit(str(e))
         print(f"\n{total} hojas de cuadros -> {salida}")
         print(f"   botones y macros: funcionando (libro armado por Excel)")
         print(f"   tamano: {salida.stat().st_size/1024:.0f} KB")
