@@ -317,6 +317,29 @@ def formatea(valor, tipo):
     return f"<v>{valor}</v>", ""
 
 
+MAX_CELDA = 32767          # limite duro de Excel: caracteres por celda
+
+
+def recorta(valor, tipo, ref, reporte, archivo, hoja_d, hoja_w):
+    """Recorta un texto que no cabe en una celda, dejando constancia.
+
+    Una celda con mas de 32767 caracteres produce un .xlsm que es XML
+    perfectamente valido pero que Excel no puede cargar: al abrirlo ofrece
+    "recuperar el maximo de contenido posible" (que para este caso es
+    truncarlo), y Workbooks.Open falla de plano, porque para preguntar eso
+    necesita mostrar un dialogo y la automatizacion corre con los avisos
+    apagados. Los bloques de texto de las revelaciones que exporta Workiva
+    llegan a pasarse: se recortan aqui, donde se puede avisar cual se
+    corto, en vez de dejar que Excel lo haga sin que nadie se entere."""
+    if not isinstance(valor, str) or tipo not in ("s", "inlineStr", "str"):
+        return valor
+    if len(valor) <= MAX_CELDA:
+        return valor
+    reporte.append([archivo, hoja_d, hoja_w, "", ref, "", len(valor),
+                    f"TEXTO RECORTADO A {MAX_CELDA} CARACTERES (limite de Excel)"])
+    return valor[:MAX_CELDA]
+
+
 def escribe(xml, ref, valor, tipo):
     """Mete el valor en la celda `ref` conservando su atributo s= (formato)."""
     pat = re.compile(r'<c r="%s"([^>]*?)(?:/>|>(.*?)</c>)' % re.escape(ref), re.S)
@@ -393,11 +416,19 @@ def reescribe_zip(origen, destino, cambios):
     import xml.etree.ElementTree as ET
     for parte, texto in cambios.items():
         try:
-            ET.fromstring(texto)
+            raiz = ET.fromstring(texto)
         except ET.ParseError as e:
             raise ValueError(
                 f"{destino.name}: el XML de {parte} quedo invalido ({e}). "
                 "El archivo NO se escribio.") from None
+        # Y que ninguna celda pase el limite de Excel: el XML seria valido
+        # igual, pero el archivo no se podria abrir por automatizacion.
+        for t in raiz.iter("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t"):
+            if t.text and len(t.text) > MAX_CELDA:
+                raise ValueError(
+                    f"{destino.name}: una celda de {parte} quedo con "
+                    f"{len(t.text)} caracteres (el maximo de Excel es "
+                    f"{MAX_CELDA}). El archivo NO se escribio.")
 
     destino.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(origen) as zin, \
@@ -459,7 +490,9 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
         if etiqueta_d[0] in (None, "") and not etiqueta_d[1]:
             val_f, _, tipo_f = cw.get((fila_w, COL_ETIQUETA), (None, False, None))
             if val_f not in (None, ""):
-                xml, cambio = escribe(xml, f"{COL_ETIQUETA}{fila_d}", val_f, tipo_f)
+                ref_f = f"{COL_ETIQUETA}{fila_d}"
+                val_f = recorta(val_f, tipo_f, ref_f, reporte, archivo, hoja_d, hoja_w)
+                xml, cambio = escribe(xml, ref_f, val_f, tipo_f)
                 if cambio:
                     escritas += 1
 
@@ -479,7 +512,9 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
                 if cambio:
                     cacheadas += 1
                 continue
-            xml, cambio = escribe(xml, f"{col_d}{fila_d}", val, tipo)
+            ref = f"{col_d}{fila_d}"
+            val = recorta(val, tipo, ref, reporte, archivo, hoja_d, hoja_w)
+            xml, cambio = escribe(xml, ref, val, tipo)
             if cambio:
                 escritas += 1
 
