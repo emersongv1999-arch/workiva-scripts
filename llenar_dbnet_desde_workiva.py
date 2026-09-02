@@ -565,13 +565,18 @@ def inserta_columnas(xml, col_modelo, n):
         for mc in _CELDA_X.finditer(inner):
             col, fila, attrs, cuerpo = mc.groups()
             if col == col_modelo:
+                # el modelo se queda igual: ni su nombre ni su formula cambian
                 modelo, pos_modelo = (attrs, cuerpo), len(salida)
                 salida.append(mc.group(0))
-            elif col_a_num(col) < desde:
-                salida.append(mc.group(0))
-            else:
-                salida.append(_recelda(mc.group(0), num_a_col(col_a_num(col) + n),
-                                       fila, desde, n))
+                continue
+            # Las celdas a la izquierda conservan su nombre, pero sus formulas
+            # igual hay que correrlas: pueden referenciar columnas de la
+            # derecha, que si se movieron. El maestro de una formula
+            # compartida vive a la izquierda y su ref="O36:AB36" tiene que
+            # estirarse, o sus seguidores quedan fuera de rango y Excel da el
+            # archivo por danado.
+            nuevo_col = col if col_a_num(col) < desde else num_a_col(col_a_num(col) + n)
+            salida.append(_recelda(mc.group(0), nuevo_col, fila, desde, n))
         if modelo is not None:
             attrs, cuerpo = modelo
             copias = [_arma_celda(num_a_col(desde + i), r, attrs,
