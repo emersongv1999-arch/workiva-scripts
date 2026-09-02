@@ -48,6 +48,7 @@ import argparse
 import base64
 import collections
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -1262,7 +1263,14 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
     omitidas = []
     fallidos = []
     try:
-        with tempfile.TemporaryDirectory() as tmp:
+        # ignore_cleanup_errors: si algo revienta a mitad de camino puede
+        # quedar un libro abierto reteniendo un archivo de la carpeta
+        # temporal, y el PermissionError al borrarla tapa el error de verdad.
+        try:
+            temporal = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        except TypeError:                                    # Python < 3.10
+            temporal = tempfile.TemporaryDirectory()
+        with temporal as tmp:
             plantilla_base = _plantilla_base_temporal(tmp)
             if not _plantilla_base_valida(plantilla_base):
                 sys.exit("La plantilla base embebida no tiene las macros "
@@ -1281,22 +1289,32 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
                     propias.append(f"_BASE_{i}")
                     hoja.Name = f"_BASE_{i}"
 
+                # Los .xlsm de origen no se abren desde donde estan, sino desde
+                # una copia local. Un archivo que no abre deja fuera TODAS sus
+                # hojas y el .xlsm sale corto sin que se note; en la practica
+                # eso pasaba con archivos en OneDrive que estaban "solo en la
+                # nube": copiarlos obliga a materializarlos, y de paso Excel
+                # abre siempre una ruta local de verdad, nunca una URL de
+                # SharePoint.
+                copias = Path(tmp) / "origen"
+                copias.mkdir()
+
                 vistos = set()
                 for ruta in libros:
-                    # Un archivo que no abre deja fuera TODAS sus hojas, y el
-                    # .xlsm sale corto sin que se note. Suele ser transitorio
-                    # (OneDrive bajandolo, el archivo abierto en otra ventana),
-                    # asi que se reintenta antes de darlo por perdido.
+                    local = copias / ruta.name
+                    if local.exists():                  # dos subcarpetas, mismo nombre
+                        local = copias / f"{len(vistos)}_{ruta.name}"
                     libro = None
-                    for intento in range(2):
+                    for intento in range(3):
                         try:
-                            libro = app.Workbooks.Open(str(ruta.resolve()),
+                            shutil.copy2(ruta, local)
+                            libro = app.Workbooks.Open(str(local),
                                                        ReadOnly=True, UpdateLinks=0)
                             break
                         except Exception as e:
                             motivo = str(e)
-                            if intento == 0:
-                                time.sleep(2)
+                            if intento < 2:
+                                time.sleep(2 + 3 * intento)
                     if libro is None:
                         fallidos.append(f"{ruta.name}: {motivo[:120]}")
                         continue
@@ -1372,11 +1390,12 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
         for f in fallidos:
             print(f"    - {f}")
         print("\n  Que hacer:")
-        print("    1. Cierra todas las ventanas de Excel.")
-        print("    2. En la carpeta salida\\, clic derecho sobre esos archivos")
-        print('       > "Conservar siempre en este dispositivo" (OneDrive a')
-        print("       veces los deja solo en la nube y Excel no los abre).")
-        print("    3. Vuelve a correr esto.")
+        print("    1. Cierra todas las ventanas de Excel y vuelve a correr esto.")
+        print("       (cada archivo ya se copia a una carpeta local y se")
+        print("       reintenta 3 veces antes de rendirse, asi que si llego")
+        print("       hasta aqui es algo mas que OneDrive lento)")
+        print("    2. Si insiste con los mismos archivos, abrelos a mano en")
+        print("       Excel: el motivo de arriba suele decir que les pasa.")
         sys.exit(1)
     return total, salida
 
