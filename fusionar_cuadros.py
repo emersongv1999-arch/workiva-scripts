@@ -1039,6 +1039,36 @@ def _hojas_cuadro_com(libro):
     return cuadros
 
 
+def _reapunta_botones_com(hoja):
+    """Deja los botones de la hoja apuntando al VBA de SU libro.
+
+    Al copiar una hoja entre libros, Excel reescribe el OnAction de cada
+    boton: de "[0]!Guarda_Hojas_CSV" (el libro que lo contenga) pasa a
+    "'C:\\ruta\\del\\origen.xlsm'!Guarda_Hojas_CSV" (el libro de origen,
+    absoluto). Y como los .xlsm llenados viven en OneDrive, esa ruta
+    absoluta queda como URL de SharePoint. El boton entonces ejecuta la
+    macro del archivo original, no la del libro fusionado -- se ve como
+    que "no hace nada" o hace algo distinto de lo que dice el codigo que
+    uno tiene delante.
+
+    Se le quita el prefijo del libro y se deja solo el nombre de la macro,
+    que Excel resuelve contra el propio libro."""
+    for forma in hoja.Shapes:
+        accion = ""
+        try:
+            accion = forma.OnAction or ""
+        except Exception:
+            continue
+        if not accion:
+            continue
+        nombre = accion.rsplit("!", 1)[-1] if "!" in accion else accion
+        nombre = EQUIVALE.get(nombre, nombre)
+        try:
+            forma.OnAction = nombre if nombre in MACROS_BASE else ""
+        except Exception:
+            pass
+
+
 def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
     """Arma el .xlsm fusionado dejando que Excel mismo copie las hojas.
 
@@ -1157,6 +1187,7 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
                         # archivo que se entrega no deberia llevar pestanas
                         # escondidas.
                         nueva.Visible = -1  # xlSheetVisible
+                        _reapunta_botones_com(nueva)
                         vistos.add(nombre)
                         total += 1
                         n_libro += 1
