@@ -69,6 +69,14 @@ def col_a_num(col):
     return n
 
 
+def num_a_col(n):
+    s = ""
+    while n:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
 def parte_ref(ref):
     m = re.match(r"([A-Z]+)(\d+)", ref)
     return m.group(1), int(m.group(2))
@@ -141,9 +149,21 @@ class Libro:
             destino = rels[rid].lstrip("/")
             self.hojas[nombre] = destino if destino.startswith("xl/") else "xl/" + destino
         self._cache = {}
+        self._xml = {}
 
     def xml(self, hoja):
+        if hoja in self._xml:
+            return self._xml[hoja]
         return self.z.read(self.hojas[hoja]).decode("utf-8")
+
+    def recarga(self, hoja, xml):
+        """Reemplaza el XML de una hoja en memoria y descarta su cache.
+
+        Hace falta al agregar columnas: las celdas ya leidas quedan con las
+        referencias viejas, y seguir usandolas escribiria en la columna
+        equivocada."""
+        self._xml[hoja] = xml
+        self._cache.pop(hoja, None)
 
     def celdas(self, hoja):
         """{(fila, col): (valor, es_formula, tipo)}"""
@@ -461,6 +481,229 @@ def reescribe_zip(origen, destino, cambios):
             zout.writestr(nuevo, datos)
 
 
+# --------------------------------------------- columnas que faltan crear
+
+# Referencia A1 dentro de una formula. El (?<![A-Z0-9_$.!]) de la izquierda no
+# es adorno: sin el, el literal "CIRC1901-InfoReveMA_" que va DENTRO de la
+# formula del ID de miembro da match como si "IRC1901" fuera una celda, y la
+# formula termina diciendo "CIRD1901". Por lo mismo los literales se saltan.
+_REF = re.compile(r"(?<![A-Z0-9_$.!])(\$?)([A-Z]{1,3})(\$?)(\d+)(?![\d(A-Z_])")
+_LITERAL = re.compile(r'"[^"]*"')
+_CELDA_X = re.compile(
+    r'<c r="([A-Z]{1,3})(\d+)"((?:[^>"]|"[^"]*")*?)(?:/>|>(.*?)</c>)', re.S)
+_FILA_X = re.compile(
+    r'<row r="(\d+)"((?:[^>"]|"[^"]*")*?)(?:/>|>(.*?)</row>)', re.S)
+
+
+def _fuera_de_literales(f, fn):
+    salida, ultimo = [], 0
+    for m in _LITERAL.finditer(f):
+        salida.append(fn(f[ultimo:m.start()]))
+        salida.append(m.group(0))
+        ultimo = m.end()
+    salida.append(fn(f[ultimo:]))
+    return "".join(salida)
+
+
+def _corre_ref(ref, desde, n):
+    m = re.fullmatch(r"(\$?)([A-Z]{1,3})(\$?)(\d+)", ref)
+    if not m:
+        return ref
+    d1, col, d2, fila = m.groups()
+    nueva = num_a_col(col_a_num(col) + n) if col_a_num(col) >= desde else col
+    return f"{d1}{nueva}{d2}{fila}"
+
+
+def _corre_formula(f, desde, n):
+    return _fuera_de_literales(
+        f, lambda t: _REF.sub(lambda m: _corre_ref(m.group(0), desde, n), t))
+
+
+def _corre_rango(txt, desde, n):
+    return " ".join(":".join(_corre_ref(p, desde, n) for p in trozo.split(":"))
+                    for trozo in txt.split())
+
+
+def inserta_columnas(xml, col_modelo, n):
+    """Duplica `col_modelo` n veces insertando a su derecha.
+
+    Es lo que hace el boton "Copiar Columna" de DBNeT. Se inserta SOBRE una
+    columna opcional existente y no despues de la ultima, a proposito: asi el
+    rango del total, SUM(G16:H16), se estira a SUM(G16:BD16) e incluye las
+    nuevas. Insertando despues, el total las dejaria fuera."""
+    if n <= 0:
+        return xml
+    desde = col_a_num(col_modelo)
+
+    def rehacer_fila(mf):
+        r, fattrs, inner = mf.group(1), mf.group(2) or "", mf.group(3)
+        if inner is None:
+            return mf.group(0)
+        modelo, salida, pos_modelo = None, [], None
+        for mc in _CELDA_X.finditer(inner):
+            col, fila, attrs, cuerpo = mc.groups()
+            if col == col_modelo:
+                modelo, pos_modelo = (attrs, cuerpo), len(salida)
+                salida.append(mc.group(0))
+            elif col_a_num(col) < desde:
+                salida.append(mc.group(0))
+            else:
+                salida.append(_recelda(mc.group(0), num_a_col(col_a_num(col) + n),
+                                       fila, desde, n))
+        if modelo is not None:
+            attrs, cuerpo = modelo
+            copias = [_arma_celda(num_a_col(desde + i), r, attrs,
+                                  _recuerpo(cuerpo, desde, i, col_modelo,
+                                            num_a_col(desde + i)))
+                      for i in range(1, n + 1)]
+            salida[pos_modelo + 1:pos_modelo + 1] = copias
+        fattrs = re.sub(r'spans="(\d+):(\d+)"',
+                        lambda m: 'spans="%s:%d"' % (m.group(1), int(m.group(2)) + n),
+                        fattrs)
+        return f'<row r="{r}"{fattrs}>{"".join(salida)}</row>'
+
+    xml = _FILA_X.sub(rehacer_fila, xml)
+    for pat, plantilla in (
+            (r'<dimension ref="([^"]+)"/>', '<dimension ref="%s"/>'),
+            (r'<mergeCell ref="([^"]+)"/>', '<mergeCell ref="%s"/>')):
+        xml = re.sub(pat, lambda m: plantilla % _corre_rango(m.group(1), desde, n), xml)
+    for pat in (r'(<conditionalFormatting sqref=")([^"]+)"',
+                r'(<dataValidation [^>]*sqref=")([^"]+)"'):
+        xml = re.sub(pat, lambda m: m.group(1) + _corre_rango(m.group(2), desde, n) + '"',
+                     xml)
+
+    def rehacer_col(m):
+        mn, mx, resto = int(m.group(1)), int(m.group(2)), m.group(3)
+        if mx < desde:
+            return m.group(0)
+        if mn <= desde <= mx:          # el ancho del modelo cubre a las nuevas
+            mx += n
+        else:
+            mn, mx = mn + n, mx + n
+        return f'<col min="{mn}" max="{mx}"{resto}/>'
+    return re.sub(r'<col min="(\d+)" max="(\d+)"([^>]*?)/>', rehacer_col, xml)
+
+
+def _arma_celda(col, fila, attrs, cuerpo):
+    if cuerpo is None:
+        return f'<c r="{col}{fila}"{attrs}/>'
+    return f'<c r="{col}{fila}"{attrs}>{cuerpo}</c>'
+
+
+def _recelda(entero, nuevo_col, fila, desde, n):
+    m = _CELDA_X.fullmatch(entero)
+    attrs, cuerpo = m.group(3), m.group(4)
+    if cuerpo:
+        cuerpo = re.sub(r"(<f[^>]*>)(.*?)(</f>)",
+                        lambda x: x.group(1) + _corre_formula(x.group(2), desde, n)
+                        + x.group(3), cuerpo, flags=re.S)
+        cuerpo = re.sub(r'(<f[^>]*\bref=")([^"]+)(")',
+                        lambda x: x.group(1) + _corre_rango(x.group(2), desde, n)
+                        + x.group(3), cuerpo)
+    return _arma_celda(nuevo_col, fila, attrs, cuerpo)
+
+
+def _recuerpo(cuerpo, desde, i, col_modelo, col_nueva):
+    if not cuerpo:
+        return cuerpo
+    if "<f" not in cuerpo:
+        return cuerpo          # celda de valor (el encabezado): se copia igual
+
+    def arregla(m):
+        f = _corre_formula(m.group(2), desde + 1, i)
+        f = _fuera_de_literales(f, lambda t: re.sub(
+            r"(?<![A-Z0-9_$.!])(\$?)%s(\$?)(\d+)(?![\d(A-Z_])" % col_modelo,
+            lambda x: "%s%s%s%s" % (x.group(1), col_nueva, x.group(2), x.group(3)), t))
+        return m.group(1) + f + m.group(3)
+    cuerpo = re.sub(r"(<f[^>]*>)(.*?)(</f>)", arregla, cuerpo, flags=re.S)
+    # Solo en celdas con formula: el cache heredado es el de OTRA columna.
+    # Excel lo recalcula al abrir; dejarlo seria mostrar el valor del vecino.
+    return re.sub(r"<v>.*?</v>", "", cuerpo, flags=re.S)
+
+
+def fila_de_codigos(cel):
+    """La fila donde viven los IDs de miembro. Misma deteccion que usa
+    columnas_de_datos; la etiqueta visible del miembro va justo arriba."""
+    limite = col_a_num(COL_ETIQUETA)
+    marcas = sorted(f for (f, c), (v, _, _) in cel.items()
+                    if c == "A" and v and v.upper().startswith("DIME"))
+    if marcas:
+        return marcas[-1]
+    uris = [f for (f, c), (v, _, _) in cel.items()
+            if col_a_num(c) > limite and v and ".xsd#" in v]
+    return min(uris) if uris else None
+
+
+def _tramos(cols):
+    """[(ancla_o_None, [columnas opcionales que la preceden])].
+
+    Las columnas ancla son las que llevan un miembro de la taxonomia; las
+    opcionales son las que agrega el usuario, cuya unica identidad es su
+    posicion dentro del tramo."""
+    out, sueltas = [], []
+    for c in sorted(cols, key=col_a_num):
+        if cols[c][0].startswith("lbl:"):
+            sueltas.append(c)
+        else:
+            out.append((cols[c][0], sueltas))
+            sueltas = []
+    out.append((None, sueltas))
+    return out
+
+
+def empareja_opcionales(cols_d, cols_w):
+    """[(col_dbnet, col_workiva)] para las columnas que agrega el usuario.
+
+    Estas no se pueden emparejar por nombre: en la plantilla se llaman todas
+    "Agregar columna opcional" y en Workiva llevan el nombre que les puso el
+    usuario ("prestamo 1", "prestamo 2"...). Dentro de un tramo delimitado por
+    columnas ancla, lo unico que las identifica es el orden -- que es el mismo
+    a ambos lados porque salen del mismo cuadro."""
+    pares = []
+    usados = collections.Counter()
+    por_ancla_w = {}
+    for ancla, opcs in _tramos(cols_w):
+        por_ancla_w.setdefault(ancla, []).append(opcs)
+    for ancla, opcs_d in _tramos(cols_d):
+        disponibles = por_ancla_w.get(ancla)
+        if not disponibles or usados[ancla] >= len(disponibles):
+            continue
+        opcs_w = disponibles[usados[ancla]]
+        usados[ancla] += 1
+        pares.extend(zip(opcs_d, opcs_w))
+    return pares
+
+
+def faltan_columnas(cols_d, cols_w):
+    """[(col_modelo, cuantas)] para que la plantilla alcance al export.
+
+    Las plantillas de DBNeT traen un numero fijo de columnas 'Agregar columna
+    opcional' y esperan que alguien las duplique a mano con su boton antes de
+    llenar. Si Workiva trae mas miembros que espacios, los de mas se quedaban
+    fuera sin remedio.
+
+    El alineamiento va por las columnas ancla -- las que llevan un miembro de
+    la taxonomia de verdad -- y no por posicion: entre dos anclas se cuenta
+    cuantas opcionales hay a cada lado, y la diferencia es lo que falta. Asi
+    las columnas nuevas caen en el tramo correcto aunque Workiva tenga otras
+    diferencias de layout."""
+    td, tw = _tramos(cols_d), _tramos(cols_w)
+    por_ancla_w = {}
+    for ancla, opcs in tw:
+        por_ancla_w.setdefault(ancla, []).append(opcs)
+    faltan = []
+    usados = collections.Counter()
+    for ancla, opcs_d in td:
+        disponibles = por_ancla_w.get(ancla)
+        if not disponibles or usados[ancla] >= len(disponibles):
+            continue
+        opcs_w = disponibles[usados[ancla]]
+        usados[ancla] += 1
+        if len(opcs_w) > len(opcs_d) and opcs_d:
+            faltan.append((opcs_d[-1], len(opcs_w) - len(opcs_d)))
+    return faltan
+
+
 # ------------------------------------------------------------------ proceso
 
 def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
@@ -468,6 +711,20 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
     cd, cw = dest.celdas(hoja_d), wv.celdas(hoja_w)
     cols_d, tipo_d = columnas_de_datos(cd)
     cols_w, tipo_w = columnas_de_datos(cw)
+
+    # Si Workiva trae mas miembros que espacios tiene la plantilla, se crean
+    # las columnas que faltan antes de escribir nada. De derecha a izquierda,
+    # para que insertar una no corra la posicion de las siguientes.
+    if tipo_d == tipo_w == "dimensional":
+        pendientes = faltan_columnas(cols_d, cols_w)
+        for col_modelo, cuantas in sorted(pendientes, key=lambda p: -col_a_num(p[0])):
+            xml = inserta_columnas(xml, col_modelo, cuantas)
+            reporte.append([archivo, hoja_d, hoja_w, "", col_modelo, "", cuantas,
+                            "COLUMNAS AGREGADAS (la plantilla traia menos que Workiva)"])
+        if pendientes:
+            dest.recarga(hoja_d, xml)
+            cd = dest.celdas(hoja_d)
+            cols_d, tipo_d = columnas_de_datos(cd)
 
     # Sin columnas de montos la hoja igual se procesa: puede ser un cuadro de
     # solo texto, donde el dato vive en la columna de la etiqueta.
@@ -480,8 +737,25 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
     for c, k in cols_w.items():
         inv_w.setdefault(k, c)
     pares_col = {c: inv_w[k] for c, k in cols_d.items() if k in inv_w}
+
+    # Las columnas que agrega el usuario se emparejan por posicion, no por
+    # nombre: en la plantilla se llaman todas "Agregar columna opcional" y en
+    # Workiva llevan el nombre que les pusieron ("prestamo 1", "prestamo 2"),
+    # asi que por nombre no calzan nunca. De paso se copia ese nombre al
+    # encabezado de la plantilla, que es lo que haria una persona al crear la
+    # columna con el boton de DBNeT.
+    fila_cod_d = fila_de_codigos(cd) if tipo_d == "dimensional" else None
+    fila_cod_w = fila_de_codigos(cw) if tipo_w == "dimensional" else None
+    if fila_cod_d and fila_cod_w:
+        for col_d, col_w in empareja_opcionales(cols_d, cols_w):
+            pares_col[col_d] = col_w
+            etq_w = (cw.get((fila_cod_w - 1, col_w)) or ("", False, None))
+            etq_d = (cd.get((fila_cod_d - 1, col_d)) or ("", False, None))
+            if etq_w[0] and etq_w[0] != etq_d[0] and not etq_d[1]:
+                xml, _ = escribe(xml, f"{col_d}{fila_cod_d - 1}", etq_w[0], etq_w[2])
+
     for c, k in cols_d.items():
-        if k not in inv_w:
+        if c not in pares_col:
             reporte.append([archivo, hoja_d, hoja_w, "", c, "", "",
                             f"COLUMNA SIN ORIGEN: {k}"])
 
