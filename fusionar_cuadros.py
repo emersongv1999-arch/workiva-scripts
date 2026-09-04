@@ -1171,6 +1171,39 @@ def _inyecta_macros_com(libro, codigo):
     modulo.CodeModule.AddFromString(codigo.strip())
 
 
+def _corta_vinculos_com(libro):
+    """Deja en su valor las formulas que apuntan a otro libro.
+
+    Varias hojas de cuadro consultan una hoja auxiliar del mismo archivo:
+      IF(G13<>"",VLOOKUP(G13,Codigos!$A$1:$B$2,2,FALSE),"")
+    traduce lo que se ve ("Activo") al codigo que espera la taxonomia, y ese
+    resultado es el que termina en el CSV. Al copiar la hoja a otro libro,
+    Excel reescribe esa referencia como vinculo externo al archivo de origen;
+    y como aqui el origen es la carpeta temporal desde la que se abren los
+    .xlsm, el vinculo apunta a una carpeta que se borra al terminar. El
+    archivo entregado quedaba pidiendo actualizar vinculos y mostrando
+    valores que no se podian recalcular.
+
+    BreakLink reemplaza esas formulas por el valor que ya tienen calculado
+    -- el correcto, porque se calculo cuando la hoja vivia en su libro. El
+    archivo final deja de depender de ninguna carpeta ni de ningun otro
+    libro, que es lo que hace falta para entregarlo."""
+    try:
+        enlaces = libro.LinkSources(1)          # 1 = xlLinkTypeExcelLinks
+    except Exception:
+        return 0
+    if not enlaces:
+        return 0
+    n = 0
+    for enlace in enlaces:
+        try:
+            libro.BreakLink(enlace, 1)
+            n += 1
+        except Exception:
+            pass
+    return n
+
+
 def _reapunta_botones_com(hoja):
     """Deja los botones de la hoja apuntando al VBA de SU libro.
 
@@ -1381,6 +1414,10 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
                     base.Worksheets(nombre).Delete()
 
                 _inyecta_macros_com(base, _VBA_MODULO)
+
+                rotos = _corta_vinculos_com(base)
+                if rotos:
+                    print(f"  vinculos externos convertidos a valor: {rotos}")
 
                 base.SaveAs(str(salida), FileFormat=52)   # xlOpenXMLWorkbookMacroEnabled
             finally:
