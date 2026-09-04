@@ -278,11 +278,29 @@ class Estilos:
 
 def lee_hojas_de_workiva(origen):
     """{(archivo, hoja)} que existen en el export de Workiva, o None."""
+    orden = orden_de_workiva(origen)
+    return None if orden is None else set(orden)
+
+
+def orden_de_workiva(origen):
+    """{(archivo, hoja): posicion en el export}, o None si no hay archivo.
+
+    La tercera columna la agrego llenar_dbnet_desde_workiva.py para que el
+    libro fusionado quede en el mismo orden que el export y no en el orden
+    alfabetico de los archivos de DBNeT, que no le dice nada a nadie. Los
+    archivos escritos por versiones anteriores solo traen dos columnas: se
+    aceptan igual, simplemente sin orden."""
     f = Path(origen) / "_hojas_de_workiva.txt"
     if not f.exists():
         return None
-    return {tuple(l.split("|", 1)) for l in
-            f.read_text(encoding="utf-8").splitlines() if "|" in l}
+    out = {}
+    for linea in f.read_text(encoding="utf-8").splitlines():
+        if "|" not in linea:
+            continue
+        campos = linea.split("|")
+        clave = (campos[0], campos[1])
+        out[clave] = int(campos[2]) if len(campos) > 2 and campos[2].isdigit() else None
+    return out
 
 
 def es_cuadro(xml, shared):
@@ -1171,6 +1189,24 @@ def _inyecta_macros_com(libro, codigo):
     modulo.CodeModule.AddFromString(codigo.strip())
 
 
+def _ordena_como_workiva(libro, orden, copiadas):
+    """Deja las hojas en el orden que traen en el export de Workiva.
+
+    Sin esto quedan en el orden en que se copiaron, que es el alfabetico de
+    los archivos de DBNeT -- un orden que no se parece a nada de lo que el
+    usuario ve en Workiva y hace penoso revisar el archivo. `copiadas` es
+    [(archivo, hoja)] en el orden en que entraron."""
+    con_pos = [(orden.get(clave), hoja) for clave, hoja in copiadas]
+    if any(p is None for p, _ in con_pos):
+        return 0                      # sin dato de orden, se deja como esta
+    for _, hoja in sorted(con_pos, key=lambda x: x[0]):
+        try:
+            libro.Worksheets(hoja).Move(After=libro.Worksheets(libro.Worksheets.Count))
+        except Exception:
+            pass
+    return len(con_pos)
+
+
 def _corta_vinculos_com(libro):
     """Deja en su valor las formulas que apuntan a otro libro.
 
@@ -1271,7 +1307,8 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
     if not libros:
         sys.exit(f"No hay .xlsm en {origen}")
 
-    con_datos = lee_hojas_de_workiva(origen) if solo_workiva else None
+    orden_wk = orden_de_workiva(origen) or {}
+    con_datos = set(orden_wk) if solo_workiva and orden_wk else None
     if solo_workiva and con_datos is None:
         sys.exit("Para --solo-workiva hace falta _hojas_de_workiva.txt, que "
                  "genera llenar_dbnet_desde_workiva.py en la carpeta de salida.")
@@ -1296,6 +1333,7 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
     omitidas = []
     fallidos = []
     reparados = []
+    copiadas = []                     # (archivo, hoja) en el orden en que entran
     try:
         # ignore_cleanup_errors: si algo revienta a mitad de camino puede
         # quedar un libro abierto reteniendo un archivo de la carpeta
@@ -1395,6 +1433,7 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
                         nueva.Visible = -1  # xlSheetVisible
                         _reapunta_botones_com(nueva)
                         vistos.add(nombre)
+                        copiadas.append(((ruta.name, nombre), nombre))
                         total += 1
                         n_libro += 1
                     libro.Close(SaveChanges=False)
@@ -1414,6 +1453,8 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
                     base.Worksheets(nombre).Delete()
 
                 _inyecta_macros_com(base, _VBA_MODULO)
+
+                _ordena_como_workiva(base, orden_wk, copiadas)
 
                 rotos = _corta_vinculos_com(base)
                 if rotos:

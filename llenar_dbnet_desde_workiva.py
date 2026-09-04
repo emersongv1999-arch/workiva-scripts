@@ -858,6 +858,7 @@ def cmd_llenar(args):
         print("  (encontrados en subcarpeta: "
               + ", ".join(sorted(str(h) for h in hondas)[:3]) + ")")
     wv = Libro(args.workiva)
+    orden_wk = {h: i for i, h in enumerate(wv.hojas)}
     print(f"Plantillas: {len(plantillas)}   Workiva: {len(wv.hojas)} hojas\n")
 
     if args.mapa:
@@ -884,7 +885,10 @@ def cmd_llenar(args):
                 reporte.append([ruta.name, hoja_d, "", "", "", "", "",
                                 "NO APLICA (sin hoja en Workiva)"])
                 continue
-            en_workiva.append(f"{ruta.name}|{hoja_d}")
+            # el indice de la hoja en el export es lo que usa el fusionador
+            # para dejar el archivo final en el mismo orden que Workiva, y no
+            # en el orden alfabetico de los archivos de DBNeT
+            en_workiva.append(f"{ruta.name}|{hoja_d}|{orden_wk.get(hoja_w, 9999)}")
             xml = dest.xml(hoja_d)
             xml, n = procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, ruta.name)
             if n:
