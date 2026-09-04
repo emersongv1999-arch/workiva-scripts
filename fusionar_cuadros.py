@@ -1199,11 +1199,18 @@ def _ordena_como_workiva(libro, orden, copiadas):
     con_pos = [(orden.get(clave), hoja) for clave, hoja in copiadas]
     if any(p is None for p, _ in con_pos):
         return 0                      # sin dato de orden, se deja como esta
+
+    antes = libro.Worksheets.Count
     for _, hoja in sorted(con_pos, key=lambda x: x[0]):
-        try:
-            libro.Worksheets(hoja).Move(After=libro.Worksheets(libro.Worksheets.Count))
-        except Exception:
-            pass
+        # Posicional (Before, After), NO Move(After=...): con COM en despacho
+        # dinamico el argumento con nombre no siempre se resuelve, y un
+        # Move() sin destino se lleva la hoja a un libro NUEVO. Escrito con
+        # nombre, esto vaciaba el libro hoja por hoja hasta dejar una sola.
+        libro.Worksheets(hoja).Move(None, libro.Worksheets(libro.Worksheets.Count))
+    if libro.Worksheets.Count != antes:
+        raise RuntimeError(
+            f"Al ordenar las hojas el libro paso de {antes} a "
+            f"{libro.Worksheets.Count}. No se guardo nada.")
     return len(con_pos)
 
 
@@ -1436,7 +1443,7 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
                         copiadas.append(((ruta.name, nombre), nombre))
                         total += 1
                         n_libro += 1
-                    libro.Close(SaveChanges=False)
+                    libro.Close(False)          # posicional: SaveChanges es el 1er parametro
                     if verbose:
                         print(f"  {ruta.name[:52]:54} {n_libro:3} hojas")
 
@@ -1467,7 +1474,7 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
                 # igual. Dejar que reviente aqui solo servia para tumbar una
                 # corrida que en realidad habia terminado bien.
                 try:
-                    base.Close(SaveChanges=False)
+                    base.Close(False)          # posicional: SaveChanges es el 1er parametro
                 except Exception:
                     pass
     finally:
