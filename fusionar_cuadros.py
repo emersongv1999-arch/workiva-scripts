@@ -1462,9 +1462,21 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
 
                 base.SaveAs(str(salida), FileFormat=52)   # xlOpenXMLWorkbookMacroEnabled
             finally:
-                base.Close(SaveChanges=False)
+                # Cerrar es limpieza: si falla despues de un SaveAs correcto,
+                # el archivo ya esta escrito y el app.Quit de mas abajo cierra
+                # igual. Dejar que reviente aqui solo servia para tumbar una
+                # corrida que en realidad habia terminado bien.
+                try:
+                    base.Close(SaveChanges=False)
+                except Exception:
+                    pass
     finally:
         app.Quit()
+
+    if not salida.exists():
+        raise RuntimeError(
+            f"Excel no dejo el archivo en {salida}. Revisa si quedo abierto "
+            "en otra ventana o si la carpeta es de solo lectura.")
 
     if omitidas:
         print(f"  omitidas por no estar en Workiva: {len(omitidas)}")
