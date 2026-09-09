@@ -1221,6 +1221,30 @@ def _ordena_como_workiva(libro, orden, copiadas):
     return len(con_pos)
 
 
+def _autoajusta_filas_com(libro):
+    """Recalcula el alto de cada fila usada en cada hoja del libro.
+
+    Cuando Excel guarda una plantilla cachea el alto de fila (atributo `ht`)
+    segun el texto que tenia en ese momento. El llenado despues escribe un
+    texto de Workiva que puede ser mas largo, y ese alto cacheado se queda
+    corto: el texto no cabe y se desborda visualmente sobre la fila
+    siguiente, aunque el ajuste de texto (wrap) siga activo. Esto es general
+    a cualquier hoja con celdas de texto largo, no un problema de una hoja
+    puntual, y por eso se corrige aqui, en una sola pasada final, no celda
+    por celda en cada plantilla.
+
+    Limitacion conocida de Excel: AutoFit no crece el alto de fila para una
+    celda COMBINADA con ajuste de texto (no lo calcula ahi, es una limitacion
+    de Excel mismo, no de este script). Si una celda asi sigue desbordandose
+    despues de este ajuste, hace falta el tratamiento aparte de deshacer la
+    combinacion, ajustar y volver a combinar."""
+    for hoja in libro.Worksheets:
+        try:
+            hoja.UsedRange.Rows.AutoFit()
+        except Exception:
+            pass
+
+
 def _corta_vinculos_com(libro):
     """Deja en su valor las formulas que apuntan a otro libro.
 
@@ -1473,6 +1497,8 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
                 rotos = _corta_vinculos_com(base)
                 if rotos:
                     print(f"  vinculos externos convertidos a valor: {rotos}")
+
+                _autoajusta_filas_com(base)
 
                 base.SaveAs(str(salida), FileFormat=52)   # xlOpenXMLWorkbookMacroEnabled
             finally:
