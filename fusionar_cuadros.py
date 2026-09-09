@@ -276,12 +276,6 @@ class Estilos:
             "</styleSheet>")
 
 
-def lee_hojas_de_workiva(origen):
-    """{(archivo, hoja)} que existen en el export de Workiva, o None."""
-    orden = orden_de_workiva(origen)
-    return None if orden is None else set(orden)
-
-
 def orden_de_workiva(origen):
     """{(archivo, hoja): posicion en el export}, o None si no hay archivo.
 
@@ -399,10 +393,12 @@ def fusionar(origen, salida, verbose=False, donante=None, solo_workiva=False):
 
     estilos = Estilos()
     hojas = []                                   # (nombre, xml, dibujo|None)
+    claves = []                                   # (archivo, nombre) alineado con hojas
     vistos = collections.Counter()
     omitidas = []
     con_botones = donante is not None
-    con_datos = lee_hojas_de_workiva(origen) if solo_workiva else None
+    orden_wk = orden_de_workiva(origen)           # {(archivo, hoja): posicion}, o None
+    con_datos = set(orden_wk) if solo_workiva and orden_wk else None
     if solo_workiva and con_datos is None:
         sys.exit("Para --solo-workiva hace falta _hojas_de_workiva.txt, que "
                  "genera llenar_dbnet_desde_workiva.py en la carpeta de salida.")
@@ -431,6 +427,7 @@ def fusionar(origen, salida, verbose=False, donante=None, solo_workiva=False):
             if con_datos is not None and (ruta.name, nombre) not in con_datos:
                 omitidas.append(nombre)
                 continue
+            clave = (ruta.name, nombre)
             vistos[nombre] += 1
             if vistos[nombre] > 1:               # no deberia pasar, pero por si acaso
                 nombre = f"{nombre[:27]}_{vistos[nombre]}"
@@ -439,12 +436,22 @@ def fusionar(origen, salida, verbose=False, donante=None, solo_workiva=False):
                           limpia_hoja(xml, mapa_xf, mapa_dxf, shared_si,
                                       con_botones and dib is not None),
                           dib))
+            claves.append(clave)
             n_libro += 1
         if verbose:
             print(f"  {ruta.name[:52]:54} {n_libro:3} hojas")
 
     if not hojas:
         sys.exit("No se encontro ninguna hoja de cuadros.")
+
+    if orden_wk:
+        # Sin esto el libro queda en el orden en que se recorrieron los
+        # archivos de DBNeT (alfabetico por nombre de archivo), que no se
+        # parece al orden en que Workiva entrega los datos y hace penoso
+        # revisar el archivo hoja por hoja.
+        con_pos = [(orden_wk.get(c), h) for c, h in zip(claves, hojas)]
+        if all(p is not None for p, _ in con_pos):
+            hojas = [h for _, h in sorted(con_pos, key=lambda x: x[0])]
 
     if omitidas:
         print(f"  omitidas por no estar en Workiva: {len(omitidas)}")
