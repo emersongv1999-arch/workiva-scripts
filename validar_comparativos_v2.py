@@ -103,14 +103,26 @@ async def resolver_spreadsheet(sociedad: str, anio: str, trimestre: str,
         return None
 
     print(f"ERROR: no se encontró archivo para {sociedad} {tipo} {mm}-{anio}.")
+    print(f"  Se buscó un nombre que empiece con: {sociedad}_{tipo}_{mm}-{anio}_")
+    # Se busca la sociedad EN CUALQUIER PARTE del nombre, no solo al inicio:
+    # los archivos con prefijo ("(CHN) E244_...", "(LC) E244_...") no empiezan
+    # con el codigo, y antes quedaban fuera de este listado -- justo cuando
+    # mas se necesita saber como se llaman de verdad.
     disponibles = sorted(
         n for n in all_files
-        if n.startswith(f"{sociedad}_") and "Base Notas" in n
+        if sociedad.lower() in n.lower() and "base notas" in n.lower()
     )
     if disponibles:
-        print("Archivos Base Notas disponibles para esa sociedad:")
+        print(f"Archivos 'Base Notas' que existen para {sociedad} "
+              f"({len(disponibles)}), con el nombre EXACTO:")
         for n in disponibles:
             print(f"  {n}")
+        print("  (Listado solo informativo, para ver como se llaman de verdad. "
+              "Los archivos con prefijo (CHN) o (LC) NUNCA se validan ni se "
+              "usan como destino: siguen quedando fuera.)")
+    else:
+        print(f"No hay NINGUN archivo 'Base Notas' que mencione a {sociedad} "
+              f"en este workspace.")
     return None
 
 
