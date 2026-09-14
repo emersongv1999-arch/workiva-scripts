@@ -2179,12 +2179,26 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 src_skip: list[bool] = []   # True  = fila fuera de alcance: ni validar ni escribir
                 src_via_busqueda: list[bool] = []  # True = no calzó directo, se buscó cerca
                 for i in range(len(tgt_cells)):
+                    # DEBUG TEMPORAL -- nota 108 "Otros gastos de personal", investigar
+                    # por qué las 4 columnas comparativas la saltan por completo.
+                    _dbg108 = (
+                        str(sname).startswith("108")
+                        and "otros gastos de personal" in _norm_lbl(_etiqueta_fila(tgt_cells[i]))
+                    )
+                    if _dbg108:
+                        print(f"[DEBUG-108] fila={i} col_type={col_type} dest_col={_col_letter(dest_col)} "
+                              f"fila_bloque=({fila_bloque_inicio},{fila_bloque_fin}) "
+                              f"tabla_apilada={tabla_apilada} sub2_data_start={sub2_data_start} "
+                              f"sub_table_offset={sub_table_offset}")
                     if fila_bloque_fin is not None and not (fila_bloque_inicio <= i < fila_bloque_fin):
                         # Esta fila queda fuera del bloque donde se detectó esta
                         # columna (ej. otra sub-tabla dentro de la misma hoja que
                         # reusa la misma letra de columna con otro significado).
                         # Se deja para que OTRA entrada de comp_cols (detectada en
                         # ese otro bloque) se haga cargo, si corresponde.
+                        if _dbg108:
+                            print(f"[DEBUG-108]   -> DESCARTADA: fuera del bloque "
+                                  f"({fila_bloque_inicio} <= {i} < {fila_bloque_fin} es False)")
                         src_vals.append(None)
                         src_corr.append(True)
                         src_skip.append(True)
@@ -2200,6 +2214,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                         # nada que ver (otra tabla, un pie de página, etc.).
                         _lbl_apilada = _norm_lbl(_etiqueta_fila(tgt_cells[i]))
                         if offset_apilada is None or i <= fila_hdr_dest or not _lbl_apilada:
+                            if _dbg108:
+                                print(f"[DEBUG-108]   -> DESCARTADA: tabla_apilada sin offset/header "
+                                      f"(offset_apilada={offset_apilada} fila_hdr_dest={fila_hdr_dest})")
                             src_vals.append(None)
                             src_corr.append(True)
                             src_skip.append(True)
@@ -2263,7 +2280,13 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                         break
                                 if hallada is not None:
                                     break
+                        if _dbg108:
+                            print(f"[DEBUG-108]   emparejamiento: lbl_t='{lbl_t}' src_row_i(directo)={src_row_i} "
+                                  f"lbl_b(directo)='{lbl_b}' -> hallada={hallada}")
                         if hallada is None:
+                            if _dbg108:
+                                print(f"[DEBUG-108]   -> DESCARTADA: no se encontró etiqueta similar "
+                                      f"en ventana de {_VENTANA_ALINEACION} filas del fuente")
                             src_vals.append(None)
                             src_corr.append(False)
                             src_skip.append(False)
@@ -2273,6 +2296,10 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
 
                     row_s = src_cells[src_row_i] if 0 <= src_row_i < len(src_cells) else []
                     sv    = _cv(row_s[src_col]) if src_col < len(row_s) else None
+                    if _dbg108:
+                        lbl_final = _norm_lbl(_etiqueta_fila(row_s))
+                        print(f"[DEBUG-108]   -> ENCONTRADA en fuente fila={src_row_i} etiqueta='{lbl_final}' "
+                              f"src_col={_col_letter(src_col)} valor_leido={sv!r}")
                     src_vals.append(sv if isinstance(sv, (int, float)) else None)
                     src_corr.append(True)
                     src_skip.append(False)
