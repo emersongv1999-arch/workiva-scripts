@@ -193,8 +193,22 @@ class Libro:
 
 # ------------------------------------------------------ estructura de hoja
 
+def nombre_local(v):
+    """Nombre del elemento XBRL, con el prefijo de taxonomia normalizado.
+
+    El ID del elemento lleva el prefijo pegado ('ifrs-full_DeferredTaxLiabilityAsset').
+    Workiva escribe algunos con el prefijo antiguo 'ifrs_' y DBNeT con
+    'ifrs-full_', que es el mismo elemento: sin unificarlos, las 28 filas de
+    IAS12-InfoDifeTemp quedaban vacias en la plantilla y su monto se perdia.
+    Solo se unifica ese par; 'cl-ci_' es otra taxonomia y no se toca."""
+    local = v.split("#")[-1].strip()
+    if local.startswith("ifrs_"):
+        return "ifrs-full_" + local[len("ifrs_"):]
+    return local
+
+
 def conceptos_set(cel):
-    return {v.split("#")[-1].strip()
+    return {nombre_local(v)
             for (f, c), (v, _, _) in cel.items()
             if c == COL_CONCEPTO and v and ".xsd#" in v}
 
@@ -209,7 +223,7 @@ def filas_indexadas(cel):
     for (fila, col), (v, _, _) in sorted(cel.items()):
         if col != COL_CONCEPTO or not v or ".xsd#" not in v:
             continue
-        concepto = v.split("#")[-1].strip()
+        concepto = nombre_local(v)
         marca = (cel.get((fila, COL_PERIODO)) or ("",))[0] or ""
         marca = marca.strip().upper()
         marca = marca if marca in ("ACT", "ANT") else ""
@@ -254,7 +268,7 @@ def columnas_de_datos(cel):
             if f != fila_cod or col_a_num(c) <= limite:
                 continue
             if v and ".xsd#" in v:
-                claves[c] = v.split("#")[-1].strip()
+                claves[c] = nombre_local(v)
             else:
                 # miembro agregado por el usuario: su ID lo genera una formula
                 # que en el export de Workiva llega rota (#NAME?), asi que la
