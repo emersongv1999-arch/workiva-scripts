@@ -2179,26 +2179,12 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                 src_skip: list[bool] = []   # True  = fila fuera de alcance: ni validar ni escribir
                 src_via_busqueda: list[bool] = []  # True = no calzó directo, se buscó cerca
                 for i in range(len(tgt_cells)):
-                    # DEBUG TEMPORAL -- nota 108 "Otros gastos de personal", investigar
-                    # por qué las 4 columnas comparativas la saltan por completo.
-                    _dbg108 = (
-                        str(sname).startswith("108")
-                        and "otros gastos de personal" in _norm_lbl(_etiqueta_fila(tgt_cells[i]))
-                    )
-                    if _dbg108:
-                        print(f"[DEBUG-108] fila={i} col_type={col_type} dest_col={_col_letter(dest_col)} "
-                              f"fila_bloque=({fila_bloque_inicio},{fila_bloque_fin}) "
-                              f"tabla_apilada={tabla_apilada} sub2_data_start={sub2_data_start} "
-                              f"sub_table_offset={sub_table_offset}")
                     if fila_bloque_fin is not None and not (fila_bloque_inicio <= i < fila_bloque_fin):
                         # Esta fila queda fuera del bloque donde se detectó esta
                         # columna (ej. otra sub-tabla dentro de la misma hoja que
                         # reusa la misma letra de columna con otro significado).
                         # Se deja para que OTRA entrada de comp_cols (detectada en
                         # ese otro bloque) se haga cargo, si corresponde.
-                        if _dbg108:
-                            print(f"[DEBUG-108]   -> DESCARTADA: fuera del bloque "
-                                  f"({fila_bloque_inicio} <= {i} < {fila_bloque_fin} es False)")
                         src_vals.append(None)
                         src_corr.append(True)
                         src_skip.append(True)
@@ -2214,9 +2200,6 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                         # nada que ver (otra tabla, un pie de página, etc.).
                         _lbl_apilada = _norm_lbl(_etiqueta_fila(tgt_cells[i]))
                         if offset_apilada is None or i <= fila_hdr_dest or not _lbl_apilada:
-                            if _dbg108:
-                                print(f"[DEBUG-108]   -> DESCARTADA: tabla_apilada sin offset/header "
-                                      f"(offset_apilada={offset_apilada} fila_hdr_dest={fila_hdr_dest})")
                             src_vals.append(None)
                             src_corr.append(True)
                             src_skip.append(True)
@@ -2280,13 +2263,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                                         break
                                 if hallada is not None:
                                     break
-                        if _dbg108:
-                            print(f"[DEBUG-108]   emparejamiento: lbl_t='{lbl_t}' src_row_i(directo)={src_row_i} "
-                                  f"lbl_b(directo)='{lbl_b}' -> hallada={hallada}")
                         if hallada is None:
-                            if _dbg108:
-                                print(f"[DEBUG-108]   -> DESCARTADA: no se encontró etiqueta similar "
-                                      f"en ventana de {_VENTANA_ALINEACION} filas del fuente")
                             src_vals.append(None)
                             src_corr.append(False)
                             src_skip.append(False)
@@ -2296,10 +2273,6 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
 
                     row_s = src_cells[src_row_i] if 0 <= src_row_i < len(src_cells) else []
                     sv    = _cv(row_s[src_col]) if src_col < len(row_s) else None
-                    if _dbg108:
-                        lbl_final = _norm_lbl(_etiqueta_fila(row_s))
-                        print(f"[DEBUG-108]   -> ENCONTRADA en fuente fila={src_row_i} etiqueta='{lbl_final}' "
-                              f"src_col={_col_letter(src_col)} valor_leido={sv!r}")
                     src_vals.append(sv if isinstance(sv, (int, float)) else None)
                     src_corr.append(True)
                     src_skip.append(False)
@@ -2324,11 +2297,17 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     else:
                         dest_cv = _cv(tgt_cells[i][dest_col]) if dest_col < len(tgt_cells[i]) else None
                         _dest_vacio = dest_cv is None or (isinstance(dest_cv, str) and not dest_cv.strip())
-                        if _dest_vacio:
-                            # El destino está REALMENTE en blanco (fila título/subtítulo,
-                            # sin dato propio, ej. "Deudores varios" antes de "Deudores
-                            # varios (*)."): no se escribe nada, para no rellenar algo
-                            # que no corresponde.
+                        # Si el destino está REALMENTE en blanco, puede ser una fila
+                        # título/subtítulo sin dato propio (ej. "Deudores varios" antes
+                        # de "Deudores varios (*)."), o puede ser una fila de datos real
+                        # que nunca se había llenado. La diferencia: una fila título NUNCA
+                        # calza con un valor numérico real en el fuente (ahí arriba ya
+                        # habría entrado en "v is None"), así que si llegamos aquí con un
+                        # valor numérico real, la fila SÍ es de datos -- salvo que el
+                        # emparejamiento haya sido por búsqueda aproximada (nombre
+                        # parecido, no idéntico), donde SÍ existe riesgo real de haber
+                        # encontrado la fila equivocada y conviene no escribir a ciegas.
+                        if _dest_vacio and src_via_busqueda[i]:
                             write_vals.append(None)
                         else:
                             write_vals.append(v)
@@ -2394,12 +2373,40 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                         _cur_vacio = cur is None or (isinstance(cur, str) and not cur.strip())
                         if _cur_vacio:
                             # El destino está REALMENTE en blanco (no "0", nada escrito).
-                            # En todas las notas, una fila con dato real siempre trae un
-                            # "0" explícito cuando no tiene monto — nunca queda vacía.
-                            # Una celda vacía es la señal de que la fila es un título o
-                            # subtítulo (ej. "Deudores varios" antes de "Deudores varios
-                            # (*)."), que no tiene nada propio que comparar. Forzarla a
-                            # 0 y compararla contra la fuente genera falsos hallazgos.
+                            # Puede ser una fila título/subtítulo sin dato propio (ej.
+                            # "Deudores varios" antes de "Deudores varios (*)."), que no
+                            # tiene nada propio que comparar -- o puede ser una fila de
+                            # datos real que nunca se llegó a llenar. Como llegamos hasta
+                            # acá con un valor numérico real en el fuente (v), una fila
+                            # título de verdad nunca podría calzar con un número (habría
+                            # quedado fuera más arriba, en "v is None"). Así que si el
+                            # emparejamiento fue EXACTO (misma fila, mismo nombre, sin
+                            # tener que adivinar), no hay ambigüedad: es un hallazgo real,
+                            # no un título. Si fue por búsqueda aproximada sí puede haber
+                            # encontrado la fila equivocada, así que se reporta aparte
+                            # para revisión manual en lugar de darlo como hallazgo directo.
+                            if src_via_busqueda[i]:
+                                sin_corr += 1
+                                if params.detalle_filas:
+                                    filas_det.append({
+                                        "fila":     i + 1,
+                                        "etiqueta": _etiqueta_fila(row_t),
+                                        "destino":  cur,
+                                        "fuente":   v,
+                                        "estado":   "REVISAR",
+                                    })
+                                continue
+                            diff += 1
+                            if len(samples) < params.max_ejemplos:
+                                samples.append({"fila": i + 1, "destino": cur, "fuente": v})
+                            if params.detalle_filas:
+                                filas_det.append({
+                                    "fila":     i + 1,
+                                    "etiqueta": _etiqueta_fila(row_t),
+                                    "destino":  cur,
+                                    "fuente":   v,
+                                    "estado":   "HALLAZGO",
+                                })
                             continue
                         cur_num = float(cur) if isinstance(cur, (int, float)) else None
                         # Tolerancia 1.000 pesos: montos se presentan en M$,

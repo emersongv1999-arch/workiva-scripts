@@ -276,7 +276,7 @@ def exportar_excel(ruta: str, titulo: str, subtitulo: str,
         ws.cell(row=i, column=5, value=sum(1 for f in filas if f["estado"] == "HALLAZGO"))
         ws.cell(row=i, column=6, value=sum(1 for f in filas if f["estado"] == "NO PROCESADO"))
         ws.cell(row=i, column=7,
-                value=sum(1 for f in filas if f["estado"] == "SIN CORRESPONDENCIA"))
+                value=sum(1 for f in filas if f["estado"] in ("SIN CORRESPONDENCIA", "REVISAR")))
 
         if not filas:
             continue
@@ -390,7 +390,7 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50, shou
                         continue
                     if f["estado"] == "OK":
                         total_equal += 1
-                    elif f["estado"] == "SIN CORRESPONDENCIA":
+                    elif f["estado"] in ("SIN CORRESPONDENCIA", "REVISAR"):
                         total_sin_corr += 1
                     else:
                         total_diff += 1
@@ -402,14 +402,21 @@ async def validar(spreadsheet_id: str, etiqueta: str, max_sheets: int = 50, shou
                     else:
                         etiq = base
                     if f["estado"] == "HALLAZGO":
-                        try:
-                            nota = f"difiere en {float(f['destino']) - float(f['fuente']):,.0f}"
-                        except (TypeError, ValueError):
-                            nota = "difiere"
+                        if f["destino"] is None or (isinstance(f["destino"], str) and not f["destino"].strip()):
+                            nota = f"destino vacío, nunca se llenó -- fuente tiene {f['fuente']:,.0f}"
+                        else:
+                            try:
+                                nota = f"difiere en {float(f['destino']) - float(f['fuente']):,.0f}"
+                            except (TypeError, ValueError):
+                                nota = "difiere"
                     elif f["estado"] == "NO PROCESADO":
                         nota = "valor destino no numérico"
                     elif f["estado"] == "SIN CORRESPONDENCIA":
                         nota = "la fila no existe en el archivo fuente: revisar manualmente"
+                    elif f["estado"] == "REVISAR":
+                        nota = ("destino vacío; la fila se encontró en el fuente por nombre "
+                                "parecido (no exacto) -- revisar antes de llenar, puede ser "
+                                "la fila equivocada")
                     else:
                         nota = None
                     filas_hoja.append({
