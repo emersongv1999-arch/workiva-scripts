@@ -1373,7 +1373,6 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
       EERR se escriben en cualquier mes.
     - Reporta source_eerr además de source_balance.
     """
-    print("[MOTOR] fix-destino-vacio-v2 activo")
     SKIP_SHEETS = {
         "CP", "Bases", "Query BPC", "Query HANA AF", "Reporte en $",
         "Query - HANA - Deudores", "A.- Activos PPT",
@@ -2347,17 +2346,7 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                     equal, diff, sin_corr, samples, filas_det = 0, 0, 0, [], []
                     for i in range(len(src_vals)):
                         row_t = tgt_cells[i]
-                        _dbg108b = (
-                            str(sname).startswith("108")
-                            and "otros gastos de personal" in _norm_lbl(_etiqueta_fila(row_t))
-                        )
-                        if _dbg108b:
-                            print(f"[DEBUG-108b] fila={i} col_type={col_type} dest_col={_col_letter(dest_col)} "
-                                  f"src_skip={src_skip[i]} src_corr={src_corr[i]} "
-                                  f"via_busqueda={src_via_busqueda[i]} v={src_vals[i]!r}")
                         if src_skip[i]:
-                            if _dbg108b:
-                                print("[DEBUG-108b]   -> continue por src_skip")
                             continue
                         if not src_corr[i]:
                             # La fila no existe en el archivo fuente. Se reporta para
@@ -2366,8 +2355,6 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             if not isinstance(_c, (int, float)) or _c == 0:
                                 # Encabezados (fechas, "M$"), texto y celdas vacías o en
                                 # cero no son candidatos a comparación: no son hallazgo.
-                                if _dbg108b:
-                                    print(f"[DEBUG-108b]   -> continue por not src_corr, _c={_c!r} no numerico/0")
                                 continue
                             sin_corr += 1
                             if params.detalle_filas:
@@ -2381,13 +2368,9 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             continue
                         v = src_vals[i]
                         if v is None:
-                            if _dbg108b:
-                                print("[DEBUG-108b]   -> continue por v is None")
                             continue
                         cur = _cv(row_t[dest_col]) if dest_col < len(row_t) else None
                         _cur_vacio = cur is None or (isinstance(cur, str) and not cur.strip())
-                        if _dbg108b:
-                            print(f"[DEBUG-108b]   cur={cur!r} _cur_vacio={_cur_vacio}")
                         if _cur_vacio:
                             # El destino está REALMENTE en blanco (no "0", nada escrito).
                             # Puede ser una fila título/subtítulo sin dato propio (ej.
