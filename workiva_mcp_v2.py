@@ -2301,13 +2301,15 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                         # título/subtítulo sin dato propio (ej. "Deudores varios" antes
                         # de "Deudores varios (*)."), o puede ser una fila de datos real
                         # que nunca se había llenado. La diferencia: una fila título NUNCA
-                        # calza con un valor numérico real en el fuente (ahí arriba ya
-                        # habría entrado en "v is None"), así que si llegamos aquí con un
-                        # valor numérico real, la fila SÍ es de datos -- salvo que el
-                        # emparejamiento haya sido por búsqueda aproximada (nombre
-                        # parecido, no idéntico), donde SÍ existe riesgo real de haber
-                        # encontrado la fila equivocada y conviene no escribir a ciegas.
-                        if _dest_vacio and src_via_busqueda[i]:
+                        # calza con un valor numérico real y DISTINTO DE CERO en el fuente
+                        # (ahí arriba ya habría entrado en "v is None"; y un 0 no sirve de
+                        # señal porque muchas filas título/sin actividad también traen 0
+                        # en el fuente sin ser un error) -- así que si llegamos aquí con
+                        # v != 0, la fila SÍ es de datos -- salvo que el emparejamiento
+                        # haya sido por búsqueda aproximada (nombre parecido, no idéntico),
+                        # donde SÍ existe riesgo real de haber encontrado la fila
+                        # equivocada y conviene no escribir a ciegas.
+                        if _dest_vacio and (src_via_busqueda[i] or v == 0):
                             write_vals.append(None)
                         else:
                             write_vals.append(v)
@@ -2378,13 +2380,20 @@ async def workiva_fill_comparatives(params: FillComparativesInput) -> str:
                             # tiene nada propio que comparar -- o puede ser una fila de
                             # datos real que nunca se llegó a llenar. Como llegamos hasta
                             # acá con un valor numérico real en el fuente (v), una fila
-                            # título de verdad nunca podría calzar con un número (habría
-                            # quedado fuera más arriba, en "v is None"). Así que si el
-                            # emparejamiento fue EXACTO (misma fila, mismo nombre, sin
-                            # tener que adivinar), no hay ambigüedad: es un hallazgo real,
-                            # no un título. Si fue por búsqueda aproximada sí puede haber
-                            # encontrado la fila equivocada, así que se reporta aparte
-                            # para revisión manual en lugar de darlo como hallazgo directo.
+                            # título de verdad nunca podría calzar con un número DISTINTO
+                            # DE CERO (habría quedado fuera más arriba, en "v is None"; un
+                            # 0 no sirve de señal porque muchas filas título o sin
+                            # actividad también traen 0 en el fuente, sin ser un error).
+                            # Así que si el emparejamiento fue EXACTO (misma fila, mismo
+                            # nombre, sin tener que adivinar) Y v != 0, no hay ambigüedad:
+                            # es un hallazgo real, no un título. Si fue por búsqueda
+                            # aproximada sí puede haber encontrado la fila equivocada, así
+                            # que se reporta aparte para revisión manual en lugar de darlo
+                            # como hallazgo directo. Si v == 0, en cualquiera de los dos
+                            # casos, no se reporta nada (mismo criterio que "SIN
+                            # CORRESPONDENCIA" más arriba: un cero no es candidato).
+                            if v == 0:
+                                continue
                             if src_via_busqueda[i]:
                                 sin_corr += 1
                                 if params.detalle_filas:
