@@ -54,7 +54,7 @@ echo ------------------------------------------------------------
 echo   PASO 1 de 2  -  Simulacion (no escribe nada)
 echo ------------------------------------------------------------
 echo.
-py llenar_dbnet_desde_workiva.py --plantillas "xls" --workiva "%WK%" --salida "%TMPSAL%" --reporte "reporte_llenado.csv" --dry-run
+py llenar_dbnet_desde_workiva.py --plantillas "xls" --workiva "%WK%" --salida "%TMPSAL%" --reporte "%TMPSAL%\reporte_llenado.csv" --dry-run
 if errorlevel 1 goto error
 
 echo.
@@ -74,7 +74,7 @@ echo ------------------------------------------------------------
 echo   PASO 2 de 2  -  Escribiendo
 echo ------------------------------------------------------------
 echo.
-py llenar_dbnet_desde_workiva.py --plantillas "xls" --workiva "%WK%" --salida "%TMPSAL%" --reporte "reporte_llenado.csv"
+py llenar_dbnet_desde_workiva.py --plantillas "xls" --workiva "%WK%" --salida "%TMPSAL%" --reporte "%TMPSAL%\reporte_llenado.csv" --revisar "REVISAR.xlsx"
 if errorlevel 1 goto error
 
 rem ---- 5. fusion en un solo archivo, con macros funcionando ---------------
@@ -122,10 +122,6 @@ if exist "%~dp0REVISAR.xlsx" (
 ) else (
     echo   No quedo nada pendiente de revisar.
 )
-echo.
-echo   Tambien queda un reporte_llenado.csv con el detalle completo.
-echo   No hace falta leerlo: sirve para rastrear una cifra si alguna
-echo   vez se ve rara, y para comparar contra el cierre anterior.
 echo.
 start "" "%~dp0"
 echo.

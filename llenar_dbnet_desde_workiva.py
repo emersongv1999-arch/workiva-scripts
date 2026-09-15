@@ -1109,7 +1109,9 @@ def cmd_llenar(args):
     for estado, n in incid.most_common():
         print(f"   {n:5}  {estado}")
 
-    ruta_rev = escribe_revisar(reporte, ruta_rep.with_name("REVISAR.xlsx"))
+    ruta_rev = escribe_revisar(
+        reporte, Path(args.revisar) if args.revisar
+        else ruta_rep.with_name("REVISAR.xlsx"))
     print()
     if ruta_rev:
         n = sum(1 for r in reporte[1:]
@@ -1277,6 +1279,11 @@ def main():
     p.add_argument("--salida", default="./salida")
     p.add_argument("--mapa", help="mapa_hojas.csv para fijar el calce de hojas")
     p.add_argument("--reporte", default="reporte_llenado.csv")
+    # Van separados porque no son para lo mismo: REVISAR.xlsx es lo que hay
+    # que abrir antes de entregar, y el reporte es material de diagnostico que
+    # conviene dejar fuera de la vista.
+    p.add_argument("--revisar", default=None,
+                   help="donde dejar REVISAR.xlsx (por omision, junto al reporte)")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--verificar", nargs=2, metavar=("ORIG", "NUEVO"))
     args = p.parse_args()
