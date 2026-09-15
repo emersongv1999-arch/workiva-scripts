@@ -1102,20 +1102,24 @@ def cmd_llenar(args):
     ruta_rep = Path(args.reporte)
     with open(ruta_rep, "w", newline="", encoding="utf-8-sig") as fh:
         csv.writer(fh, delimiter=";").writerows(reporte)
-    incid = collections.Counter(r[7] for r in reporte[1:])
+    # Agrupado por el tipo: hay una variante de texto por cada columna, y sin
+    # agrupar se imprimen 219 lineas de las que 211 dicen lo mismo.
+    incid = collections.Counter(str(r[7]).split(":")[0] for r in reporte[1:])
     print(f"\nReporte: {ruta_rep}  ({len(reporte)-1} incidencias)")
     for estado, n in incid.most_common():
         print(f"   {n:5}  {estado}")
 
     ruta_rev = escribe_revisar(reporte, ruta_rep.with_name("REVISAR.xlsx"))
+    print()
     if ruta_rev:
         n = sum(1 for r in reporte[1:]
                 if any(str(r[7]).startswith(t) for t, _, _ in REVISABLES))
-        print(f"\n  ----------------------------------------------------------")
-        print(f"  OJO: {n} celdas quedaron con un supuesto o un texto cortado.")
-        print(f"  La lista de hojas a mirar esta en:")
+        print("  ----------------------------------------------------------")
+        print(f"  OJO: {n} celdas necesitan que las mires.")
         print(f"     {ruta_rev}")
-        print(f"  ----------------------------------------------------------")
+        print("  ----------------------------------------------------------")
+    else:
+        print("  No quedo nada pendiente de revisar.")
 
     if not args.dry_run and archivos_escritos:
         print()

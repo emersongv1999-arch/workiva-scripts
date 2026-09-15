@@ -102,19 +102,21 @@ if "!CON_MACROS!"=="1" (
     echo   funcionando cada uno por su cuenta.
 )
 echo.
-echo   Archivos sueltos: %~dp0salida    (los 41 .xlsm originales)
-echo   Reporte         : %~dp0reporte_llenado.csv
-echo.
 if exist "%~dp0REVISAR.xlsx" (
     echo   ------------------------------------------------------------
-    echo   OJO: quedaron celdas con un supuesto o un texto cortado.
-    echo   Abre esta lista ANTES de entregar:
+    echo   ANTES DE ENTREGAR, abre esta lista:
     echo       %~dp0REVISAR.xlsx
-    echo   Dice que hoja mirar y que buscar en cada una.
+    echo   Dice que hoja mirar y que buscar en cada una. Es corta.
     echo   ------------------------------------------------------------
-    echo.
+) else (
+    echo   No quedo nada pendiente de revisar.
 )
-echo   El reporte completo tiene el detalle de todo lo que no calzo.
+echo.
+echo   Archivos sueltos: %~dp0salida    (los 41 .xlsm originales)
+echo.
+echo   Tambien queda un reporte_llenado.csv con el detalle completo.
+echo   No hace falta leerlo: sirve para rastrear una cifra si alguna
+echo   vez se ve rara, y para comparar contra el cierre anterior.
 echo.
 start "" "%~dp0"
 echo.
