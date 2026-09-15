@@ -19,6 +19,13 @@ py -m pip install openpyxl pywin32 --quiet --trusted-host pypi.org --trusted-hos
 if not exist "xls"     mkdir "xls"
 if not exist "workiva" mkdir "workiva"
 
+rem Los 41 archivos llenos son un paso intermedio: el fusionador los necesita,
+rem pero a nadie le sirve tenerlos a la vista. Van a una carpeta temporal y se
+rem borran al terminar, SALVO que la fusion falle: ahi son el plan B, porque
+rem cada uno lleva sus macros y botones funcionando por su cuenta.
+set "TMPSAL=%TEMP%\XBRL_llenado"
+if exist "%TMPSAL%" rmdir /s /q "%TMPSAL%"
+
 rem ---- 1. plantillas de DBNeT --------------------------------------------
 set /a N=0
 for /f "delims=" %%f in ('dir /b /s "xls\*.xlsm" 2^>nul') do set /a N+=1
@@ -47,14 +54,14 @@ echo ------------------------------------------------------------
 echo   PASO 1 de 2  -  Simulacion (no escribe nada)
 echo ------------------------------------------------------------
 echo.
-py llenar_dbnet_desde_workiva.py --plantillas "xls" --workiva "%WK%" --salida "salida" --reporte "reporte_llenado.csv" --dry-run
+py llenar_dbnet_desde_workiva.py --plantillas "xls" --workiva "%WK%" --salida "%TMPSAL%" --reporte "reporte_llenado.csv" --dry-run
 if errorlevel 1 goto error
 
 echo.
 echo ------------------------------------------------------------
 echo   Revisa los numeros de arriba antes de continuar.
-echo   La carpeta xls\ NO se modifica: los archivos llenos salen
-echo   en salida\
+echo   La carpeta xls\ NO se modifica: los archivos llenos se arman
+echo   aparte y se juntan en un solo archivo al final.
 echo ------------------------------------------------------------
 echo.
 set "SEGUIR="
@@ -67,7 +74,7 @@ echo ------------------------------------------------------------
 echo   PASO 2 de 2  -  Escribiendo
 echo ------------------------------------------------------------
 echo.
-py llenar_dbnet_desde_workiva.py --plantillas "xls" --workiva "%WK%" --salida "salida" --reporte "reporte_llenado.csv"
+py llenar_dbnet_desde_workiva.py --plantillas "xls" --workiva "%WK%" --salida "%TMPSAL%" --reporte "reporte_llenado.csv"
 if errorlevel 1 goto error
 
 rem ---- 5. fusion en un solo archivo, con macros funcionando ---------------
@@ -79,10 +86,10 @@ echo.
 for %%f in ("%WK%") do set "BASE=%%~nf_LLENADO"
 
 set "CON_MACROS=1"
-py fusionar_cuadros.py --origen "salida" --salida "!BASE!.xlsm" --con-macros --solo-workiva
+py fusionar_cuadros.py --origen "%TMPSAL%" --salida "!BASE!.xlsm" --con-macros --solo-workiva
 if errorlevel 1 set "CON_MACROS=0"
 
-py fusionar_cuadros.py --origen "salida" --salida "!BASE!.xlsx" --solo-workiva
+py fusionar_cuadros.py --origen "%TMPSAL%" --salida "!BASE!.xlsx" --solo-workiva
 if errorlevel 1 goto error
 echo.
 
@@ -93,13 +100,17 @@ echo.
 if "!CON_MACROS!"=="1" (
     echo   PARA DBNeT   .xlsm : %~dp0!BASE!.xlsm   ^(con macros y botones^)
     echo                .xlsx : %~dp0!BASE!.xlsx   ^(sin macros, para revisar^)
+    rem La fusion con macros salio bien: los intermedios ya no hacen falta.
+    if exist "%TMPSAL%" rmdir /s /q "%TMPSAL%"
 ) else (
     echo   AVISO: no se pudo armar el .xlsm con macros. Revisa el mensaje
     echo   de arriba ^(hace falta Excel instalado en esta maquina^).
     echo   .xlsx : %~dp0!BASE!.xlsx   ^(sin macros, para revisar^)
     echo.
-    echo   Los 41 archivos de salida\ si tienen sus macros y botones
-    echo   funcionando cada uno por su cuenta.
+    echo   Como plan B te quedan los 41 archivos por separado, cada uno
+    echo   con sus macros y botones funcionando. Estan en:
+    echo       %TMPSAL%
+    echo   No los borres hasta resolver lo del .xlsm.
 )
 echo.
 if exist "%~dp0REVISAR.xlsx" (
@@ -111,8 +122,6 @@ if exist "%~dp0REVISAR.xlsx" (
 ) else (
     echo   No quedo nada pendiente de revisar.
 )
-echo.
-echo   Archivos sueltos: %~dp0salida    (los 41 .xlsm originales)
 echo.
 echo   Tambien queda un reporte_llenado.csv con el detalle completo.
 echo   No hace falta leerlo: sirve para rastrear una cifra si alguna
