@@ -232,6 +232,23 @@ def filas_indexadas(cel):
     return out
 
 
+def _por_etiqueta(cel, filas):
+    """{(etiqueta, n): fila} — n es la n-esima fila con esa etiqueta.
+
+    Solo para filas que llevan concepto XBRL, y sin etiquetas vacias: la
+    etiqueta es un respaldo para identificar la linea cuando el codigo del
+    concepto difiere entre Workiva y DBNeT, no un criterio por si sola."""
+    vistos = collections.Counter()
+    out = {}
+    for fila, _, _, _ in filas:
+        etq = normaliza((cel.get((fila, COL_ETIQUETA)) or ("",))[0] or "")
+        if not etq:
+            continue
+        vistos[etq] += 1
+        out[(etq, vistos[etq])] = fila
+    return out
+
+
 def _por_posicion(filas):
     """{(concepto, n): fila} — n es la n-esima aparicion del concepto en la
     hoja, contada en orden y SIN mirar la marca ACT/ANT."""
@@ -855,6 +872,17 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
     reservadas = {idx_w[k] for k in
                   ((co, ma, n) for _, co, ma, n in filas_d) if k in idx_w}
 
+    # Ultimo respaldo: la misma linea con distinto codigo de concepto. En
+    # IAS-1_310000 la fila de diferencias de cambio es cl-ci_DiferenciasCambio
+    # en Workiva e ifrs-full_GainsLossesOnExchangeDifferences... en DBNeT, con
+    # la etiqueta identica y los vecinos calzando. Quedaba vacia, y como las
+    # filas 24 y 26 son formulas que la suman, el cuadro entregaba una ganancia
+    # antes de impuestos equivocada por esos mismos 10.211.857: peor que un
+    # dato ausente, porque se ve un numero y es incorrecto.
+    etq_w = _por_etiqueta(cw, filas_w)
+    etq_d = _por_etiqueta(cd, filas_d)
+    etq_de_fila_d = {f: k for k, f in etq_d.items()}
+
     usadas_w = set()
     tomadas_w = set()
     escritas = cacheadas = 0
@@ -868,6 +896,14 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
                 reporte.append([archivo, hoja_d, hoja_w, concepto, "", marca, orden,
                                 f"CALZADO POR POSICION (DBNeT dice '{marca}' y "
                                 f"Workiva '{marca_w}'; revisar)"])
+                fila_w = cand
+        if fila_w is None:
+            clave_etq = etq_de_fila_d.get(fila_d)
+            cand = etq_w.get(clave_etq) if clave_etq else None
+            if cand is not None and cand not in reservadas and cand not in tomadas_w:
+                otro = next((co for f, co, _, _ in filas_w if f == cand), "")
+                reporte.append([archivo, hoja_d, hoja_w, concepto, "", marca, orden,
+                                f"CALZADO POR ETIQUETA (Workiva usa '{otro}'; revisar)"])
                 fila_w = cand
         if fila_w is None:
             estado = ("CONCEPTO SIN ORIGEN" if not any(
