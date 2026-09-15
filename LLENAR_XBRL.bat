@@ -105,8 +105,16 @@ echo.
 echo   Archivos sueltos: %~dp0salida    (los 41 .xlsm originales)
 echo   Reporte         : %~dp0reporte_llenado.csv
 echo.
-echo   Revisa el reporte antes de entregar: ahi queda marcado
-echo   todo lo que no calzo.
+if exist "%~dp0REVISAR.xlsx" (
+    echo   ------------------------------------------------------------
+    echo   OJO: quedaron celdas con un supuesto o un texto cortado.
+    echo   Abre esta lista ANTES de entregar:
+    echo       %~dp0REVISAR.xlsx
+    echo   Dice que hoja mirar y que buscar en cada una.
+    echo   ------------------------------------------------------------
+    echo.
+)
+echo   El reporte completo tiene el detalle de todo lo que no calzo.
 echo.
 start "" "%~dp0"
 echo.

@@ -1075,9 +1075,93 @@ def cmd_llenar(args):
     for estado, n in incid.most_common():
         print(f"   {n:5}  {estado}")
 
+    ruta_rev = escribe_revisar(reporte, ruta_rep.with_name("REVISAR.xlsx"))
+    if ruta_rev:
+        n = sum(1 for r in reporte[1:]
+                if any(str(r[7]).startswith(t) for t, _, _ in REVISABLES))
+        print(f"\n  ----------------------------------------------------------")
+        print(f"  OJO: {n} celdas quedaron con un supuesto o un texto cortado.")
+        print(f"  La lista de hojas a mirar esta en:")
+        print(f"     {ruta_rev}")
+        print(f"  ----------------------------------------------------------")
+
     if not args.dry_run and archivos_escritos:
         print()
         verificar(Path(args.plantillas), salida)
+
+
+# ------------------------------------------------------------ hoja a revisar
+
+# Que mirar en cada caso. El reporte completo tiene cientos de lineas y la
+# mayoria son informativas; esto es solo lo que pide ojo humano antes de
+# entregar a la CMF.
+REVISABLES = [
+    ("TEXTO RECORTADO",
+     "El texto no cabe en la celda: Excel no admite mas de 32.767 caracteres.",
+     "Abrir la celda y mirar como termina el parrafo: queda cortado a media "
+     "palabra. Si molesta, acortar el texto en Workiva."),
+    ("CALZADO POR POSICION",
+     "La marca de periodo (ACT/ANT) no coincide entre Workiva y la plantilla.",
+     "Confirmar que el monto quedo en el periodo que corresponde y no cruzado "
+     "con el otro."),
+    ("CALZADO POR ETIQUETA",
+     "El codigo del concepto XBRL difiere entre Workiva y la plantilla.",
+     "Confirmar que son la misma linea del cuadro (la etiqueta y la posicion "
+     "coinciden, el codigo no)."),
+]
+
+
+def escribe_revisar(reporte, ruta):
+    """Deja un libro con las hojas del archivo fusionado que piden revision.
+
+    Devuelve la ruta escrita, o None si no hay nada que revisar."""
+    filas = []
+    for tipo, porque, que_mirar in REVISABLES:
+        casos = [r for r in reporte[1:] if str(r[7]).startswith(tipo)]
+        for (hoja, archivo), grupo in _agrupa(casos):
+            donde = ", ".join(sorted({str(r[4]) for r in grupo if r[4]})) or ""
+            filas.append([hoja, archivo, porque, que_mirar, len(grupo), donde])
+    if not filas:
+        return None
+
+    cab = ["Hoja a revisar", "Viene del archivo", "Que paso", "Que mirar",
+           "Casos", "Celdas"]
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+    except ImportError:
+        ruta = ruta.with_suffix(".csv")
+        with open(ruta, "w", newline="", encoding="utf-8-sig") as fh:
+            w = csv.writer(fh, delimiter=";")
+            w.writerow(cab)
+            w.writerows(filas)
+        return ruta
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Revisar"
+    ws.append(cab)
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="4472C4")
+    for f in filas:
+        ws.append(f)
+    for col, ancho in zip("ABCDEF", (26, 34, 52, 58, 8, 16)):
+        ws.column_dimensions[col].width = ancho
+    for fila in ws.iter_rows(min_row=2):
+        for c in fila:
+            c.alignment = Alignment(vertical="top", wrap_text=True)
+    ws.freeze_panes = "A2"
+    wb.save(ruta)
+    return ruta
+
+
+def _agrupa(casos):
+    """[( (hoja, archivo), [filas] )] conservando el orden de aparicion."""
+    out = {}
+    for r in casos:
+        out.setdefault((r[1], r[0]), []).append(r)
+    return list(out.items())
 
 
 # ---------------------------------------------------------------- integridad
