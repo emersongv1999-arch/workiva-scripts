@@ -730,7 +730,35 @@ def fila_de_codigos(cel):
     return min(uris) if uris else None
 
 
-def _tramos(cols):
+def _canon_anclas(cols_d, cols_w):
+    """Devuelve como comparar los nombres de ancla de los dos lados.
+
+    Para la misma columna DBNeT nombra el eje terminado en 'Domain' y Workiva
+    en 'Member' (38 casos en el export real). Como el emparejamiento de tramos
+    va por el nombre del ancla, sin unificarlos el tramo entero no se empareja
+    y sus columnas opcionales se quedan sin destino: asi se perdian los
+    18.384.000 de servidumbres en IAS38-InfoActiIntaUtil.
+
+    Se unifica solo cuando es inequivoco. Si en una hoja el mismo nombre base
+    aparece con los dos sufijos -- pasa en IAS36-PerdDeteSign -- ahi son ejes
+    distintos de verdad y se dejan tal cual."""
+    ambiguos = set()
+    for cols in (cols_d, cols_w):
+        por_base = collections.defaultdict(set)
+        for k in cols.values():
+            if not k[0].startswith("lbl:"):
+                por_base[re.sub(r"(Domain|Member)$", "", k[0])].add(k[0])
+        ambiguos |= {b for b, s in por_base.items() if len(s) > 1}
+
+    def canon(nombre):
+        if nombre is None or nombre.startswith("lbl:"):
+            return nombre
+        base = re.sub(r"(Domain|Member)$", "", nombre)
+        return nombre if base in ambiguos else base
+    return canon
+
+
+def _tramos(cols, canon=None):
     """[(ancla_o_None, [columnas opcionales que la preceden])].
 
     Las columnas ancla son las que llevan un miembro de la taxonomia; las
@@ -741,7 +769,7 @@ def _tramos(cols):
         if cols[c][0].startswith("lbl:"):
             sueltas.append(c)
         else:
-            out.append((cols[c][0], sueltas))
+            out.append((canon(cols[c][0]) if canon else cols[c][0], sueltas))
             sueltas = []
     out.append((None, sueltas))
     return out
@@ -757,10 +785,11 @@ def empareja_opcionales(cols_d, cols_w):
     a ambos lados porque salen del mismo cuadro."""
     pares = []
     usados = collections.Counter()
+    canon = _canon_anclas(cols_d, cols_w)
     por_ancla_w = {}
-    for ancla, opcs in _tramos(cols_w):
+    for ancla, opcs in _tramos(cols_w, canon):
         por_ancla_w.setdefault(ancla, []).append(opcs)
-    for ancla, opcs_d in _tramos(cols_d):
+    for ancla, opcs_d in _tramos(cols_d, canon):
         disponibles = por_ancla_w.get(ancla)
         if not disponibles or usados[ancla] >= len(disponibles):
             continue
@@ -783,7 +812,8 @@ def faltan_columnas(cols_d, cols_w):
     cuantas opcionales hay a cada lado, y la diferencia es lo que falta. Asi
     las columnas nuevas caen en el tramo correcto aunque Workiva tenga otras
     diferencias de layout."""
-    td, tw = _tramos(cols_d), _tramos(cols_w)
+    canon = _canon_anclas(cols_d, cols_w)
+    td, tw = _tramos(cols_d, canon), _tramos(cols_w, canon)
     por_ancla_w = {}
     for ancla, opcs in tw:
         por_ancla_w.setdefault(ancla, []).append(opcs)
