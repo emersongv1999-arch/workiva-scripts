@@ -232,6 +232,25 @@ def filas_indexadas(cel):
     return out
 
 
+def seccion_periodo(cel, fila):
+    """'ACTUAL' / 'ANTERIOR' / None segun el encabezado que manda sobre la fila.
+
+    Los cuadros repiten la misma tabla dos veces, una por periodo, separadas
+    por un titulo 'Periodo Actual' o 'Periodo Anterior' en la columna de
+    etiquetas. Ese titulo es lo que de verdad dice a que ano pertenece una
+    cifra; la marca ACT/ANT de la columna D es solo un rotulo, y Workiva y
+    DBNeT no siempre la escriben igual."""
+    mejor = None
+    for (f, c), (v, _, _) in cel.items():
+        if c != COL_ETIQUETA or not v or f >= fila:
+            continue
+        n = normaliza(v)
+        if n in ("periodo actual", "periodo anterior"):
+            if mejor is None or f > mejor[0]:
+                mejor = (f, "ACTUAL" if "actual" in n else "ANTERIOR")
+    return mejor[1] if mejor else None
+
+
 def _por_etiqueta(cel, filas):
     """{(etiqueta, n): fila} — n es la n-esima fila con esa etiqueta.
 
@@ -922,20 +941,31 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
         if fila_w is None:
             cand = pos_w.get((concepto, n_pos_d.get(fila_d)))
             if cand is not None and cand not in reservadas and cand not in tomadas_w:
-                marca_w = next((ma for f, co, ma, _ in filas_w if f == cand), "")
-                reporte.append([archivo, hoja_d, hoja_w, concepto, f"fila {fila_d}",
-                                marca, orden,
-                                f"CALZADO POR POSICION (DBNeT dice '{marca}' y "
-                                f"Workiva '{marca_w}'; revisar)"])
+                # Si las dos filas caen bajo el mismo titulo de periodo, o si
+                # la hoja no usa titulos y el numero de fila coincide, no hay
+                # forma de que la cifra se cruce de ano: el calce es seguro y
+                # no tiene sentido mandarlo a revision humana.
+                sec_d, sec_w = seccion_periodo(cd, fila_d), seccion_periodo(cw, cand)
+                seguro = (sec_d == sec_w if sec_d or sec_w else fila_d == cand)
+                if not seguro:
+                    marca_w = next((ma for f, co, ma, _ in filas_w if f == cand), "")
+                    reporte.append([archivo, hoja_d, hoja_w, concepto, f"fila {fila_d}",
+                                    marca, orden,
+                                    f"CALZADO POR POSICION (DBNeT lo pone en "
+                                    f"'{sec_d or marca}' y Workiva en "
+                                    f"'{sec_w or marca_w}'; revisar)"])
                 fila_w = cand
         if fila_w is None:
             clave_etq = etq_de_fila_d.get(fila_d)
             cand = etq_w.get(clave_etq) if clave_etq else None
             if cand is not None and cand not in reservadas and cand not in tomadas_w:
                 otro = next((co for f, co, _, _ in filas_w if f == cand), "")
-                reporte.append([archivo, hoja_d, hoja_w, concepto, f"fila {fila_d}",
-                                marca, orden,
-                                f"CALZADO POR ETIQUETA (Workiva usa '{otro}'; revisar)"])
+                sec_d, sec_w = seccion_periodo(cd, fila_d), seccion_periodo(cw, cand)
+                if (sec_d != sec_w) if (sec_d or sec_w) else (fila_d != cand):
+                    reporte.append([archivo, hoja_d, hoja_w, concepto,
+                                    f"fila {fila_d}", marca, orden,
+                                    f"CALZADO POR ETIQUETA (Workiva usa "
+                                    f"'{otro}'; revisar)"])
                 fila_w = cand
         if fila_w is None:
             estado = ("CONCEPTO SIN ORIGEN" if not any(
