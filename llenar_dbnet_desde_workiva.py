@@ -232,6 +232,17 @@ def filas_indexadas(cel):
     return out
 
 
+def _por_posicion(filas):
+    """{(concepto, n): fila} — n es la n-esima aparicion del concepto en la
+    hoja, contada en orden y SIN mirar la marca ACT/ANT."""
+    vistos = collections.Counter()
+    out = {}
+    for fila, concepto, _, _ in filas:
+        vistos[concepto] += 1
+        out[(concepto, vistos[concepto])] = fila
+    return out
+
+
 def _con_ordinal(claves):
     """{col: (clave, n)} — n desempata columnas que comparten clave.
 
@@ -800,19 +811,44 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
             reporte.append([archivo, hoja_d, hoja_w, "", c, "", "",
                             f"COLUMNA SIN ORIGEN: {k}"])
 
-    idx_w = {(co, ma, n): f for f, co, ma, n in filas_indexadas(cw)}
+    filas_w = filas_indexadas(cw)
+    idx_w = {(co, ma, n): f for f, co, ma, n in filas_w}
     filas_d = filas_indexadas(cd)
+
+    # Respaldo para cuando la marca ACT/ANT no coincide entre los dos lados.
+    # Pasa de verdad: en CLCP2016-ProvPagoDia el bloque del periodo anterior
+    # viene marcado ANT en Workiva y ACT en la plantilla de DBNeT, y sin esto
+    # los 17.871.957.000 de cuentas comerciales del periodo anterior se
+    # entregaban en cero. Se calza por la posicion del concepto dentro de la
+    # hoja (su n-esima aparicion, sin mirar la marca), nunca sobre una fila que
+    # el calce estricto vaya a usar, y cada caso queda anotado en el reporte:
+    # es un supuesto, y tiene que poder revisarse.
+    pos_w = _por_posicion(filas_w)
+    n_pos_d = {f: n for (_, n), f in _por_posicion(filas_d).items()}
+    reservadas = {idx_w[k] for k in
+                  ((co, ma, n) for _, co, ma, n in filas_d) if k in idx_w}
+
     usadas_w = set()
+    tomadas_w = set()
     escritas = cacheadas = 0
 
     for fila_d, concepto, marca, orden in filas_d:
         fila_w = idx_w.get((concepto, marca, orden))
+        if fila_w is None:
+            cand = pos_w.get((concepto, n_pos_d.get(fila_d)))
+            if cand is not None and cand not in reservadas and cand not in tomadas_w:
+                marca_w = next((ma for f, co, ma, _ in filas_w if f == cand), "")
+                reporte.append([archivo, hoja_d, hoja_w, concepto, "", marca, orden,
+                                f"CALZADO POR POSICION (DBNeT dice '{marca}' y "
+                                f"Workiva '{marca_w}'; revisar)"])
+                fila_w = cand
         if fila_w is None:
             estado = ("CONCEPTO SIN ORIGEN" if not any(
                 k[0] == concepto for k in idx_w) else "BLOQUE SIN ORIGEN")
             reporte.append([archivo, hoja_d, hoja_w, concepto, "", marca, orden, estado])
             continue
         usadas_w.add((concepto, marca, orden))
+        tomadas_w.add(fila_w)
 
         # La columna F hace doble papel: es la etiqueta del concepto y, en los
         # cuadros de texto (110000, los "-Cuadros"), tambien la celda del dato.
@@ -850,8 +886,8 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
             if cambio:
                 escritas += 1
 
-    for clave in idx_w:
-        if clave not in usadas_w:
+    for clave, fila in idx_w.items():
+        if clave not in usadas_w and fila not in tomadas_w:
             reporte.append([archivo, hoja_d, hoja_w, clave[0], "", clave[1], clave[2],
                             "DATO DE WORKIVA SIN DESTINO"])
     if cacheadas:
