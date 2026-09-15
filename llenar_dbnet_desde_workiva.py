@@ -923,7 +923,8 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
             cand = pos_w.get((concepto, n_pos_d.get(fila_d)))
             if cand is not None and cand not in reservadas and cand not in tomadas_w:
                 marca_w = next((ma for f, co, ma, _ in filas_w if f == cand), "")
-                reporte.append([archivo, hoja_d, hoja_w, concepto, "", marca, orden,
+                reporte.append([archivo, hoja_d, hoja_w, concepto, f"fila {fila_d}",
+                                marca, orden,
                                 f"CALZADO POR POSICION (DBNeT dice '{marca}' y "
                                 f"Workiva '{marca_w}'; revisar)"])
                 fila_w = cand
@@ -932,7 +933,8 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
             cand = etq_w.get(clave_etq) if clave_etq else None
             if cand is not None and cand not in reservadas and cand not in tomadas_w:
                 otro = next((co for f, co, _, _ in filas_w if f == cand), "")
-                reporte.append([archivo, hoja_d, hoja_w, concepto, "", marca, orden,
+                reporte.append([archivo, hoja_d, hoja_w, concepto, f"fila {fila_d}",
+                                marca, orden,
                                 f"CALZADO POR ETIQUETA (Workiva usa '{otro}'; revisar)"])
                 fila_w = cand
         if fila_w is None:
@@ -1097,18 +1099,36 @@ def cmd_llenar(args):
 # entregar a la CMF.
 REVISABLES = [
     ("TEXTO RECORTADO",
-     "El texto no cabe en la celda: Excel no admite mas de 32.767 caracteres.",
-     "Abrir la celda y mirar como termina el parrafo: queda cortado a media "
-     "palabra. Si molesta, acortar el texto en Workiva."),
+     "El texto es mas largo de lo que cabe en una celda de Excel (el tope son "
+     "32.767 caracteres), asi que quedo cortado a media palabra.",
+     "Anda a esa celda y mira como termina el parrafo. Si no te sirve asi, "
+     "hay que acortar el texto en Workiva unos 200 caracteres."),
     ("CALZADO POR POSICION",
-     "La marca de periodo (ACT/ANT) no coincide entre Workiva y la plantilla.",
-     "Confirmar que el monto quedo en el periodo que corresponde y no cruzado "
-     "con el otro."),
+     "Workiva y la plantilla de DBNeT rotulan distinto si una cifra es del "
+     "periodo actual o del anterior, asi que el programa la ubico por el lugar "
+     "que ocupa en el cuadro.",
+     "Mira que las cifras del periodo anterior esten en las filas del periodo "
+     "anterior, y no mezcladas con las del actual."),
     ("CALZADO POR ETIQUETA",
-     "El codigo del concepto XBRL difiere entre Workiva y la plantilla.",
-     "Confirmar que son la misma linea del cuadro (la etiqueta y la posicion "
-     "coinciden, el codigo no)."),
+     "El mismo renglon del cuadro tiene distinto codigo interno en Workiva y "
+     "en DBNeT. El programa los junto porque el nombre del renglon y su lugar "
+     "en el cuadro si coinciden.",
+     "Mira que sea efectivamente el mismo renglon en los dos lados."),
 ]
+
+
+def _rangos(numeros):
+    """'22 a 29' en vez de '22, 23, 24, 25, 26, 27, 28, 29'."""
+    ns = sorted(set(numeros))
+    if not ns:
+        return ""
+    tramos, ini, prev = [], ns[0], ns[0]
+    for n in ns[1:] + [None]:
+        if n != prev + 1:
+            tramos.append(str(ini) if ini == prev else f"{ini} a {prev}")
+            ini = n
+        prev = n
+    return ", ".join(tramos)
 
 
 def escribe_revisar(reporte, ruta):
@@ -1118,14 +1138,22 @@ def escribe_revisar(reporte, ruta):
     filas = []
     for tipo, porque, que_mirar in REVISABLES:
         casos = [r for r in reporte[1:] if str(r[7]).startswith(tipo)]
-        for (hoja, archivo), grupo in _agrupa(casos):
-            donde = ", ".join(sorted({str(r[4]) for r in grupo if r[4]})) or ""
-            filas.append([hoja, archivo, porque, que_mirar, len(grupo), donde])
+        for (hoja, _), grupo in _agrupa(casos):
+            refs = [str(r[4]) for r in grupo if r[4]]
+            nums = [int(x.split()[1]) for x in refs if x.startswith("fila ")]
+            celdas = sorted({x for x in refs if not x.startswith("fila ")})
+            if nums:
+                donde = ("fila " if len(set(nums)) == 1 else "filas ") + _rangos(nums)
+            elif celdas:
+                donde = ("celdas " if len(celdas) > 1 else "celda ") + ", ".join(celdas)
+            else:
+                donde = ""
+            filas.append([hoja, donde, porque, que_mirar, len(grupo)])
     if not filas:
         return None
 
-    cab = ["Hoja a revisar", "Viene del archivo", "Que paso", "Que mirar",
-           "Casos", "Celdas"]
+    cab = ["Hoja del archivo llenado", "Donde mirar", "Que paso",
+           "Que tienes que mirar", "Casos"]
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Alignment, Font, PatternFill
@@ -1146,7 +1174,7 @@ def escribe_revisar(reporte, ruta):
         c.fill = PatternFill("solid", fgColor="4472C4")
     for f in filas:
         ws.append(f)
-    for col, ancho in zip("ABCDEF", (26, 34, 52, 58, 8, 16)):
+    for col, ancho in zip("ABCDE", (26, 18, 62, 62, 8)):
         ws.column_dimensions[col].width = ancho
     for fila in ws.iter_rows(min_row=2):
         for c in fila:
