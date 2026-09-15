@@ -1100,6 +1100,9 @@ def cmd_llenar(args):
             "\n".join(en_workiva), encoding="utf-8")
 
     ruta_rep = Path(args.reporte)
+    # En --dry-run no se escribe ningun .xlsm, asi que la carpeta de salida
+    # puede no existir todavia; el reporte vive dentro y hay que crearla.
+    ruta_rep.parent.mkdir(parents=True, exist_ok=True)
     with open(ruta_rep, "w", newline="", encoding="utf-8-sig") as fh:
         csv.writer(fh, delimiter=";").writerows(reporte)
     # Agrupado por el tipo: hay una variante de texto por cada columna, y sin
@@ -1190,6 +1193,7 @@ def escribe_revisar(reporte, ruta):
 
     cab = ["Hoja del archivo llenado", "Donde mirar", "Que paso",
            "Que tienes que mirar", "Casos"]
+    ruta.parent.mkdir(parents=True, exist_ok=True)
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Alignment, Font, PatternFill

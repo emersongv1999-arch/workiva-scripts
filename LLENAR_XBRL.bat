@@ -54,7 +54,7 @@ echo ------------------------------------------------------------
 echo   PASO 1 de 2  -  Simulacion (no escribe nada)
 echo ------------------------------------------------------------
 echo.
-py llenar_dbnet_desde_workiva.py --plantillas "xls" --workiva "%WK%" --salida "%TMPSAL%" --reporte "%TMPSAL%\reporte_llenado.csv" --dry-run
+py llenar_dbnet_desde_workiva.py --plantillas "xls" --workiva "%WK%" --salida "%TMPSAL%" --reporte "%TMPSAL%\reporte_llenado.csv" --revisar "REVISAR.xlsx" --dry-run
 if errorlevel 1 goto error
 
 echo.
