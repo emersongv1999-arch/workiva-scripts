@@ -258,6 +258,32 @@ def _con_ordinal(claves):
     return out
 
 
+def _hereda_opcionales(cel, claves, fila_cod, limite):
+    """Da identidad a las columnas opcionales que ya se usaron.
+
+    Workiva deja sin codigo y sin etiqueta las columnas 'Agregar columna
+    opcional' que alguien ya lleno: quedan con datos pero sin nada que las
+    identifique. Contarlas de menos hace que la plantilla no crezca lo
+    suficiente y media tabla se quede sin destino -- en CIRC1901-InfoReveMA
+    el tramo son 108 columnas y solo 50 conservan la etiqueta.
+
+    Cada columna sin identificar hereda la clave de la opcional que tiene a
+    su izquierda, y nunca se cruza un ancla: una columna a la derecha del
+    miembro de la taxonomia ya no pertenece al tramo (las que Workiva deja
+    despues del total son celdas de trabajo, no datos del cuadro)."""
+    anclas = {c for c, k in claves.items() if not k.startswith("lbl:")}
+    con_dato = {c for (f, c), (v, _, _) in cel.items()
+                if f > fila_cod and col_a_num(c) > limite and v not in (None, "")}
+    ultima = None
+    for c in sorted(con_dato | set(claves), key=col_a_num):
+        if c in anclas:
+            ultima = None
+        elif c in claves:
+            ultima = claves[c]
+        elif ultima and c in con_dato:
+            claves[c] = ultima
+
+
 def columnas_de_datos(cel):
     """{col: (clave, n)}, tipo. La clave es el miembro de la dimension o el
     periodo de la columna."""
@@ -289,6 +315,7 @@ def columnas_de_datos(cel):
                 if etq:
                     claves[c] = "lbl:" + etq
         if claves:
+            _hereda_opcionales(cel, claves, fila_cod, limite)
             return _con_ordinal(claves), "dimensional"
 
     # 2) hoja de columnas: encabezados de periodo
