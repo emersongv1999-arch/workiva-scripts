@@ -102,6 +102,23 @@ def repunta_botones(dxml, disponibles):
     return re.sub(r'macro="\[0\]!([^"]+)"', cambia, dxml)
 
 
+
+def rels_de(xml):
+    """{Id: Target} de un archivo .rels, sin depender del orden de los atributos.
+
+    Se leia con una sola expresion que exigia Id antes que Target. Los .xlsm de
+    DBNeT los escribe Excel, que pone Id primero, asi que funciono siempre --
+    hasta que en la carpeta de salida aparecio un .xlsx escrito por openpyxl,
+    que los pone al reves: la expresion no encontraba nada y el libro moria con
+    KeyError rId1 en vez de saltarselo por no ser un cuadro."""
+    out = {}
+    for tag in re.findall(r"<Relationship\b[^>]*/>", xml):
+        i = re.search(r'Id="([^"]+)"', tag)
+        t = re.search(r'Target="([^"]*)"', tag)
+        if i and t:
+            out[i.group(1)] = t.group(1)
+    return out
+
 def hojas_auxiliares(ruta):
     """Cuantas hojas del libro NO son cuadros (las listas de codigos)."""
     z = zipfile.ZipFile(ruta)
@@ -111,8 +128,7 @@ def hojas_auxiliares(ruta):
         ss = ""
     shared = ["".join(re.findall(r"<t[^>]*>(.*?)</t>", s, re.S))
               for s in re.findall(r"<si>(.*?)</si>", ss, re.S)]
-    rels = dict(re.findall(r'Id="(rId\d+)"[^>]*Target="([^"]*)"',
-                           z.read("xl/_rels/workbook.xml.rels").decode("utf-8")))
+    rels = rels_de(z.read("xl/_rels/workbook.xml.rels").decode("utf-8"))
     n = 0
     for tag in re.findall(r"<sheet [^>]*?>", z.read("xl/workbook.xml").decode("utf-8")):
         destino = rels[re.search(r'r:id="(rId\d+)"', tag).group(1)].lstrip("/")
@@ -375,7 +391,7 @@ def dibujo_de_hoja(z, parte_hoja):
     drels_p = re.sub(r"([^/]+)$", r"_rels/\1.rels", destino)
     try:
         drels = z.read(drels_p).decode("utf-8")
-        for rid, tgt in re.findall(r'Id="(rId\d+)"[^>]*Target="([^"]*)"', drels):
+        for rid, tgt in rels_de(drels).items():
             t = tgt.replace("../", "xl/")
             if not t.startswith("xl/"):
                 t = "xl/media/" + t.lstrip("/")
@@ -413,8 +429,7 @@ def fusionar(origen, salida, verbose=False, donante=None, solo_workiva=False):
         shared_txt = ["".join(re.findall(r"<t[^>]*>(.*?)</t>", s, re.S)) for s in shared_si]
         mapa_xf, mapa_dxf = estilos.absorbe(z.read("xl/styles.xml").decode("utf-8"))
 
-        rels = dict(re.findall(r'Id="(rId\d+)"[^>]*Target="([^"]*)"',
-                               z.read("xl/_rels/workbook.xml.rels").decode("utf-8")))
+        rels = rels_de(z.read("xl/_rels/workbook.xml.rels").decode("utf-8"))
         wb = z.read("xl/workbook.xml").decode("utf-8")
         n_libro = 0
         for tag in re.findall(r"<sheet [^>]*?>", wb):

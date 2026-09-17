@@ -129,6 +129,24 @@ def clave_periodo(texto):
 
 # ------------------------------------------------------------ lectura libro
 
+
+def rels_de(xml):
+    """{Id: Target} de un archivo .rels, sin depender del orden de los atributos.
+
+    Se leia con una sola expresion que exigia Id antes que Target. Los .xlsm de
+    DBNeT los escribe Excel, que pone Id primero, asi que funciono siempre --
+    hasta que en la carpeta de salida aparecio un .xlsx escrito por openpyxl,
+    que los pone al reves: la expresion no encontraba nada y el libro moria con
+    KeyError rId1 en vez de saltarselo por no ser un cuadro."""
+    out = {}
+    for tag in re.findall(r"<Relationship\b[^>]*/>", xml):
+        i = re.search(r'Id="([^"]+)"', tag)
+        t = re.search(r'Target="([^"]*)"', tag)
+        if i and t:
+            out[i.group(1)] = t.group(1)
+    return out
+
+
 class Libro:
     def __init__(self, ruta):
         self.ruta = Path(ruta)
@@ -139,8 +157,7 @@ class Libro:
                       for si in re.findall(r"<si>(.*?)</si>", raw, re.S)]
         except KeyError:
             self.S = []
-        rels = dict(re.findall(r'Id="(rId\d+)"[^>]*Target="([^"]*)"',
-                               self.z.read("xl/_rels/workbook.xml.rels").decode("utf-8")))
+        rels = rels_de(self.z.read("xl/_rels/workbook.xml.rels").decode("utf-8"))
         wb = self.z.read("xl/workbook.xml").decode("utf-8")
         self.hojas = {}
         for tag in re.findall(r"<sheet [^>]*?>", wb):
@@ -369,6 +386,15 @@ def columnas_de_datos(cel):
 
 # ------------------------------------------------------------- mapa de hojas
 
+# Cuanto del cuadro de DBNeT tiene que estar en la hoja de Workiva para que
+# valga la pena avisar. Se mide contra el tamano del cuadro de DBNeT y no
+# contra el menor de los dos, porque con el menor una hoja de Workiva de dos
+# conceptos daba 50% de parecido con un cuadro de cuarenta: un concepto
+# generico compartido bastaba para inventar una alarma. Medido asi, ese mismo
+# caso da 3%.
+PARECIDO_MINIMO = 0.20
+
+
 def mapear_hojas(plantillas, wv, mapa_csv=None):
     """[(ruta_xlsm, hoja_dbnet, hoja_workiva|None, metodo)]"""
     wv_conc = {}
@@ -415,8 +441,21 @@ def mapear_hojas(plantillas, wv, mapa_csv=None):
         par[(ru, h)] = (w, f"conceptos J={jac:.2f}"); usadas.add(w)
 
     sobrantes = [w for w in wv_conc if w not in usadas]
+    # Un cuadro sin llenar puede ser de dos cosas muy distintas: que la nota
+    # no aplique a la empresa (y entonces no hay nada parecido en Workiva), o
+    # que DBNeT haya rehecho el cuadro (y entonces quedo una hoja de Workiva
+    # suelta con la mitad de los conceptos). La segunda hay que mirarla; la
+    # primera no. Se distinguen mirando cuanto se parece la mejor sobrante.
+    pistas = {}
+    for ru, h, c in destinos:
+        if (ru, h) in par:
+            continue
+        cob, w = max(((len(c & wv_conc[w]) / len(c), w)
+                      for w in sobrantes), default=(0.0, None))
+        if cob >= PARECIDO_MINIMO:
+            pistas[(ru, h)] = (w, cob)
     return ([(ru, h, *par.get((ru, h), (None, "SIN CONTRAPARTE"))) for ru, h, _ in destinos],
-            sobrantes)
+            sobrantes, pistas)
 
 
 # ------------------------------------------------------------- escritura XML
@@ -1213,9 +1252,9 @@ def cmd_llenar(args):
 
     if args.mapa:
         pares = mapear_hojas(plantillas, wv, args.mapa)
-        sobrantes = []
+        sobrantes, pistas = [], {}
     else:
-        pares, sobrantes = mapear_hojas(plantillas, wv)
+        pares, sobrantes, pistas = mapear_hojas(plantillas, wv)
 
     por_archivo = collections.defaultdict(list)
     for ruta, hoja_d, hoja_w, metodo in pares:
@@ -1233,8 +1272,16 @@ def cmd_llenar(args):
         cambios, escritas_archivo = {}, 0
         for hoja_d, hoja_w, metodo in hojas:
             if not hoja_w:
-                reporte.append([ruta.name, hoja_d, "", "", "", "", "",
-                                "NO APLICA (sin hoja en Workiva)"])
+                pista = pistas.get((ruta, hoja_d))
+                if pista:
+                    w, cob = pista
+                    reporte.append([ruta.name, hoja_d, w, "", "", "", "",
+                                    "CUADRO SIN LLENAR: se parece a la hoja "
+                                    f"'{w}' de Workiva ({cob:.0%} de los "
+                                    "conceptos), pero no lo suficiente"])
+                else:
+                    reporte.append([ruta.name, hoja_d, "", "", "", "", "",
+                                    "NO APLICA (sin hoja en Workiva)"])
                 continue
             # el indice de la hoja en el export es lo que usa el fusionador
             # para dejar el archivo final en el mismo orden que Workiva, y no
@@ -1304,7 +1351,7 @@ def cmd_llenar(args):
         n = sum(1 for r in reporte[1:]
                 if any(str(r[7]).startswith(t) for t, _, _ in REVISABLES))
         print("  ----------------------------------------------------------")
-        print(f"  OJO: {n} celdas necesitan que las mires.")
+        print(f"  OJO: {n} avisos necesitan que los mires.")
         print(f"     {ruta_rev}")
         print("  ----------------------------------------------------------")
     else:
@@ -1321,6 +1368,13 @@ def cmd_llenar(args):
 # mayoria son informativas; esto es solo lo que pide ojo humano antes de
 # entregar a la CMF.
 REVISABLES = [
+    ("CUADRO SIN LLENAR",
+     "Este cuadro quedo vacio, y en Workiva sobro una hoja que se le parece "
+     "pero no lo bastante como para darla por buena. Lo mas probable es que "
+     "DBNeT haya cambiado el cuadro en esta version de la plantilla.",
+     "Abri esta hoja en el archivo llenado y comparala con la hoja {hojas} "
+     "de Workiva. Si son el mismo cuadro, avisame para ajustar el programa; "
+     "si no lo son, no hay nada que hacer."),
     ("TEXTO RECORTADO",
      "El texto es mas largo de lo que cabe en una celda de Excel (el tope son "
      "32.767 caracteres), asi que quedo cortado a media palabra.",
@@ -1370,8 +1424,11 @@ def escribe_revisar(reporte, ruta):
             elif celdas:
                 donde = ("celdas " if len(celdas) > 1 else "celda ") + ", ".join(celdas)
             else:
-                donde = ""
-            filas.append([hoja, donde, porque, que_mirar, len(grupo)])
+                donde = "toda la hoja"
+            otras = sorted({str(r[2]) for r in grupo if r[2]})
+            texto = (que_mirar.format(hojas="'" + "', '".join(otras) + "'")
+                     if "{hojas}" in que_mirar and otras else que_mirar)
+            filas.append([hoja, donde, porque, texto, len(grupo)])
     if not filas:
         return None
 
