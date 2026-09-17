@@ -1091,8 +1091,14 @@ def cmd_llenar(args):
     for w in sobrantes:
         reporte.append(["", "", w, "", "", "", "", "HOJA DE WORKIVA SIN DESTINO"])
 
-    print(f"\nTotal: {total_celdas} celdas en {total_hojas} hojas "
-          f"de {archivos_escritos} archivos")
+    # En --dry-run no se escribe ningun archivo, y decir "de 0 archivos"
+    # parecia que algo habia fallado.
+    if args.dry_run:
+        print(f"\nTotal: {total_celdas} celdas en {total_hojas} hojas "
+              "(simulacion: no se escribio nada)")
+    else:
+        print(f"\nTotal: {total_celdas} celdas en {total_hojas} hojas "
+              f"de {archivos_escritos} archivos")
     if not args.dry_run and en_workiva:
         # lo lee fusionar_cuadros.py --solo-workiva: que cuadros existen en el
         # export, en vez de adivinarlo mirando las celdas

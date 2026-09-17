@@ -468,7 +468,8 @@ def docprops(hojas):
     inestable el ActiveWorkbook.Save que hace Copiar_columna -- error 1004
     'no se puede obtener acceso' aunque el archivo no este ni bloqueado ni
     de solo lectura. Los .xlsm originales de DBNeT si las traen."""
-    ahora = __import__("datetime").datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    dt = __import__("datetime")
+    ahora = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     core = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/'
             '2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"'
