@@ -513,6 +513,181 @@ def actualiza_cache(xml, ref, valor):
     return xml[:m.start()] + celda + xml[m.end():], True
 
 
+# ------------------------------------------------- presentacion del texto
+
+def _elementos(xml, tag):
+    """Cada <tag .../> o <tag ...>...</tag> de primer nivel, como texto."""
+    out, i = [], 0
+    abre = re.compile(r"<%s(\s[^>]*?)?(/?)>" % tag)
+    cierre = "</%s>" % tag
+    while True:
+        m = abre.search(xml, i)
+        if not m:
+            return out
+        if m.group(2) == "/":
+            out.append(m.group(0))
+            i = m.end()
+        else:
+            j = xml.index(cierre, m.end()) + len(cierre)
+            out.append(xml[m.start():j])
+            i = j
+
+
+def _con_ajuste(xf):
+    """El mismo formato, pero con ajuste de texto y alineado arriba."""
+    m = re.search(r"<alignment[^>]*?/>", xf)
+    if m:
+        a = re.sub(r'\s*(?:wrapText|vertical)="[^"]*"', "", m.group(0))
+        xf = xf[:m.start()] + a[:-2] + ' vertical="top" wrapText="1"/>' + xf[m.end():]
+    elif "<alignment" in xf:
+        return xf                       # forma rara: mejor no tocarlo
+    else:
+        a = '<alignment vertical="top" wrapText="1"/>'
+        xf = xf[:-2] + ">" + a + "</xf>" if xf.endswith("/>") \
+            else xf[:xf.rindex("</xf>")] + a + "</xf>"
+    # sin applyAlignment Excel ignora el <alignment> propio y hereda el del
+    # estilo padre, asi que el ajuste no se veria
+    if "applyAlignment" not in xf:
+        xf = xf.replace("<xf ", '<xf applyAlignment="1" ', 1)
+    return xf
+
+
+class Estilos:
+    """Los formatos del libro, con la posibilidad de agregar variantes.
+
+    Un .xlsm no guarda el formato en la celda sino un indice a la lista
+    <cellXfs> de styles.xml. Para que un texto largo se vea envuelto en
+    varias lineas la celda tiene que apuntar a un formato con wrapText, y
+    ese formato casi nunca existe en la plantilla: se clona el que la celda
+    ya traia y se le agrega el ajuste, para no perder ni el borde, ni el
+    relleno, ni la fuente que le puso DBNeT."""
+
+    def __init__(self, libro):
+        self.raw = libro.z.read("xl/styles.xml").decode("utf-8")
+        m = re.search(r"<cellXfs[^>]*>(.*?)</cellXfs>", self.raw, re.S)
+        self.tramo = (m.start(), m.end()) if m else None
+        self.xfs = _elementos(m.group(1), "xf") if m else []
+        self._ya = {}
+        self.cambio = False
+
+    def con_ajuste(self, idx):
+        if self.tramo is None or not 0 <= idx < len(self.xfs):
+            return idx
+        if idx not in self._ya:
+            nuevo = _con_ajuste(self.xfs[idx])
+            if nuevo in self.xfs:
+                self._ya[idx] = self.xfs.index(nuevo)
+            else:
+                self.xfs.append(nuevo)
+                self._ya[idx] = len(self.xfs) - 1
+                self.cambio = True
+        return self._ya[idx]
+
+    def xml(self):
+        ini, fin = self.tramo
+        return (self.raw[:ini]
+                + '<cellXfs count="%d">%s</cellXfs>' % (len(self.xfs), "".join(self.xfs))
+                + self.raw[fin:])
+
+
+def anchos_de_columna(xml):
+    """{numero de columna: ancho en caracteres}, mas el ancho por defecto."""
+    defecto = 8.43
+    m = re.search(r"<sheetFormatPr[^>]*>", xml)
+    if m:
+        d = re.search(r'defaultColWidth="([\d.]+)"', m.group(0))
+        if d:
+            defecto = float(d.group(1))
+    anchos = {}
+    for c in re.findall(r"<col\b[^>]*/>", xml):
+        a = re.search(r'width="([\d.]+)"', c)
+        lo = re.search(r'min="(\d+)"', c)
+        hi = re.search(r'max="(\d+)"', c)
+        if a and lo and hi:
+            for n in range(int(lo.group(1)), min(int(hi.group(1)), 400) + 1):
+                anchos[n] = float(a.group(1))
+    return anchos, defecto
+
+
+def _ancho_util(ref, anchos, defecto, fusiones):
+    """Ancho donde se puede escribir: el de la celda, o el de la fusion."""
+    col, fila = parte_ref(ref)
+    desde = hasta = col_a_num(col)
+    hasta = fusiones.get(ref, hasta)
+    return sum(anchos.get(n, defecto) for n in range(desde, hasta + 1))
+
+
+def _fusiones(xml):
+    """{celda de arriba a la izquierda: ultima columna de la fusion}."""
+    out = {}
+    for r in re.findall(r'<mergeCell ref="([A-Z]+\d+):([A-Z]+\d+)"', xml):
+        out[r[0]] = col_a_num(parte_ref(r[1])[0])
+    return out
+
+
+ALTO_LINEA = 15.0        # puntos que ocupa un renglon con la fuente base
+ALTO_MAX = 409.5         # tope de Excel, el mismo del autoajuste de fila
+
+
+def _lineas(texto, ancho):
+    cabe = max(8, int(ancho) - 1)
+    return sum(max(1, -(-len(p) // cabe)) for p in texto.split("\n"))
+
+
+def ajusta_bloques_texto(xml, est):
+    """Envuelve los textos largos recien escritos y le da alto a su fila.
+
+    DBNeT deja esas celdas sin ajuste de texto porque en su plantilla llegan
+    vacias, donde una sola linea sobra. Con el texto puesto el parrafo se
+    sale por el costado y solo se puede leer en la barra de formulas; Workiva
+    lo muestra envuelto. Esto deja el archivo llenado igual que Workiva.
+
+    Solo se tocan las celdas que escribio este programa, que son las unicas
+    que quedan como inlineStr -- las de la plantilla van por sharedStrings.
+
+    Es presentacion y nada mas. El boton "Crear CSV" escribe el contenido de
+    la celda, que no cambia: ni el ajuste de texto ni el alto de la fila
+    aparecen en el CSV."""
+    if est.tramo is None or 'inlineStr' not in xml:
+        return xml
+    anchos, defecto = anchos_de_columna(xml)
+    fusiones = _fusiones(xml)
+
+    def rehace_fila(mf):
+        attrs, inner = mf.group(2), mf.group(3)
+        if not inner or 'inlineStr' not in inner:
+            return mf.group(0)
+        alto = [0.0]
+
+        def rehace_celda(mc):
+            ref, cattrs, cuerpo = mc.group(1), mc.group(2), mc.group(3)
+            if cuerpo is None or 'inlineStr' not in cattrs:
+                return mc.group(0)
+            texto = desescapa("".join(re.findall(r"<t[^>]*>(.*?)</t>", cuerpo, re.S)))
+            n = _lineas(texto, _ancho_util(ref, anchos, defecto, fusiones))
+            if n < 2:
+                return mc.group(0)
+            alto[0] = max(alto[0], min(ALTO_MAX, n * ALTO_LINEA))
+            ms = re.search(r'\ss="(\d+)"', cattrs)
+            if ms:
+                cattrs = (cattrs[:ms.start()] + ' s="%d"' % est.con_ajuste(int(ms.group(1)))
+                          + cattrs[ms.end():])
+            else:
+                cattrs = ' s="%d"' % est.con_ajuste(0) + cattrs
+            return '<c r="%s"%s>%s</c>' % (ref, cattrs, cuerpo)
+
+        inner = CELDA_RE.sub(rehace_celda, inner)
+        if not alto[0]:
+            return mf.group(0)
+        previo = re.search(r'\sht="([\d.]+)"', attrs)
+        if previo:
+            alto[0] = max(alto[0], float(previo.group(1)))
+        attrs = re.sub(r'\s(?:ht|customHeight)="[^"]*"', "", attrs)
+        return '<row r="%s"%s ht="%g" customHeight="1">%s</row>' % (
+            mf.group(1), attrs, alto[0], inner)
+
+    return re.sub(r'<row r="(\d+)"([^>]*?)(?:/>|>(.*?)</row>)', rehace_fila, xml, flags=re.S)
+
 def recalculo(wb_xml):
     if "fullCalcOnLoad" in wb_xml:
         return wb_xml
@@ -1054,6 +1229,7 @@ def cmd_llenar(args):
 
     for ruta, hojas in por_archivo.items():
         dest = Libro(ruta)
+        estilos = Estilos(dest)
         cambios, escritas_archivo = {}, 0
         for hoja_d, hoja_w, metodo in hojas:
             if not hoja_w:
@@ -1067,13 +1243,15 @@ def cmd_llenar(args):
             xml = dest.xml(hoja_d)
             xml, n = procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, ruta.name)
             if n:
-                cambios[dest.hojas[hoja_d]] = xml
+                cambios[dest.hojas[hoja_d]] = ajusta_bloques_texto(xml, estilos)
                 escritas_archivo += n
                 total_hojas += 1
 
         if cambios:
             cambios["xl/workbook.xml"] = recalculo(
                 dest.z.read("xl/workbook.xml").decode("utf-8"))
+            if estilos.cambio:
+                cambios["xl/styles.xml"] = estilos.xml()
             estado = "escrito" if not args.dry_run else "(dry-run)"
             total_celdas += escritas_archivo
         else:
