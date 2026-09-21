@@ -1103,16 +1103,62 @@ def _hojas_cuadro_com(libro):
 # ---------------------------------------------------------------------------
 _VBA_MODULO = r'''
 Sub Guarda_Hojas_CSV()
-    Dim wb As Workbook, v_direc As String, v_nombre As String
-    Dim TotalHojas As Long, H As Long, fd As Object
+    Dim carpeta As String, cuantas As Long
+
+    carpeta = Pide_Carpeta("Elige la carpeta donde dejar los CSV")
+    If carpeta = "" Then Exit Sub
+    cuantas = ActiveWorkbook.Worksheets.Count
+
+    If Escribe_CSV(carpeta) Then
+        MsgBox "Listo: " & cuantas & " csv en" & vbCrLf & carpeta, vbInformation
+    End If
+End Sub
+
+Sub Guarda_Hojas_ZIP()
+    ' El original llamaba a un zip.exe que tenia que estar al lado del libro.
+    ' DBNeT nunca lo entrega, asi que ese boton no comprimio nunca nada. Aqui
+    ' se usa Compress-Archive, que viene con Windows y no hay que instalar.
+    Dim carpeta As String, ruta_zip As String, problema As String
+    Dim cuantas As Long
+
+    carpeta = Pide_Carpeta("Elige la carpeta donde dejar los CSV y el .zip")
+    If carpeta = "" Then Exit Sub
+    cuantas = ActiveWorkbook.Worksheets.Count
+
+    If Not Escribe_CSV(carpeta) Then Exit Sub
+
+    ruta_zip = Left(carpeta, Len(carpeta) - 1) & ".zip"
+    problema = Comprime(carpeta & "*.csv", ruta_zip)
+
+    If problema = "" Then
+        MsgBox "Listo:" & vbCrLf & vbCrLf & _
+               cuantas & " csv en " & carpeta & vbCrLf & _
+               "comprimidos en " & ruta_zip, vbInformation
+    Else
+        ' Los CSV ya estan escritos: lo unico que falta es el .zip, y eso se
+        ' hace a mano en diez segundos. Mejor decirlo que dejarlo a medias.
+        MsgBox "Los " & cuantas & " csv quedaron bien en" & vbCrLf & _
+               carpeta & vbCrLf & vbCrLf & _
+               "Lo que no se pudo fue comprimirlos: " & problema & vbCrLf & vbCrLf & _
+               "Hazlo a mano: entra a esa carpeta, Ctrl+E para seleccionar" & vbCrLf & _
+               "todo, boton derecho, Comprimir en archivo ZIP.", vbExclamation
+    End If
+End Sub
+
+Private Function Pide_Carpeta(titulo As String) As String
+    Dim fd As Object
+    Set fd = Application.FileDialog(4)          ' 4 = selector de carpeta
+    fd.Title = titulo
+    If fd.Show <> -1 Then Exit Function         ' cancelo
+    Pide_Carpeta = fd.SelectedItems(1)
+    If Right(Pide_Carpeta, 1) <> "\" Then Pide_Carpeta = Pide_Carpeta & "\"
+End Function
+
+Private Function Escribe_CSV(v_direc As String) As Boolean
+    Dim wb As Workbook, v_nombre As String
+    Dim TotalHojas As Long, H As Long
 
     Set wb = ActiveWorkbook
-    Set fd = Application.FileDialog(4)          ' 4 = selector de carpeta
-    fd.Title = "Elige la carpeta donde dejar los CSV"
-    If fd.Show <> -1 Then Exit Sub              ' cancelo
-    v_direc = fd.SelectedItems(1)
-    If Right(v_direc, 1) <> "\" Then v_direc = v_direc & "\"
-
     TotalHojas = wb.Worksheets.Count
     Application.DisplayAlerts = False
     Application.EnableEvents = False
@@ -1135,15 +1181,36 @@ limpiar:
         MsgBox "Se detuvo en la hoja '" & v_nombre & "'." & vbCrLf & vbCrLf & _
                "Error " & Err.Number & ": " & Err.Description, vbExclamation
     Else
-        MsgBox "Listo: " & TotalHojas & " csv en" & vbCrLf & v_direc, vbInformation
+        Escribe_CSV = True
     End If
-End Sub
+End Function
 
-Sub Guarda_Hojas_ZIP()
-    ' Los CSV los hace la misma rutina de arriba. El .zip que armaba el
-    ' original necesitaba un zip.exe al lado del archivo, que no existe.
-    Guarda_Hojas_CSV
-End Sub
+Private Function Comprime(origen As String, destino As String) As String
+    ' Devuelve "" si salio bien, o el motivo si no.
+    Dim sh As Object, cmd As String, q As String, codigo As Long
+
+    On Error GoTo falla
+    q = Chr(34)
+    ' PowerShell toma las rutas entre comillas simples, asi que los espacios
+    ' de "OneDrive - Grupo CGE" no molestan. Una comilla simple dentro de la
+    ' ruta si molestaria: se escapa duplicandola, como pide PowerShell.
+    cmd = "powershell -NoProfile -ExecutionPolicy Bypass -Command " & q & _
+          "Compress-Archive -Path '" & Replace(origen, "'", "''") & _
+          "' -DestinationPath '" & Replace(destino, "'", "''") & "' -Force" & q
+
+    Set sh = CreateObject("WScript.Shell")
+    codigo = sh.Run(cmd, 0, True)               ' 0 = sin ventana, True = espera
+
+    If codigo <> 0 Then
+        Comprime = "PowerShell termino con codigo " & codigo
+    ElseIf Dir(destino) = "" Then
+        Comprime = "PowerShell no dejo el archivo"
+    End If
+    Exit Function
+
+falla:
+    Comprime = Err.Description
+End Function
 
 Sub Copiar_columna()
     ActiveWorkbook.Save
