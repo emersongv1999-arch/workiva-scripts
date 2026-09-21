@@ -133,13 +133,19 @@ def clave_periodo(texto):
 def rels_de(xml):
     """{Id: Target} de un archivo .rels, sin depender del orden de los atributos.
 
-    Se leia con una sola expresion que exigia Id antes que Target. Los .xlsm de
-    DBNeT los escribe Excel, que pone Id primero, asi que funciono siempre --
-    hasta que en la carpeta de salida aparecio un .xlsx escrito por openpyxl,
-    que los pone al reves: la expresion no encontraba nada y el libro moria con
-    KeyError rId1 en vez de saltarselo por no ser un cuadro."""
+    Dos cosas cambian de un programa a otro y ninguna significa nada:
+
+    El orden de los atributos. Excel escribe Id antes que Target y openpyxl al
+    reves, asi que una expresion que los exija en un orden no encuentra nada
+    en los archivos del otro.
+
+    La forma de cerrar la etiqueta. Excel y openpyxl la autocierran
+    (<Relationship .../>), pero el export de Workiva la cierra aparte
+    (<Relationship ...></Relationship>), asi que pedir el '/>' tampoco sirve.
+    Por eso se toma la etiqueta de apertura, donde estan los atributos en los
+    dos casos, y de ahi se saca cada uno por su cuenta."""
     out = {}
-    for tag in re.findall(r"<Relationship\b[^>]*/>", xml):
+    for tag in re.findall(r"<Relationship\b[^>]*>", xml):
         i = re.search(r'Id="([^"]+)"', tag)
         t = re.search(r'Target="([^"]*)"', tag)
         if i and t:
@@ -163,6 +169,14 @@ class Libro:
         for tag in re.findall(r"<sheet [^>]*?>", wb):
             nombre = desescapa(re.search(r'name="([^"]*)"', tag).group(1))
             rid = re.search(r'r:id="(rId\d+)"', tag).group(1)
+            if rid not in rels:
+                # Pasar de KeyError a algo que se pueda leer: si un dia otro
+                # programa escribe el .rels de una forma que no contemplamos,
+                # el mensaje dice donde mirar en vez de solo "KeyError rId1".
+                raise KeyError(
+                    f"{self.ruta.name}: la hoja '{nombre}' apunta a {rid}, que no "
+                    f"aparece en xl/_rels/workbook.xml.rels (se leyeron {len(rels)} "
+                    "relaciones). Mandame el archivo y lo reviso.")
             destino = rels[rid].lstrip("/")
             self.hojas[nombre] = destino if destino.startswith("xl/") else "xl/" + destino
         self._cache = {}
