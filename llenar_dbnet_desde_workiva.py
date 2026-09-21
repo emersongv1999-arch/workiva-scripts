@@ -95,9 +95,30 @@ def clave_nombre(s):
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
 
+# Las cinco entidades con nombre de XML, y las numericas en decimal o en
+# hexadecimal. Van juntas en una sola pasada para que un "&amp;lt;" -- que es
+# el texto literal "&lt;" -- no termine convertido en "<" por dos reemplazos
+# encadenados.
+REFERENCIA = re.compile(r"&(?:#(\d{1,7})|#[xX]([0-9A-Fa-f]{1,6})|(amp|lt|gt|quot|apos));")
+NOMBRADAS = {"amp": "&", "lt": "<", "gt": ">", "quot": '"', "apos": "'"}
+
+
 def desescapa(s):
-    return (s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
-             .replace("&apos;", "'").replace("&#xA;", "\n").replace("&amp;", "&"))
+    """Texto de verdad a partir de lo que trae el XML.
+
+    Antes se traducia a mano una lista corta que incluia &#xA; pero no &#x9;.
+    El export de Workiva escribe los tabuladores asi: 559 en un solo archivo.
+    Como no se traducian, el & sobreviviente se volvia a escapar al escribir,
+    y la celda terminaba mostrando un literal "&#x9;" en medio del parrafo.
+    Lo mismo pasaba con &#39;, el apostrofe en decimal."""
+    def uno(m):
+        if m.group(3):
+            return NOMBRADAS[m.group(3)]
+        try:
+            return chr(int(m.group(1) or m.group(2), 10 if m.group(1) else 16))
+        except ValueError:
+            return m.group(0)       # fuera del rango de Unicode: dejalo como esta
+    return REFERENCIA.sub(uno, s)
 
 
 # Caracteres que XML 1.0 no admite en ningun caso: los de control salvo
@@ -111,8 +132,12 @@ ILEGALES_XML = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
 def escapa(s):
+    # El tabulador y el retorno de carro se escriben como referencia numerica,
+    # igual que los escribe Workiva: son validos en crudo dentro de un <t>,
+    # pero asi no dependen de como cada lector trate los espacios en blanco.
     s = ILEGALES_XML.sub("", s)
-    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+             .replace("\t", "&#9;").replace("\r", "&#13;"))
 
 
 def clave_periodo(texto):
