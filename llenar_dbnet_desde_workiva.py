@@ -1291,6 +1291,14 @@ def escribe_revisar(reporte, ruta):
                      if "{hojas}" in que_mirar and otras else que_mirar)
             filas.append([hoja, donde, porque, texto, len(grupo)])
     if not filas:
+        # Si no hay nada que revisar no se escribe el archivo, y entonces el
+        # de la corrida anterior se queda ahi: uno abre REVISAR.xlsx, ve los
+        # avisos del mes pasado y cree que son de hoy. Se borra el viejo.
+        for vieja in (ruta, ruta.with_suffix(".csv")):
+            try:
+                vieja.unlink()
+            except (OSError, FileNotFoundError):
+                pass
         return None
 
     cab = ["Hoja del archivo llenado", "Donde mirar", "Que paso",
