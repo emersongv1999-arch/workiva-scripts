@@ -181,7 +181,7 @@ def rels_de(xml):
 class Libro:
     def __init__(self, ruta):
         self.ruta = Path(ruta)
-        self.z = zipfile.ZipFile(ruta)
+        self.z = self._abre(ruta)
         try:
             raw = self.z.read("xl/sharedStrings.xml").decode("utf-8")
             self.S = [desescapa("".join(re.findall(r"<t[^>]*>(.*?)</t>", si, re.S)))
@@ -207,6 +207,33 @@ class Libro:
         self._cache = {}
         self._xml = {}
         self.layout_cambiado = False
+
+    @staticmethod
+    def _abre(ruta):
+        """Abre el .xlsm, y si Windows no deja, dice por que suele ser.
+
+        Un PermissionError pelado no le sirve a nadie: son siempre las
+        mismas tres causas y ninguna se adivina leyendo 'Errno 13'."""
+        try:
+            return zipfile.ZipFile(ruta)
+        except PermissionError:
+            nombre = Path(ruta).name
+            sys.exit(
+                f"\n  Windows no deja leer {nombre}\n\n"
+                "  Casi siempre es una de estas tres, en este orden:\n\n"
+                "  1. El archivo esta abierto en Excel. Cierra todas las\n"
+                "     ventanas, y en el Administrador de tareas (Ctrl+Shift+Esc),\n"
+                "     pestana Detalles, termina EXCEL.EXE si sigue ahi.\n\n"
+                "  2. OneDrive lo tiene solo en la nube. Clic derecho en la\n"
+                "     carpeta, 'Conservar siempre en este dispositivo', y espera\n"
+                "     a que los iconos queden en verde relleno.\n\n"
+                "  3. Quedo un archivo de bloqueo. Muestra los elementos ocultos\n"
+                f"     y borra los que empiecen con ~$ en esa carpeta.\n\n"
+                f"  Ruta completa:\n     {Path(ruta).resolve()}\n")
+        except zipfile.BadZipFile:
+            sys.exit(f"\n  {Path(ruta).name} no se puede leer como archivo de Excel.\n"
+                     "  Abrelo a mano: si Excel tambien se queja, esta danado y hay\n"
+                     "  que reemplazarlo por el original de DBNeT.\n")
 
     def xml(self, hoja):
         if hoja in self._xml:
