@@ -39,6 +39,8 @@ import argparse
 import collections
 import csv
 import hashlib
+import json
+import os
 import re
 import shutil
 import sys
@@ -681,6 +683,13 @@ def reescribe_zip(origen, destino, cambios, quitar=()):
                     "El archivo NO se escribio.")
 
     destino.parent.mkdir(parents=True, exist_ok=True)
+    # Escribiendo sobre la propia plantilla, abrir el destino en "w" lo
+    # truncaria mientras se esta leyendo: se arma al lado y se reemplaza de
+    # una sola vez al final. Asi, ademas, un corte a mitad de camino deja el
+    # archivo anterior entero en vez de uno a medio escribir.
+    en_sitio = destino.resolve() == Path(origen).resolve()
+    real, destino = destino, (destino.with_suffix(destino.suffix + ".tmp")
+                              if en_sitio else destino)
     with zipfile.ZipFile(origen) as zin, \
          zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as zout:
         for info in zin.infolist():
@@ -694,6 +703,8 @@ def reescribe_zip(origen, destino, cambios, quitar=()):
             nuevo.internal_attr = info.internal_attr
             nuevo.create_system = info.create_system
             zout.writestr(nuevo, datos)
+    if en_sitio:
+        os.replace(destino, real)
 
 
 # --------------------------------------------- columnas que faltan crear
@@ -1126,11 +1137,95 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
     return xml, escritas + cacheadas
 
 
+# ------------------------------------------- llenar sobre las plantillas
+
+RESPALDO = "_original_dbnet"
+
+
+def _huella(ruta):
+    h = hashlib.sha256()
+    with open(ruta, "rb") as fh:
+        for trozo in iter(lambda: fh.read(1 << 20), b""):
+            h.update(trozo)
+    return h.hexdigest()
+
+
+class EnSitio:
+    """Deja las plantillas virgenes antes de llenarlas encima.
+
+    Llenar encima de un archivo ya lleno no borra nada. El programa escribe
+    lo que Workiva trae; lo que Workiva ya NO trae se queda con el valor del
+    cierre anterior. Medido sobre la entrega real, llenando un trimestre
+    sobre el anterior: 502 cifras viejas sobrevivian, entre ellas montos de
+    proveedores y lineas del estado de resultados. Ninguna se habria notado,
+    porque una celda con un numero plausible no llama la atencion.
+
+    Por eso, antes de llenar, se repone la plantilla como la manda DBNeT.
+
+    La primera corrida guarda una copia en la subcarpeta _original_dbnet y
+    anota la huella del archivo que dejo. En la corrida siguiente, si el
+    archivo de la carpeta es el que dejamos nosotros, se repone el virgen;
+    si es otro, es una entrega nueva de DBNeT y pasa a ser el nuevo virgen.
+    Asi el reemplazo trimestral de plantillas no necesita que nadie se
+    acuerde de borrar nada."""
+
+    def __init__(self, carpeta):
+        self.guarda = Path(carpeta) / RESPALDO
+        self.ficha = self.guarda / "lo_que_dejamos.json"
+        try:
+            self.dejamos = json.loads(self.ficha.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            self.dejamos = {}
+        self.repuestas = self.nuevas = 0
+
+    def prepara(self, plantillas):
+        self.guarda.mkdir(parents=True, exist_ok=True)
+        for p in plantillas:
+            copia = self.guarda / p.name
+            if copia.exists() and self.dejamos.get(p.name) == _huella(p):
+                shutil.copy2(copia, p)          # era nuestra salida
+                self.repuestas += 1
+            else:
+                shutil.copy2(p, copia)          # plantilla nueva de DBNeT
+                self.nuevas += 1
+        if self.nuevas:
+            print(f"  Plantillas de DBNeT guardadas: {self.nuevas}")
+            print(f"     {self.guarda}")
+        if self.repuestas:
+            print(f"  Plantillas repuestas antes de llenar: {self.repuestas}")
+        print()
+
+    def virgenes(self, plantillas):
+        """Las mismas plantillas, pero leyendo la copia virgen donde exista.
+
+        Para la simulacion, que no puede tocar el disco: si mirara el archivo
+        que quedo lleno el cierre pasado informaria 0 celdas -- todo ya
+        coincide -- y pareceria que la corrida de verdad no va a hacer nada,
+        cuando en realidad repone la plantilla y la llena entera."""
+        salen, n = [], 0
+        for p in plantillas:
+            copia = self.guarda / p.name
+            if copia.exists() and self.dejamos.get(p.name) == _huella(p):
+                salen.append(copia); n += 1
+            else:
+                salen.append(p)
+        if n:
+            print(f"  (simulando sobre las {n} plantillas virgenes de "
+                  f"{RESPALDO}, que es lo que va a llenar)\n")
+        return salen
+
+    def anota(self, plantillas):
+        """Huella de lo que dejamos, para reconocerlo la proxima vez."""
+        self.dejamos = {p.name: _huella(p) for p in plantillas if p.exists()}
+        self.guarda.mkdir(parents=True, exist_ok=True)
+        self.ficha.write_text(json.dumps(self.dejamos, indent=1), encoding="utf-8")
+
 def cmd_llenar(args):
     # Busca en subcarpetas: al descomprimir la entrega de DBNeT es normal
     # terminar con xls\xls\*.xlsm porque el .zip ya trae su propia carpeta.
     plantillas = sorted(p for p in Path(args.plantillas).rglob("*.xlsm")
-                        if not p.name.startswith("~$"))
+                        if not p.name.startswith("~$")
+                        and RESPALDO not in p.parts)
     if not plantillas:
         sys.exit(f"No hay .xlsm en {args.plantillas} ni en sus subcarpetas")
     hondas = {p.parent for p in plantillas if p.parent != Path(args.plantillas)}
@@ -1140,6 +1235,15 @@ def cmd_llenar(args):
     wv = Libro(args.workiva)
     orden_wk = {h: i for i, h in enumerate(wv.hojas)}
     print(f"Plantillas: {len(plantillas)}   Workiva: {len(wv.hojas)} hojas\n")
+
+    en_sitio = None
+    if args.sobre_plantillas:
+        en_sitio = EnSitio(args.plantillas)
+        if args.dry_run:
+            plantillas = en_sitio.virgenes(plantillas)
+            en_sitio = None                 # en simulacion no se anota nada
+        else:
+            en_sitio.prepara(plantillas)
 
     if args.mapa:
         pares = mapear_hojas(plantillas, wv, args.mapa)
@@ -1154,7 +1258,10 @@ def cmd_llenar(args):
     en_workiva = []
     reporte = [["archivo", "hoja_dbnet", "hoja_workiva", "concepto",
                 "columna", "periodo", "bloque", "estado"]]
-    salida = Path(args.salida)
+    # Llenando en sitio, la carpeta de las plantillas ES la salida: el
+    # _hojas_de_workiva.txt tiene que quedar ahi para que el fusionador
+    # lo encuentre.
+    salida = Path(args.plantillas) if args.sobre_plantillas else Path(args.salida)
     total_celdas = total_hojas = archivos_escritos = 0
 
     for ruta, hojas in por_archivo.items():
@@ -1197,9 +1304,13 @@ def cmd_llenar(args):
         if dest.layout_cambiado and "xl/calcChain.xml" in dest.z.namelist():
             quitar = sin_calcchain(dest.z, cambios)
         if not args.dry_run:
-            reescribe_zip(ruta, salida / ruta.name, cambios, quitar)
+            reescribe_zip(ruta, ruta if args.sobre_plantillas else salida / ruta.name,
+                          cambios, quitar)
             archivos_escritos += 1
         print(f"  {ruta.name[:48]:50} {escritas_archivo:6} celdas  {estado}")
+
+    if en_sitio is not None:
+        en_sitio.anota(plantillas)
 
     for w in sobrantes:
         reporte.append(["", "", w, "", "", "", "", "HOJA DE WORKIVA SIN DESTINO"])
@@ -1247,7 +1358,8 @@ def cmd_llenar(args):
 
     if not args.dry_run and archivos_escritos:
         print()
-        verificar(Path(args.plantillas), salida)
+        verificar(en_sitio.guarda if en_sitio is not None
+                  else Path(args.plantillas), salida)
 
 
 # ------------------------------------------------------------ hoja a revisar
@@ -1418,6 +1530,10 @@ def main():
     p.add_argument("--plantillas", help="carpeta con los .xlsm de DBNeT")
     p.add_argument("--workiva", help="export .xlsx de Workiva")
     p.add_argument("--salida", default="./salida")
+    p.add_argument("--sobre-plantillas", action="store_true",
+                   help="llena los .xlsm de la carpeta de plantillas en vez de "
+                        "dejar copias aparte; guarda los originales de DBNeT en "
+                        f"la subcarpeta {RESPALDO} y los repone en cada corrida")
     p.add_argument("--mapa", help="mapa_hojas.csv para fijar el calce de hojas")
     p.add_argument("--reporte", default="reporte_llenado.csv")
     # Van separados porque no son para lo mismo: REVISAR.xlsx es lo que hay

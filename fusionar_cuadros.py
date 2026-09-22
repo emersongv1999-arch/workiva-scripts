@@ -408,8 +408,12 @@ def dibujo_de_hoja(z, parte_hoja):
 
 
 def fusionar(origen, salida, verbose=False, donante=None, solo_workiva=False):
+    # _original_dbnet guarda las plantillas virgenes cuando se llena en sitio:
+    # tienen el mismo nombre que las llenas y se colarian como duplicados.
     libros = sorted(p for p in Path(origen).rglob("*.xls[mx]")
-                    if not p.name.startswith("~$") and p.resolve() != salida.resolve())
+                    if not p.name.startswith("~$")
+                    and "_original_dbnet" not in p.parts
+                    and p.resolve() != salida.resolve())
     if not libros:
         sys.exit(f"No hay .xlsm ni .xlsx en {origen}")
 
