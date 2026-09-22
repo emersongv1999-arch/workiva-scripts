@@ -856,21 +856,92 @@ async def _listar_archivos_recursivo(container_id: str, log=None,
     """Lista TODOS los archivos dentro de una carpeta, entrando tambien en
     sus subcarpetas (recursivo). Necesario porque una carpeta de periodo no
     tiene todos los archivos sueltos en la raiz: los Base Notas viven en
-    subcarpetas, y listar solo los hijos DIRECTOS los dejaba fuera."""
+    subcarpetas, y listar solo los hijos DIRECTOS los dejaba fuera.
+
+    Las subcarpetas del mismo nivel se recorren EN PARALELO (antes era una
+    por una) -- con varios niveles de subcarpetas esto acorta bastante el
+    listado inicial."""
     if _profundidad > 10:   # guarda contra jerarquias patologicas/ciclos
         return []
     hijos = await _listar_hijos(container_id, kind=None)
-    archivos: list[dict] = []
-    for h in hijos:
-        if h.get("kind") == "Folder":
-            if log:
+    archivos: list[dict] = [h for h in hijos if h.get("kind") != "Folder"]
+    subcarpetas = [h for h in hijos if h.get("kind") == "Folder"]
+    if subcarpetas:
+        if log:
+            for h in subcarpetas:
                 log(f"  Entrando a subcarpeta: {h.get('name', '(sin nombre)')}")
-            archivos.extend(
-                await _listar_archivos_recursivo(h["id"], log=log,
-                                                 _profundidad=_profundidad + 1))
-        else:
-            archivos.append(h)
+        resultados = await asyncio.gather(*(
+            _listar_archivos_recursivo(h["id"], log=log, _profundidad=_profundidad + 1)
+            for h in subcarpetas
+        ))
+        for r in resultados:
+            archivos.extend(r)
     return archivos
+
+
+_PUBLICAR_CONCURRENCIA = 8  # cuantos archivos se publican EN PARALELO a la vez
+                             # (antes: 1 a la vez, esperando cada uno antes de
+                             # seguir con el siguiente -- con 50+ archivos eso
+                             # se acumulaba en minutos). Numero conservador
+                             # para no saturar la API de Workiva; se puede
+                             # subir si en la practica no da problemas.
+
+
+async def _publicar_un_archivo(client, f: dict, sem: "asyncio.Semaphore",
+                                poll_interval: float, log=None) -> tuple[str, str]:
+    """Publica los links de UN archivo y espera a que termine. Devuelve
+    (estado, texto) con estado en {"ok", "error", "omitido"}.
+
+    Cualquier error (HTTP, de red, timeout, respuesta inesperada de Workiva)
+    se captura acá y se devuelve como resultado "error" -- NUNCA propaga la
+    excepcion hacia afuera. Antes, un error en un solo archivo tumbaba toda
+    la publicacion (los archivos ya en curso ni se reportaban); ahora ese
+    archivo se salta y el resto sigue."""
+    nombre = f.get("name", "(sin nombre)")
+    kind   = f.get("kind")
+    fid    = f.get("id")
+    ruta   = _RUTA_PUBLICACION_POR_KIND.get(kind)
+    if ruta is None:
+        return ("omitido", f"{nombre} ({kind})")
+
+    async with sem:
+        try:
+            if log:
+                log(f"Publicando links: {nombre}...")
+            r = await client.post(
+                f"{_API_ROOT_2026}/{ruta}/{fid}/links/publication",
+                headers=await _headers_2026(), json={"publishType": "allLinks"})
+            if r.status_code != 202:
+                if log:
+                    log(f"  ERROR ({nombre}): HTTP {r.status_code}")
+                return ("error", f"{nombre} (HTTP {r.status_code}: {r.text[:150]})")
+
+            op_url = r.headers.get("Location") or r.json().get("operationLocation")
+            if not op_url:
+                if log:
+                    log(f"  ERROR ({nombre}): sin URL de operación")
+                return ("error", f"{nombre} (sin URL de operacion)")
+
+            while True:
+                r2 = await client.get(op_url, headers=await _headers_2026())
+                r2.raise_for_status()
+                op = r2.json()
+                estado = op.get("status", "")
+                if estado == "completed":
+                    if log:
+                        log(f"  OK: {nombre}")
+                    return ("ok", nombre)
+                if estado in ("failed", "cancelled"):
+                    if log:
+                        log(f"  ERROR ({nombre}): operación {estado}")
+                    return ("error", f"{nombre} (operación {estado} en Workiva)")
+                espera = r2.headers.get("Retry-After", "")
+                espera = float(espera) if espera.replace(".", "", 1).isdigit() else poll_interval
+                await asyncio.sleep(max(espera, poll_interval))
+        except Exception as e:
+            if log:
+                log(f"  ERROR ({nombre}): {e}")
+            return ("error", f"{nombre} ({e})")
 
 
 async def publicar_linking_periodo(mes: int, anio: int, log=None,
@@ -880,6 +951,10 @@ async def publicar_linking_periodo(mes: int, anio: int, log=None,
     'Estados Financieros/{anio}/{NN Mes AAAA}', INCLUYENDO los que estan en
     subcarpetas. Los tipos sin endpoint de publicacion de links (scripts,
     supporting documents) se listan aparte, sin tocarlos.
+
+    Publica varios archivos EN PARALELO (ver _PUBLICAR_CONCURRENCIA) en vez
+    de uno a la vez. Si un archivo falla, se salta y sigue con el resto --
+    no tumba la publicacion completa.
 
     Nota de terminologia (segun la doc de Workiva): un "link publish" hace
     que todos los SOURCE links del archivo manden su valor a sus destination
@@ -904,56 +979,19 @@ async def publicar_linking_periodo(mes: int, anio: int, log=None,
         log(f"Buscando archivos en '{nombre_carpeta}' (incluyendo subcarpetas)...")
     archivos = await _listar_archivos_recursivo(carpeta["id"], log=log)
     if log:
-        log(f"{len(archivos)} archivo(s) encontrados en total.")
+        log(f"{len(archivos)} archivo(s) encontrados en total. "
+            f"Publicando hasta {_PUBLICAR_CONCURRENCIA} en paralelo...")
     client = await _wk._ensure_client()
 
-    publicados: list[str] = []
-    sin_publicar: list[str] = []
-    omitidos: list[str] = []
+    sem = asyncio.Semaphore(_PUBLICAR_CONCURRENCIA)
+    resultados = await asyncio.gather(*(
+        _publicar_un_archivo(client, f, sem, poll_interval, log=log)
+        for f in archivos
+    ))
 
-    for f in archivos:
-        nombre = f.get("name", "(sin nombre)")
-        kind = f.get("kind")
-        fid = f.get("id")
-        ruta = _RUTA_PUBLICACION_POR_KIND.get(kind)
-        if ruta is None:
-            omitidos.append(f"{nombre} ({kind})")
-            continue
-
-        if log:
-            log(f"Publicando links: {nombre}...")
-        r = await client.post(
-            f"{_API_ROOT_2026}/{ruta}/{fid}/links/publication",
-            headers=await _headers_2026(), json={"publishType": "allLinks"})
-        if r.status_code != 202:
-            sin_publicar.append(f"{nombre} (HTTP {r.status_code}: {r.text[:150]})")
-            if log:
-                log(f"  ERROR ({nombre}): HTTP {r.status_code}", None)
-            continue
-
-        op_url = r.headers.get("Location") or r.json().get("operationLocation")
-        if not op_url:
-            sin_publicar.append(f"{nombre} (sin URL de operacion)")
-            continue
-
-        while True:
-            r2 = await client.get(op_url, headers=await _headers_2026())
-            r2.raise_for_status()
-            op = r2.json()
-            estado = op.get("status", "")
-            if estado == "completed":
-                publicados.append(nombre)
-                if log:
-                    log(f"  OK: {nombre}")
-                break
-            if estado in ("failed", "cancelled"):
-                sin_publicar.append(f"{nombre} (operación {estado} en Workiva)")
-                if log:
-                    log(f"  ERROR ({nombre}): operación {estado}")
-                break
-            espera = r2.headers.get("Retry-After", "")
-            espera = float(espera) if espera.replace(".", "", 1).isdigit() else poll_interval
-            await asyncio.sleep(max(espera, poll_interval))
+    publicados   = [v for estado, v in resultados if estado == "ok"]
+    sin_publicar = [v for estado, v in resultados if estado == "error"]
+    omitidos     = [v for estado, v in resultados if estado == "omitido"]
 
     if log:
         log(f"Listo: {len(publicados)} archivo(s) publicados, "
