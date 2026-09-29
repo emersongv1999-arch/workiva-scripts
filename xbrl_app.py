@@ -20,6 +20,7 @@ respondiendo, y si Excel se cae armando el archivo unico no se lleva la
 ventana con el.
 """
 
+import io
 import json
 import os
 import queue
@@ -30,6 +31,7 @@ import tempfile
 import threading
 import time
 import traceback
+import zipfile
 from pathlib import Path
 
 RESPALDO = "_original_dbnet"
@@ -92,7 +94,7 @@ if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[1] == "--tarea":
     sys.exit(corre_tarea(sys.argv[2], sys.argv[3:]))
 
 import tkinter as tk                                     # noqa: E402
-from tkinter import messagebox, ttk                      # noqa: E402
+from tkinter import filedialog, messagebox, ttk          # noqa: E402
 
 from xbrl_workiva import ErrorWorkiva, Planilla, Workiva  # noqa: E402
 
@@ -125,6 +127,81 @@ def plantillas_de(carpeta):
         return []
     return [p for p in xls.rglob("*.xlsm")
             if RESPALDO not in p.parts and not p.name.startswith("~$")]
+
+
+def reune_plantillas(rutas):
+    """Las plantillas .xlsm entre lo que eligio la persona: archivos sueltos
+    o el .zip tal como lo entrega DBNeT. Devuelve ({nombre: bytes}, descartes).
+
+    Se exige que cada una sea un .xlsm con macros: lo que DBNeT entrega. Un
+    .xlsx o una copia rota se descarta con su motivo en vez de terminar en
+    xls y fallar a mitad del llenado."""
+    halladas, descartes = {}, []
+
+    def considera(nombre, leer):
+        base = nombre.replace("\\", "/").rsplit("/", 1)[-1]
+        partes = nombre.replace("\\", "/").split("/")
+        if (not base.lower().endswith(".xlsm") or base.startswith("~$")
+                or RESPALDO in partes or "__MACOSX" in partes):
+            return
+        try:
+            contenido = leer()
+            with zipfile.ZipFile(io.BytesIO(contenido)) as z:
+                nombres = set(z.namelist())
+        except (OSError, zipfile.BadZipFile) as e:
+            descartes.append((base, f"no se pudo leer ({e})"))
+            return
+        if "xl/workbook.xml" not in nombres:
+            descartes.append((base, "no es un libro de Excel"))
+        elif "xl/vbaProject.bin" not in nombres:
+            descartes.append((base, "no trae las macros de DBNeT"))
+        elif base in halladas and halladas[base] != contenido:
+            descartes.append((base, "viene dos veces, con contenido distinto"))
+        else:
+            halladas[base] = contenido
+
+    for ruta in map(Path, rutas):
+        if ruta.suffix.lower() == ".zip":
+            try:
+                with zipfile.ZipFile(ruta) as z:
+                    for info in z.infolist():
+                        if not info.is_dir():
+                            considera(info.filename, lambda i=info, z=z: z.read(i))
+            except (OSError, zipfile.BadZipFile) as e:
+                descartes.append((ruta.name, f"no se pudo abrir el .zip ({e})"))
+        else:
+            considera(ruta.name, ruta.read_bytes)
+    return halladas, descartes
+
+
+def instala_plantillas(carpeta, plantillas):
+    """Deja plantillas como el juego completo de la empresa en carpeta\\xls.
+
+    El juego anterior no se borra ni se mezcla: la carpeta xls entera, con
+    su respaldo _original_dbnet, pasa a plantillas_anteriores\\<fecha>.
+    Mezclar no sirve: cuando DBNeT cambia el ano de una plantilla cambia su
+    nombre (..._2025.xlsm pasa a ..._2026.xlsm), y con las dos en xls el
+    cuadro se llenaria dos veces. Devuelve donde quedo el juego anterior."""
+    xls = carpeta / "xls"
+    archivado = None
+    if xls.is_dir() and any(xls.iterdir()):
+        archivado = carpeta / "plantillas_anteriores" / time.strftime("%Y-%m-%d_%H%M%S")
+        archivado.mkdir(parents=True)
+        try:
+            xls.rename(archivado / "xls")
+        except OSError as e:
+            archivado.rmdir()
+            raise PermissionError(
+                f"No se pudo apartar las plantillas actuales de {carpeta.name}\\xls: "
+                "seguramente hay alguna abierta en Excel. Cierra Excel y vuelve "
+                f"a intentar.\n\nDetalle: {e}") from e
+    xls.mkdir(parents=True)
+    for nombre, contenido in plantillas.items():
+        (xls / nombre).write_bytes(contenido)
+    # Las macros de cada plantilla escriben sus CSV en la carpeta csv que
+    # esta al lado de xls, y no la crean.
+    (carpeta / "csv").mkdir(exist_ok=True)
+    return archivado
 
 
 def empresas_locales():
@@ -232,12 +309,16 @@ class Aplicacion(tk.Tk):
         self.l_plantillas = tk.Label(fila_pl, textvariable=self.info_plantillas,
                                      bg=BLANCO, fg=GRIS, font=(FUENTE, 9), anchor="w")
         self.l_plantillas.pack(side="left")
+        self.b_cargar = tk.Button(fila_pl, text="Cargar plantillas de DBNeT…",
+                                  command=self._carga_plantillas, bg=BLANCO,
+                                  fg=AZUL, relief="flat", bd=0, cursor="hand2",
+                                  font=(FUENTE, 9, "underline"),
+                                  activebackground=BLANCO)
         self.b_carpeta = tk.Button(fila_pl, text="Abrir carpeta",
                                    command=self._abre_carpeta_empresa, bg=BLANCO,
                                    fg=AZUL, relief="flat", bd=0, cursor="hand2",
                                    font=(FUENTE, 9, "underline"),
                                    activebackground=BLANCO)
-        self.b_carpeta.pack(side="left", padx=8)
 
         # ---- 2. llenar y avance
         tarjeta = self._tarjeta(cuerpo, 1)
@@ -404,21 +485,65 @@ class Aplicacion(tk.Tk):
         else:
             self.info_workiva.set("")
 
+        self.b_cargar.pack_forget()
+        self.b_carpeta.pack_forget()
         if not emp:
             self.info_plantillas.set("")
-            self.b_carpeta.pack_forget()
             return
         n = len(plantillas_de(BASE / emp))
         if n:
             self.info_plantillas.set(f"Plantillas de DBNeT: {n} archivos en {emp}\\xls")
             self.l_plantillas.config(fg=GRIS)
-            self.b_carpeta.config(text="Abrir carpeta")
+            self.b_cargar.config(text="Cambiar plantillas…")
         else:
-            self.info_plantillas.set(f"Faltan las plantillas de DBNeT de {emp}: "
-                                     f"cópialas en la carpeta {emp}\\xls")
+            self.info_plantillas.set(f"Faltan las plantillas de DBNeT de {emp}.")
             self.l_plantillas.config(fg=ROJO)
-            self.b_carpeta.config(text="Crear y abrir la carpeta")
-        self.b_carpeta.pack(side="left", padx=8)
+            self.b_cargar.config(text="Cargar plantillas de DBNeT…")
+        self.b_cargar.pack(side="left", padx=(8, 0))
+        if n:
+            self.b_carpeta.pack(side="left", padx=(8, 0))
+
+    def _carga_plantillas(self):
+        emp = self.empresa.get()
+        if not emp or self.corriendo:
+            return
+        rutas = filedialog.askopenfilenames(
+            parent=self, title=f"Plantillas de DBNeT de {emp}: elige el .zip o los .xlsm",
+            filetypes=[("Plantillas de DBNeT (.zip o .xlsm)", "*.zip *.xlsm"),
+                       ("Todos los archivos", "*.*")])
+        if not rutas:
+            return
+        nuevas, descartes = reune_plantillas(rutas)
+        motivos = "\n".join(f"  • {n}: {m}" for n, m in descartes[:12])
+        if len(descartes) > 12:
+            motivos += f"\n  … y {len(descartes) - 12} más"
+        if not nuevas:
+            messagebox.showerror(
+                "No hay plantillas",
+                "Entre lo que elegiste no hay ninguna plantilla .xlsm de DBNeT."
+                + (f"\n\nSe descartaron:\n{motivos}" if motivos else ""))
+            return
+
+        carpeta = BASE / emp
+        actuales = len(plantillas_de(carpeta))
+        texto = f"Se van a cargar {len(nuevas)} plantillas de DBNeT para {emp}."
+        if actuales:
+            texto += (f"\n\nReemplazan a las {actuales} que hay ahora. Esas no se "
+                      f"borran: quedan guardadas en {emp}\\plantillas_anteriores.")
+        if descartes:
+            texto += f"\n\nNo se van a cargar:\n{motivos}"
+        if not messagebox.askyesno("Cargar plantillas", texto + "\n\n¿Continuar?"):
+            return
+        try:
+            archivado = instala_plantillas(carpeta, nuevas)
+        except OSError as e:
+            messagebox.showerror("No se pudieron cargar", str(e))
+            return
+        self._cambia_eleccion()
+        final = f"Quedaron {len(nuevas)} plantillas en {emp}\\xls."
+        if archivado:
+            final += f"\n\nLas anteriores están en:\n{archivado}"
+        messagebox.showinfo("Plantillas cargadas", final)
 
     def _abre_carpeta_empresa(self):
         emp = self.empresa.get()
@@ -457,14 +582,15 @@ class Aplicacion(tk.Tk):
         if not plantillas_de(BASE / emp):
             messagebox.showwarning(
                 "Faltan las plantillas",
-                f"No hay plantillas de DBNeT en {BASE / emp / 'xls'}.\n\n"
-                "Copia ahí los archivos .xlsm que entrega DBNeT para esta empresa.")
+                f"{emp} todavía no tiene sus plantillas de DBNeT.\n\n"
+                "Usa «Cargar plantillas de DBNeT…» y elige el .zip (o los .xlsm) "
+                "que entrega DBNeT para esta empresa.")
             return
 
         self.corriendo = True
         self.resultado = None
         for b in (self.b_llenar, self.b_archivo, self.b_revisar,
-                  self.b_resultado, self.b_buscar):
+                  self.b_resultado, self.b_buscar, self.b_cargar):
             b.config(state="disabled")
         self.c_empresa.config(state="disabled")
         self.c_periodo.config(state="disabled")
@@ -685,7 +811,7 @@ class Aplicacion(tk.Tk):
         self.corriendo = False
         self.barra.stop()
         self.barra.config(mode="determinate")
-        for b in (self.b_llenar, self.b_buscar):
+        for b in (self.b_llenar, self.b_buscar, self.b_cargar):
             b.config(state="normal")
         self.c_empresa.config(state="readonly")
         self.c_periodo.config(state="readonly")

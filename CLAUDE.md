@@ -65,5 +65,7 @@ Llena las plantillas .xlsm de DBNeT directo desde Workiva, sin export manual.
 | `llenar_dbnet_desde_workiva.py` / `fusionar_cuadros.py` | Los mismos scripts del .bat; la app los corre como `XBRL_DBNeT.exe --tarea llenar|fusionar ...` |
 | `COMPILAR_XBRL.bat` | PyInstaller `--onefile --windowed` con los hidden imports de pywin32 |
 
-Estructura junto al .exe: una carpeta por empresa (`E211\xls\` con sus plantillas). Una empresa nueva
-= crear su carpeta; en Workiva aparece sola por el nombre de su planilla.
+Estructura junto al .exe: una carpeta por empresa (`E211\xls\` con sus plantillas). Las plantillas
+se cargan desde la app («Cargar plantillas de DBNeT…», .zip o .xlsm); el juego anterior pasa entero a
+`E211\plantillas_anteriores\<fecha>\`, nunca se mezcla (cambia el año en el nombre y se llenaría dos veces).
+La cantidad varía por empresa (E211: 41; E200: ~48). Una empresa nueva aparece sola por el nombre de su planilla.
