@@ -1357,12 +1357,9 @@ def cmd_llenar(args):
     ruta_rep.parent.mkdir(parents=True, exist_ok=True)
     with open(ruta_rep, "w", newline="", encoding="utf-8-sig") as fh:
         csv.writer(fh, delimiter=";").writerows(reporte)
-    # Agrupado por el tipo: hay una variante de texto por cada columna, y sin
-    # agrupar se imprimen 219 lineas de las que 211 dicen lo mismo.
-    incid = collections.Counter(str(r[7]).split(":")[0] for r in reporte[1:])
-    print(f"\nReporte: {ruta_rep}  ({len(reporte)-1} incidencias)")
-    for estado, n in incid.most_common():
-        print(f"   {n:5}  {estado}")
+    # El resumen del reporte no se imprime: a la vista confundia mas de lo que
+    # aclaraba (216 "COLUMNA SIN ORIGEN" que no son un problema). Lo que
+    # necesita una persona va a REVISAR.xlsx; el .csv queda para diagnosticar.
 
     ruta_rev = escribe_revisar(
         reporte, Path(args.revisar) if args.revisar
