@@ -1220,7 +1220,29 @@ class EnSitio:
         self.guarda.mkdir(parents=True, exist_ok=True)
         self.ficha.write_text(json.dumps(self.dejamos, indent=1), encoding="utf-8")
 
+def exige_libre(ruta):
+    """Corta con un mensaje claro si REVISAR.xlsx esta abierto en Excel.
+
+    Es el archivo que uno tiene abierto justo cuando vuelve a correr, para
+    mirarlo. Abierto, Windows no deja reemplazarlo ni borrarlo, y habia dos
+    formas de fallar: si habia avisos nuevos, un PermissionError; si no los
+    habia, peor -- el viejo no se podia borrar, quedaba ahi con los avisos
+    de la corrida anterior y el .bat decia "antes de entregar, abre esta
+    lista" apuntando a el. Se pregunta al principio, antes de hacer nada."""
+    ruta = Path(ruta)
+    if not ruta.exists():
+        return
+    try:
+        with open(ruta, "a"):
+            pass
+    except PermissionError:
+        sys.exit(f"\n  {ruta.name} esta abierto en Excel.\n"
+                 "  Cierralo y vuelve a correr: esta corrida lo reemplaza, o lo borra\n"
+                 "  si ya no queda nada que revisar.\n")
+
 def cmd_llenar(args):
+    exige_libre(Path(args.revisar) if args.revisar
+                else Path(args.reporte).with_name("REVISAR.xlsx"))
     # Busca en subcarpetas: al descomprimir la entrega de DBNeT es normal
     # terminar con xls\xls\*.xlsm porque el .zip ya trae su propia carpeta.
     plantillas = sorted(p for p in Path(args.plantillas).rglob("*.xlsm")

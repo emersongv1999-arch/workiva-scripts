@@ -1616,6 +1616,24 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
     return total, salida
 
 
+
+def exige_libre(ruta):
+    """Corta con un mensaje claro si el archivo a reemplazar esta abierto.
+
+    Cada corrida reemplaza el archivo unico de la anterior. Si esta abierto
+    en Excel, Windows no deja borrarlo ni sobrescribirlo, y el error que
+    salia era un PermissionError o un "no se pudo armar el .xlsm" que no
+    decia la causa. Se pregunta al principio, antes de hacer nada."""
+    ruta = Path(ruta)
+    if not ruta.exists():
+        return
+    try:
+        with open(ruta, "a"):
+            pass
+    except PermissionError:
+        sys.exit(f"\n  {ruta.name} esta abierto en Excel.\n"
+                 "  Cierralo y vuelve a correr: esta corrida lo reemplaza por uno nuevo.\n")
+
 def main():
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1631,6 +1649,8 @@ def main():
                         "esta maquina y 'pip install pywin32': lo arma Excel "
                         "mismo por COM, no es un archivo hecho a mano")
     args = p.parse_args()
+    salida_pedida = Path(args.salida)
+    exige_libre(salida_pedida.with_suffix(".xlsm") if args.con_macros else salida_pedida)
 
     if args.con_macros:
         try:
