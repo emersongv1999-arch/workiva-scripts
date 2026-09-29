@@ -5,14 +5,15 @@ Se elige empresa y periodo; la aplicacion descarga la planilla
 "E___ XBRL MM-AAAA" desde Workiva, simula, llena los .xlsm de DBNeT de esa
 empresa en su lugar y arma el archivo unico con los botones funcionando.
 
-Cada empresa es una carpeta junto al .exe, con sus plantillas en xls\\:
+Cada empresa es una carpeta dentro de la carpeta de trabajo (la que se
+elige arriba a la derecha y la app recuerda), con sus plantillas en xls\\:
 
-    XBRL_DBNeT.exe
-    E211\\xls\\   las plantillas .xlsm de DBNeT de E211
-    E205\\xls\\   ...
+    <carpeta de trabajo>\\
+        E211\\xls\\   las plantillas .xlsm de DBNeT de E211
+        E205\\xls\\   ...
 
-Para sumar una empresa basta con crear su carpeta y copiar ahi sus
-plantillas; en Workiva aparece sola en cuanto existe su planilla XBRL.
+Las plantillas se cargan desde la app. Una empresa aparece sola en cuanto
+existe su planilla XBRL en Workiva.
 
 El llenado y la fusion corren como procesos aparte -- el mismo .exe llamado
 con --tarea -- y su salida se lee linea a linea: la ventana sigue
@@ -93,19 +94,22 @@ def corre_tarea(nombre, args):
 if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[1] == "--tarea":
     sys.exit(corre_tarea(sys.argv[2], sys.argv[3:]))
 
+
 import tkinter as tk                                     # noqa: E402
 from tkinter import filedialog, messagebox, ttk          # noqa: E402
 
 from xbrl_workiva import ErrorWorkiva, Planilla, Workiva  # noqa: E402
 
-BASE = carpeta_base()
 TEMPORAL = Path(tempfile.gettempdir()) / "XBRL_llenado"
-CACHE = Path(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()) \
-    / "XBRL_DBNeT" / "planillas.json"
+DATOS = Path(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()) / "XBRL_DBNeT"
+CACHE = DATOS / "planillas.json"
+CONFIG = DATOS / "config.json"
+ULTIMO = "ultimo_llenado.json"
 SIN_CONSOLA = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 
 AZUL, AZUL_OSC, FONDO, BLANCO = "#0B5394", "#083D6E", "#F4F6F8", "#FFFFFF"
 VERDE, ROJO, GRIS, TENUE = "#1E7B34", "#B3261E", "#5A5A5A", "#8A94A0"
+AMBAR, AMBAR_FONDO = "#8A5A00", "#FFF4DC"
 FUENTE = "Segoe UI"
 
 # "  IAS12-Cuadros(835110)_2025.xlsm    202 celdas  (dry-run)", una por
@@ -116,9 +120,41 @@ AVANCE = re.compile(r"^\s{2}.{50}\s*\d+\s+celdas\b")
 N_PLANTILLAS = re.compile(r"^Plantillas:\s*(\d+)")
 TOTAL = re.compile(r"^Total:\s*([\d.,]+)\s+celdas\s+en\s+(\d+)\s+hojas")
 AVISOS = re.compile(r"OJO:\s*(\d+)\s+avisos")
+EMPRESA = re.compile(r"E\d+", re.IGNORECASE)
 
 PASOS = ("Descargar de Workiva", "Simular", "Llenar las plantillas",
          "Armar el archivo único")
+
+
+# ═══════════════════════════════════════════════════ carpeta de trabajo ══
+def lee_config():
+    try:
+        return json.loads(CONFIG.read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def guarda_config(datos):
+    try:
+        DATOS.mkdir(parents=True, exist_ok=True)
+        CONFIG.write_text(json.dumps(datos, indent=1), "utf-8")
+    except OSError:
+        pass
+
+
+def carpeta_de_trabajo():
+    """La carpeta con las empresas. Se recuerda entre una vez y otra, asi
+    que da lo mismo desde donde se abra el .exe: antes se buscaba junto al
+    .exe, y al moverlo las plantillas cargadas parecian perdidas."""
+    guardada = lee_config().get("carpeta")
+    if guardada and Path(guardada).is_dir():
+        return Path(guardada)
+    carpeta = carpeta_base()
+    guarda_config({**lee_config(), "carpeta": str(carpeta)})
+    return carpeta
+
+
+BASE = carpeta_de_trabajo()
 
 
 def plantillas_de(carpeta):
@@ -129,20 +165,40 @@ def plantillas_de(carpeta):
             if RESPALDO not in p.parts and not p.name.startswith("~$")]
 
 
-def reune_plantillas(rutas):
-    """Las plantillas .xlsm entre lo que eligio la persona: archivos sueltos
-    o el .zip tal como lo entrega DBNeT. Devuelve ({nombre: bytes}, descartes).
+def empresas_locales():
+    if not BASE.is_dir():
+        return []
+    return sorted(d.name.upper() for d in BASE.iterdir()
+                  if d.is_dir() and EMPRESA.fullmatch(d.name))
+
+
+# ═══════════════════════════════════════════════════ plantillas de DBNeT ══
+def reune_plantillas(origen):
+    """Las plantillas .xlsm que hay en la carpeta origen (y sus subcarpetas),
+    sueltas o dentro de un .zip como el que entrega DBNeT.
+    Devuelve ({nombre: bytes}, descartes, repetidas, ya_de_la_app).
 
     Se exige que cada una sea un .xlsm con macros: lo que DBNeT entrega. Un
     .xlsx o una copia rota se descarta con su motivo en vez de terminar en
-    xls y fallar a mitad del llenado."""
-    halladas, descartes = {}, []
+    xls y fallar a mitad del llenado. Lo que ya esta dentro de una carpeta
+    de empresa de la app (llenado, o respaldo) se salta: cargarlo de nuevo
+    mezclaria plantillas llenas con virgenes."""
+    halladas, descartes, propias = {}, [], 0
+    donde = {}                  # nombre -> [rutas], para explicar repetidas
+    repetidas = set()
+    origen = Path(origen)
+    empresas = [BASE / e for e in empresas_locales()]
 
-    def considera(nombre, leer):
-        base = nombre.replace("\\", "/").rsplit("/", 1)[-1]
+    def de_la_app(ruta):
+        r = ruta.resolve()
+        return any(r == e.resolve() or e.resolve() in r.parents for e in empresas)
+
+    def considera(nombre, leer, desde):
         partes = nombre.replace("\\", "/").split("/")
+        base = partes[-1]
         if (not base.lower().endswith(".xlsm") or base.startswith("~$")
-                or RESPALDO in partes or "__MACOSX" in partes):
+                or RESPALDO in partes or "plantillas_anteriores" in partes
+                or "__MACOSX" in partes):
             return
         try:
             contenido = leer()
@@ -155,23 +211,36 @@ def reune_plantillas(rutas):
             descartes.append((base, "no es un libro de Excel"))
         elif "xl/vbaProject.bin" not in nombres:
             descartes.append((base, "no trae las macros de DBNeT"))
-        elif base in halladas and halladas[base] != contenido:
-            descartes.append((base, "viene dos veces, con contenido distinto"))
         else:
-            halladas[base] = contenido
+            donde.setdefault(base, []).append(desde)
+            if base in halladas and halladas[base] != contenido:
+                # Dos archivos con el mismo nombre y distinto contenido: uno
+                # puede ser una copia ya llenada. Elegir cualquiera seria
+                # adivinar, asi que no se carga nada hasta que se aclare.
+                repetidas.add(base)
+            halladas.setdefault(base, contenido)
 
-    for ruta in map(Path, rutas):
+    archivos = [origen] if origen.is_file() else sorted(
+        p for p in origen.rglob("*")
+        if p.is_file() and p.suffix.lower() in (".xlsm", ".zip"))
+    for ruta in archivos:
+        if de_la_app(ruta):
+            propias += 1
+            continue
+        relativa = str(ruta.relative_to(origen)) if origen.is_dir() else ruta.name
         if ruta.suffix.lower() == ".zip":
             try:
                 with zipfile.ZipFile(ruta) as z:
                     for info in z.infolist():
                         if not info.is_dir():
-                            considera(info.filename, lambda i=info, z=z: z.read(i))
+                            considera(info.filename, lambda i=info, z=z: z.read(i),
+                                      f"{ruta.name} → {info.filename}")
             except (OSError, zipfile.BadZipFile) as e:
                 descartes.append((ruta.name, f"no se pudo abrir el .zip ({e})"))
         else:
-            considera(ruta.name, ruta.read_bytes)
-    return halladas, descartes
+            considera(relativa, ruta.read_bytes, relativa)
+    repetidas = {n: donde[n] for n in sorted(repetidas)}
+    return halladas, descartes, repetidas, propias
 
 
 def instala_plantillas(carpeta, plantillas):
@@ -192,7 +261,7 @@ def instala_plantillas(carpeta, plantillas):
         except OSError as e:
             archivado.rmdir()
             raise PermissionError(
-                f"No se pudo apartar las plantillas actuales de {carpeta.name}\\xls: "
+                f"No se pudo apartar las plantillas actuales de {carpeta.name}: "
                 "seguramente hay alguna abierta en Excel. Cierra Excel y vuelve "
                 f"a intentar.\n\nDetalle: {e}") from e
     xls.mkdir(parents=True)
@@ -201,18 +270,25 @@ def instala_plantillas(carpeta, plantillas):
     # Las macros de cada plantilla escriben sus CSV en la carpeta csv que
     # esta al lado de xls, y no la crean.
     (carpeta / "csv").mkdir(exist_ok=True)
+    # Las plantillas nuevas estan virgenes: lo que decia el ultimo llenado
+    # ya no es cierto.
+    (carpeta / ULTIMO).unlink(missing_ok=True)
     return archivado
 
 
-def empresas_locales():
-    if not BASE.is_dir():
-        return []
-    return sorted(d.name.upper() for d in BASE.iterdir()
-                  if d.is_dir() and re.fullmatch(r"E\d+", d.name, re.IGNORECASE))
+def lee_ultimo(carpeta):
+    try:
+        return json.loads((carpeta / ULTIMO).read_text("utf-8"))
+    except (OSError, ValueError):
+        return None
 
 
 def miles(n):
     return f"{n:,}".replace(",", ".")
+
+
+def plural(n, uno, varios):
+    return f"{n} {uno if n == 1 else varios}"
 
 
 def abre(ruta):
@@ -222,6 +298,15 @@ def abre(ruta):
         subprocess.Popen(["xdg-open", str(ruta)])
 
 
+def muestra_en_carpeta(ruta):
+    """Abre la carpeta con el archivo ya seleccionado."""
+    if os.name == "nt":
+        subprocess.Popen(["explorer", "/select,", str(ruta)])
+    else:
+        abre(Path(ruta).parent)
+
+
+# ═══════════════════════════════════════════════════════════ ventana ══
 class Aplicacion(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -229,27 +314,30 @@ class Aplicacion(tk.Tk):
         self.configure(bg=FONDO)
         # Los notebooks de CGE van con la pantalla al 125-150%: el tamano se
         # escala con eso y se limita a la pantalla, o la ventana no cabe.
-        escala = max(1.0, self.winfo_fpixels("1i") / 96)
+        self.escala = escala = max(1.0, self.winfo_fpixels("1i") / 96)
         ancho = min(int(1000 * escala), int(self.winfo_screenwidth() * 0.95))
-        alto = min(int(700 * escala), int(self.winfo_screenheight() * 0.88))
+        alto = min(int(720 * escala), int(self.winfo_screenheight() * 0.88))
         self.geometry(f"{ancho}x{alto}")
-        self.minsize(min(ancho, int(820 * escala)), min(alto, int(560 * escala)))
+        self.minsize(min(ancho, int(820 * escala)), min(alto, int(580 * escala)))
 
         self.empresa = tk.StringVar()
         self.periodo = tk.StringVar()
         self.info_workiva = tk.StringVar()
         self.info_plantillas = tk.StringVar()
+        self.info_carpeta = tk.StringVar()
         self.estado = tk.StringVar()
         self.planillas = self._lee_cache()
         self.cola = queue.Queue()
+        self.confirmacion = queue.Queue()
         self.corriendo = False
         self.buscando = False
-        self.resultado = None
         self.hechos = self.total = self.paso = 0
-        self.confirmacion = queue.Queue()
+        self.registro = []          # todo lo que imprimieron los scripts
+        self.ventana_log = None
 
         self._estilos()
         self._construye()
+        self._refresca_carpeta()
         self._refresca_empresas()
         self._busca_planillas()
         self.after(80, self._drena)
@@ -262,161 +350,151 @@ class Aplicacion(tk.Tk):
         except tk.TclError:
             pass
         s.configure("TCombobox", padding=5)
-        s.configure("Treeview", rowheight=26, font=(FUENTE, 9))
+        s.configure("Treeview", rowheight=int(24 * self.escala), font=(FUENTE, 9))
         s.configure("Treeview.Heading", font=(FUENTE, 9, "bold"))
-        s.configure("TNotebook.Tab", padding=(14, 5), font=(FUENTE, 9))
         s.configure("Horizontal.TProgressbar", thickness=8)
 
     def _construye(self):
-        cab = tk.Frame(self, bg=AZUL, padx=24, pady=16)
+        cab = tk.Frame(self, bg=AZUL, padx=24, pady=10)
         cab.pack(fill="x")
-        tk.Label(cab, text="XBRL DBNeT", bg=AZUL, fg=BLANCO,
+        izq = tk.Frame(cab, bg=AZUL)
+        izq.pack(side="left", fill="x", expand=True)
+        tk.Label(izq, text="XBRL DBNeT", bg=AZUL, fg=BLANCO,
                  font=(FUENTE, 18, "bold")).pack(anchor="w")
-        tk.Label(cab, text="Llena las plantillas de DBNeT directo desde Workiva",
+        tk.Label(izq, text="Llena las plantillas de DBNeT directo desde Workiva",
                  bg=AZUL, fg="#CFE0F0", font=(FUENTE, 10)).pack(anchor="w")
+        der = tk.Frame(cab, bg=AZUL)
+        der.pack(side="right", anchor="s")
+        tk.Label(der, text="Carpeta de trabajo", bg=AZUL, fg="#CFE0F0",
+                 font=(FUENTE, 8)).pack(anchor="e")
+        fila = tk.Frame(der, bg=AZUL)
+        fila.pack(anchor="e")
+        tk.Label(fila, textvariable=self.info_carpeta, bg=AZUL, fg=BLANCO,
+                 font=(FUENTE, 9)).pack(side="left")
+        self.b_cambia_carpeta = self._enlace(fila, "Cambiar", self._cambia_carpeta,
+                                             bg=AZUL, fg="#CFE0F0")
+        self.b_cambia_carpeta.pack(side="left", padx=(8, 0))
 
-        cuerpo = tk.Frame(self, bg=FONDO, padx=24, pady=18)
+        cuerpo = tk.Frame(self, bg=FONDO, padx=24, pady=14)
         cuerpo.pack(fill="both", expand=True)
         cuerpo.columnconfigure(0, weight=1)
-        cuerpo.rowconfigure(3, weight=1)
+        cuerpo.rowconfigure(1, weight=1)
 
-        # ---- 1. que llenar
+        # ---- que llenar, el boton y el avance, en un solo bloque: separados
+        # le quitaban al resultado el espacio para mostrar los avisos.
         tarjeta = self._tarjeta(cuerpo, 0)
         fila = tk.Frame(tarjeta, bg=BLANCO)
         fila.pack(fill="x")
+        self.b_llenar = tk.Button(fila, text="Llenar", command=self.llenar,
+                                  bg=VERDE, fg=BLANCO, activebackground=VERDE,
+                                  activeforeground=BLANCO, relief="flat", bd=0,
+                                  padx=34, pady=7, cursor="hand2",
+                                  font=(FUENTE, 11, "bold"))
+        self.b_llenar.pack(side="right")
         self._etiqueta(fila, "Empresa").pack(side="left")
         self.c_empresa = ttk.Combobox(fila, textvariable=self.empresa, width=10,
                                       state="readonly", font=(FUENTE, 11))
-        self.c_empresa.pack(side="left", padx=(8, 28))
+        self.c_empresa.pack(side="left", padx=(8, 24))
         self.c_empresa.bind("<<ComboboxSelected>>", lambda e: self._cambia_eleccion())
         self._etiqueta(fila, "Período").pack(side="left")
         self.c_periodo = ttk.Combobox(fila, textvariable=self.periodo, width=10,
                                       state="readonly", font=(FUENTE, 11))
-        self.c_periodo.pack(side="left", padx=(8, 28))
+        self.c_periodo.pack(side="left", padx=(8, 20))
         self.c_periodo.bind("<<ComboboxSelected>>", lambda e: self._cambia_eleccion())
-        self.b_buscar = tk.Button(fila, text="↻  Buscar en Workiva",
-                                  command=self._busca_planillas, bg=BLANCO,
-                                  fg=AZUL, relief="flat", bd=0, cursor="hand2",
-                                  font=(FUENTE, 9, "underline"),
-                                  activebackground=BLANCO)
+        self.b_buscar = self._enlace(fila, "↻  Buscar en Workiva", self._busca_planillas)
         self.b_buscar.pack(side="left")
 
         self.l_workiva = tk.Label(tarjeta, textvariable=self.info_workiva,
                                   bg=BLANCO, fg=GRIS, font=(FUENTE, 9), anchor="w")
-        self.l_workiva.pack(fill="x", pady=(12, 0))
+        self.l_workiva.pack(fill="x", pady=(10, 0))
         fila_pl = tk.Frame(tarjeta, bg=BLANCO)
         fila_pl.pack(fill="x", pady=(2, 0))
         self.l_plantillas = tk.Label(fila_pl, textvariable=self.info_plantillas,
                                      bg=BLANCO, fg=GRIS, font=(FUENTE, 9), anchor="w")
         self.l_plantillas.pack(side="left")
-        self.b_cargar = tk.Button(fila_pl, text="Cargar plantillas de DBNeT…",
-                                  command=self._carga_plantillas, bg=BLANCO,
-                                  fg=AZUL, relief="flat", bd=0, cursor="hand2",
-                                  font=(FUENTE, 9, "underline"),
-                                  activebackground=BLANCO)
-        self.b_carpeta = tk.Button(fila_pl, text="Abrir carpeta",
-                                   command=self._abre_carpeta_empresa, bg=BLANCO,
-                                   fg=AZUL, relief="flat", bd=0, cursor="hand2",
-                                   font=(FUENTE, 9, "underline"),
-                                   activebackground=BLANCO)
+        self.b_cargar = self._enlace(fila_pl, "Cargar plantillas de DBNeT…",
+                                     self._carga_plantillas)
+        self.b_ver_plantillas = self._enlace(fila_pl, "Ver plantillas",
+                                             self._abre_plantillas)
 
-        # ---- 2. llenar y avance
-        tarjeta = self._tarjeta(cuerpo, 1)
-        arriba = tk.Frame(tarjeta, bg=BLANCO)
-        arriba.pack(fill="x")
-        self.b_llenar = tk.Button(arriba, text="Llenar", command=self.llenar,
-                                  bg=VERDE, fg=BLANCO, activebackground=VERDE,
-                                  activeforeground=BLANCO, relief="flat", bd=0,
-                                  padx=34, pady=10, cursor="hand2",
-                                  font=(FUENTE, 11, "bold"))
-        self.b_llenar.pack(side="left")
-        pasos = tk.Frame(arriba, bg=BLANCO)
-        pasos.pack(side="left", padx=(28, 0))
+        tk.Frame(tarjeta, bg="#E6EAF0", height=1).pack(fill="x", pady=(12, 10))
+        avance = tk.Frame(tarjeta, bg=BLANCO)
+        avance.pack(fill="x")
         self.l_pasos = []
-        for i, texto in enumerate(PASOS):
-            marca = tk.Label(pasos, text="○", bg=BLANCO, fg=TENUE,
+        for texto in PASOS:
+            marca = tk.Label(avance, text="○", bg=BLANCO, fg=TENUE,
                              font=(FUENTE, 11), width=2)
-            marca.grid(row=0, column=2 * i)
-            nombre = tk.Label(pasos, text=texto, bg=BLANCO, fg=TENUE,
+            marca.pack(side="left")
+            nombre = tk.Label(avance, text=texto, bg=BLANCO, fg=TENUE,
                               font=(FUENTE, 9))
-            nombre.grid(row=0, column=2 * i + 1, padx=(0, 14))
+            nombre.pack(side="left", padx=(0, 14))
             self.l_pasos.append((marca, nombre))
+        self.b_log = self._enlace(avance, "Ver detalle técnico", self._muestra_log,
+                                  fg=TENUE)
+        self.b_log.pack(side="right")
         self.barra = ttk.Progressbar(tarjeta, mode="determinate", maximum=100)
-        self.barra.pack(fill="x", pady=(14, 4))
+        self.barra.pack(fill="x", pady=(8, 2))
         tk.Label(tarjeta, textvariable=self.estado, bg=BLANCO, fg="#333",
                  font=(FUENTE, 9), anchor="w").pack(fill="x")
 
-        # ---- 3. resultado
-        acciones = tk.Frame(cuerpo, bg=FONDO)
-        acciones.grid(row=2, column=0, sticky="ew", pady=(14, 6))
-        self.b_archivo = self._boton_sec(acciones, "Abrir archivo único",
-                                         lambda: self._abre_resultado("archivo"))
-        self.b_revisar = self._boton_sec(acciones, "Abrir REVISAR",
-                                         lambda: self._abre_resultado("revisar"))
-        self.b_resultado = self._boton_sec(acciones, "Abrir carpeta",
-                                           lambda: self._abre_resultado("carpeta"))
-        for b in (self.b_archivo, self.b_revisar, self.b_resultado):
-            b.config(state="disabled")
+        # ---- resultado: se arma de nuevo cada vez que cambia
+        self.t_resultado = self._tarjeta(cuerpo, 1, "Resultado", estira=True)
+        self.resultado = tk.Frame(self.t_resultado, bg=BLANCO)
+        self.resultado.pack(fill="both", expand=True)
+        self.resultado.bind("<Configure>", self._ajusta_textos)
 
-        pestanas = ttk.Notebook(cuerpo)
-        pestanas.grid(row=3, column=0, sticky="nsew")
-        self.pestanas = pestanas
-
-        # Arriba la lista de avisos; abajo, el aviso elegido entero. Los
-        # textos de REVISAR son de dos o tres lineas y en una columna de
-        # tabla quedaban cortados a la mitad.
-        marco = tk.Frame(pestanas, bg=BLANCO)
-        pestanas.add(marco, text="Por revisar")
-        lista = tk.Frame(marco, bg=BLANCO)
-        cols = ("hoja", "donde", "casos")
-        self.tabla = ttk.Treeview(lista, columns=cols, show="headings", height=5)
-        for c, txt, ancho, estira in zip(cols, ("Hoja", "Dónde mirar", "Casos"),
-                                         (220, 600, 60), (False, True, False)):
-            self.tabla.heading(c, text=txt, anchor="w")
-            self.tabla.column(c, width=ancho, anchor="w", stretch=estira)
-        barra_t = ttk.Scrollbar(lista, orient="vertical", command=self.tabla.yview)
-        self.tabla.configure(yscrollcommand=barra_t.set)
-        self.tabla.pack(side="left", fill="both", expand=True)
-        barra_t.pack(side="right", fill="y")
-        self.tabla.bind("<<TreeviewSelect>>", self._muestra_aviso)
-        self.avisos = {}
-        self.detalle = tk.Text(marco, height=7, bg="#FBFBF8", fg="#222", bd=0,
-                               wrap="word", padx=12, pady=10, font=(FUENTE, 9),
-                               highlightbackground="#DDE3EA", highlightthickness=1)
-        self.detalle.pack(side="bottom", fill="x")
-        lista.pack(fill="both", expand=True)
-        self.detalle.tag_config("titulo", font=(FUENTE, 9, "bold"), foreground=AZUL_OSC)
-        self.detalle.tag_config("vacio", foreground=TENUE)
-        self._pon_detalle([])
-
-        marco = tk.Frame(pestanas, bg=BLANCO)
-        pestanas.add(marco, text="Detalle")
-        self.log = tk.Text(marco, bg="#1E1E1E", fg="#D4D4D4", bd=0,
-                           font=("Consolas", 9), wrap="none", padx=10, pady=8)
-        barra_l = ttk.Scrollbar(marco, orient="vertical", command=self.log.yview)
-        self.log.configure(yscrollcommand=barra_l.set, state="disabled")
-        self.log.pack(side="left", fill="both", expand=True)
-        barra_l.pack(side="right", fill="y")
-        self.log.tag_config("err", foreground="#F48771")
-        self.log.tag_config("ok", foreground="#7BD88F")
-        self.log.tag_config("paso", foreground="#9CDCFE")
-
-    def _tarjeta(self, padre, fila):
-        marco = tk.Frame(padre, bg=BLANCO, padx=18, pady=14,
+    def _tarjeta(self, padre, fila, titulo=None, estira=False):
+        marco = tk.Frame(padre, bg=BLANCO, padx=18, pady=12,
                          highlightbackground="#DDE3EA", highlightthickness=1)
-        marco.grid(row=fila, column=0, sticky="ew", pady=(0, 12))
+        marco.grid(row=fila, column=0, sticky="nsew" if estira else "ew",
+                   pady=(0, 12))
+        if titulo:
+            tk.Label(marco, text=titulo.upper(), bg=BLANCO, fg=TENUE,
+                     font=(FUENTE, 8, "bold")).pack(anchor="w", pady=(0, 6))
         return marco
 
     def _etiqueta(self, padre, texto):
         return tk.Label(padre, text=texto, bg=BLANCO, fg="#222",
                         font=(FUENTE, 10, "bold"))
 
-    def _boton_sec(self, padre, texto, accion):
-        b = tk.Button(padre, text=texto, command=accion, bg=BLANCO, fg=AZUL_OSC,
-                      activebackground="#E8EEF5", relief="solid", bd=1,
-                      padx=14, pady=5, cursor="hand2", font=(FUENTE, 9))
-        b.pack(side="left", padx=(0, 8))
+    def _enlace(self, padre, texto, accion, bg=BLANCO, fg=AZUL):
+        return tk.Button(padre, text=texto, command=accion, bg=bg, fg=fg,
+                         activebackground=bg, activeforeground=fg,
+                         relief="flat", bd=0, cursor="hand2", padx=2,
+                         font=(FUENTE, 9, "underline"))
+
+    def _boton(self, padre, texto, accion, principal=False):
+        color = AZUL if principal else BLANCO
+        b = tk.Button(padre, text=texto, command=accion,
+                      bg=color, fg=BLANCO if principal else AZUL_OSC,
+                      activebackground=AZUL_OSC if principal else "#E8EEF5",
+                      activeforeground=BLANCO if principal else AZUL_OSC,
+                      relief="flat" if principal else "solid", bd=0 if principal else 1,
+                      padx=16, pady=6, cursor="hand2",
+                      font=(FUENTE, 9, "bold" if principal else "normal"))
         return b
+
+    # ----------------------------------------------------- carpeta de trabajo
+    def _refresca_carpeta(self):
+        texto = str(BASE)
+        if len(texto) > 60:
+            texto = "…" + texto[-58:]
+        self.info_carpeta.set(texto)
+
+    def _cambia_carpeta(self):
+        global BASE
+        if self.corriendo:
+            return
+        elegida = filedialog.askdirectory(
+            parent=self, initialdir=str(BASE),
+            title="Carpeta de trabajo: donde van (o están) las carpetas de cada empresa")
+        if not elegida:
+            return
+        BASE = Path(elegida)
+        guarda_config({**lee_config(), "carpeta": str(BASE)})
+        self._refresca_carpeta()
+        self._refresca_empresas()
+        self._cambia_eleccion()
 
     # -------------------------------------------------- empresas y periodos
     def _lee_cache(self):
@@ -427,7 +505,7 @@ class Aplicacion(tk.Tk):
 
     def _guarda_cache(self):
         try:
-            CACHE.parent.mkdir(parents=True, exist_ok=True)
+            DATOS.mkdir(parents=True, exist_ok=True)
             CACHE.write_text(json.dumps([p.__dict__ for p in self.planillas]), "utf-8")
         except OSError:
             pass
@@ -436,10 +514,12 @@ class Aplicacion(tk.Tk):
         todas = sorted(set(empresas_locales()) | {p.empresa for p in self.planillas})
         self.c_empresa["values"] = todas
         if self.empresa.get() not in todas:
-            # Por omision la primera que tenga plantillas: es la que se usa.
+            # Por omision la ultima que se uso, o la primera con plantillas.
+            ultima = lee_config().get("empresa")
             con_plantillas = [e for e in todas if plantillas_de(BASE / e)]
-            self.empresa.set((con_plantillas or todas or [""])[0])
-        self._refresca_periodos()
+            self.empresa.set(ultima if ultima in todas
+                             else (con_plantillas or todas or [""])[0])
+        self._cambia_eleccion()
 
     def _refresca_periodos(self):
         propias = [p for p in self.planillas if p.empresa == self.empresa.get()]
@@ -447,22 +527,29 @@ class Aplicacion(tk.Tk):
         valores = [p.periodo for p in propias]
         self.c_periodo["values"] = valores
         if self.periodo.get() not in valores:
-            self.periodo.set(valores[0] if valores else "")
+            # El ultimo que se eligio para esta empresa; si no, el mas nuevo.
+            recordado = lee_config().get("periodos", {}).get(self.empresa.get())
+            self.periodo.set(recordado if recordado in valores
+                             else (valores[0] if valores else ""))
         self._refresca_info()
 
     def _cambia_eleccion(self):
-        """Otra empresa o periodo: lo que muestra la ventana ya no es de esto."""
+        """Otra empresa o periodo: se muestra lo que hay en disco para eso."""
         self._refresca_periodos()
-        self.resultado = None
-        for b in (self.b_archivo, self.b_revisar, self.b_resultado):
-            b.config(state="disabled")
-        self.tabla.delete(*self.tabla.get_children())
-        self.avisos = {}
-        self._pon_detalle([])
+        if self.corriendo:
+            return
         for i in range(len(PASOS)):
             self._marca_paso(i, "pendiente")
         self.barra["value"] = 0
         self.estado.set("")
+        if self.empresa.get():
+            config = lee_config()
+            periodos = {**config.get("periodos", {})}
+            if self.periodo.get():
+                periodos[self.empresa.get()] = self.periodo.get()
+            guarda_config({**config, "empresa": self.empresa.get(),
+                           "periodos": periodos})
+        self._muestra_guardado()
 
     def _planilla(self):
         return next((p for p in self.planillas if p.empresa == self.empresa.get()
@@ -486,72 +573,90 @@ class Aplicacion(tk.Tk):
             self.info_workiva.set("")
 
         self.b_cargar.pack_forget()
-        self.b_carpeta.pack_forget()
+        self.b_ver_plantillas.pack_forget()
         if not emp:
             self.info_plantillas.set("")
             return
         n = len(plantillas_de(BASE / emp))
         if n:
-            self.info_plantillas.set(f"Plantillas de DBNeT: {n} archivos en {emp}\\xls")
+            self.info_plantillas.set(f"Plantillas de DBNeT de {emp}: {n} cargadas")
             self.l_plantillas.config(fg=GRIS)
-            self.b_cargar.config(text="Cambiar plantillas…")
+            self.b_cargar.config(text="Cambiar por otras…")
         else:
-            self.info_plantillas.set(f"Faltan las plantillas de DBNeT de {emp}.")
+            self.info_plantillas.set(f"Plantillas de DBNeT de {emp}: todavía no se cargan")
             self.l_plantillas.config(fg=ROJO)
             self.b_cargar.config(text="Cargar plantillas de DBNeT…")
-        self.b_cargar.pack(side="left", padx=(8, 0))
+        self.b_cargar.pack(side="left", padx=(10, 0))
         if n:
-            self.b_carpeta.pack(side="left", padx=(8, 0))
+            self.b_ver_plantillas.pack(side="left", padx=(10, 0))
 
     def _carga_plantillas(self):
         emp = self.empresa.get()
         if not emp or self.corriendo:
             return
-        rutas = filedialog.askopenfilenames(
-            parent=self, title=f"Plantillas de DBNeT de {emp}: elige el .zip o los .xlsm",
-            filetypes=[("Plantillas de DBNeT (.zip o .xlsm)", "*.zip *.xlsm"),
-                       ("Todos los archivos", "*.*")])
-        if not rutas:
+        origen = filedialog.askdirectory(
+            parent=self, mustexist=True,
+            title=f"Elige la CARPETA con las plantillas de DBNeT de {emp} "
+                  "(.xlsm sueltos o el .zip de DBNeT)")
+        if not origen:
             return
-        nuevas, descartes = reune_plantillas(rutas)
+        self.config(cursor="watch")
+        self.update_idletasks()
+        try:
+            nuevas, descartes, repetidas, propias = reune_plantillas(origen)
+        finally:
+            self.config(cursor="")
+        if repetidas:
+            lista = "\n".join(f"  • {n}\n      en: " + "\n      y en: ".join(r[:3])
+                              for n, r in list(repetidas.items())[:5])
+            if len(repetidas) > 5:
+                lista += f"\n  … y {len(repetidas) - 5} más"
+            messagebox.showerror(
+                "Plantillas repetidas",
+                f"En esa carpeta hay {plural(len(repetidas), 'plantilla', 'plantillas')} "
+                "con el mismo nombre en más de un lugar, y no son iguales (una "
+                "puede estar ya llenada):\n\n" + lista +
+                "\n\nNo se cargó nada. Elige la carpeta que tiene solo las "
+                "plantillas que entregó DBNeT.", parent=self)
+            return
         motivos = "\n".join(f"  • {n}: {m}" for n, m in descartes[:12])
         if len(descartes) > 12:
             motivos += f"\n  … y {len(descartes) - 12} más"
         if not nuevas:
-            messagebox.showerror(
-                "No hay plantillas",
-                "Entre lo que elegiste no hay ninguna plantilla .xlsm de DBNeT."
-                + (f"\n\nSe descartaron:\n{motivos}" if motivos else ""))
+            texto = f"En {origen} no hay plantillas .xlsm de DBNeT."
+            if propias:
+                texto = ("Esa carpeta es de la propia app: ahí están las plantillas "
+                         "ya cargadas (o llenadas). Elige la carpeta donde dejaste "
+                         "las plantillas que entregó DBNeT.")
+            if motivos:
+                texto += f"\n\nSe descartaron:\n{motivos}"
+            messagebox.showerror("No hay plantillas", texto, parent=self)
             return
 
         carpeta = BASE / emp
         actuales = len(plantillas_de(carpeta))
-        texto = f"Se van a cargar {len(nuevas)} plantillas de DBNeT para {emp}."
+        texto = f"Se encontraron {len(nuevas)} plantillas de DBNeT para {emp}."
         if actuales:
-            texto += (f"\n\nReemplazan a las {actuales} que hay ahora. Esas no se "
-                      f"borran: quedan guardadas en {emp}\\plantillas_anteriores.")
+            texto += (f"\n\nReemplazan a las {actuales} que tiene ahora. Esas no se "
+                      "borran: quedan guardadas aparte, en la carpeta "
+                      f"{emp}\\plantillas_anteriores.")
         if descartes:
             texto += f"\n\nNo se van a cargar:\n{motivos}"
-        if not messagebox.askyesno("Cargar plantillas", texto + "\n\n¿Continuar?"):
+        if not messagebox.askyesno("Cargar plantillas", texto + "\n\n¿Cargarlas?",
+                                   parent=self):
             return
         try:
-            archivado = instala_plantillas(carpeta, nuevas)
+            instala_plantillas(carpeta, nuevas)
         except OSError as e:
-            messagebox.showerror("No se pudieron cargar", str(e))
+            messagebox.showerror("No se pudieron cargar", str(e), parent=self)
             return
         self._cambia_eleccion()
-        final = f"Quedaron {len(nuevas)} plantillas en {emp}\\xls."
-        if archivado:
-            final += f"\n\nLas anteriores están en:\n{archivado}"
-        messagebox.showinfo("Plantillas cargadas", final)
+        self.estado.set(f"Listo: {emp} tiene {len(nuevas)} plantillas de DBNeT cargadas.")
 
-    def _abre_carpeta_empresa(self):
+    def _abre_plantillas(self):
         emp = self.empresa.get()
-        if not emp:
-            return
-        xls = BASE / emp / "xls"
-        xls.mkdir(parents=True, exist_ok=True)
-        abre(xls)
+        if emp and (BASE / emp / "xls").is_dir():
+            abre(BASE / emp / "xls")
 
     def _busca_planillas(self):
         if self.buscando:
@@ -570,6 +675,144 @@ class Aplicacion(tk.Tk):
 
         threading.Thread(target=trabajo, daemon=True).start()
 
+    # ------------------------------------------------------------ resultado
+    def _limpia_resultado(self):
+        for w in self.resultado.winfo_children():
+            w.destroy()
+
+    def _ajusta_textos(self, evento=None):
+        """Los textos se cortan al ancho que tenga la ventana, no a uno fijo."""
+        ancho = max(200, self.resultado.winfo_width() - 10)
+        for w in self.resultado.winfo_children():
+            if isinstance(w, tk.Label):
+                w.config(wraplength=ancho)
+
+    def _texto(self, texto, color="#222", peso="normal", tam=10, **pack):
+        l = tk.Label(self.resultado, text=texto, bg=BLANCO, fg=color, justify="left",
+                     anchor="w", font=(FUENTE, tam, peso),
+                     wraplength=max(200, self.resultado.winfo_width() - 10))
+        l.pack(fill="x", **({"pady": (0, 4)} | pack))
+        return l
+
+    def _muestra_guardado(self):
+        """Lo que quedo en disco del ultimo llenado de esta empresa."""
+        self._limpia_resultado()
+        emp, p = self.empresa.get(), self._planilla()
+        if not emp:
+            return
+        ultimo = lee_ultimo(BASE / emp)
+        if ultimo and p and ultimo.get("planilla") == p.nombre:
+            archivo = BASE / emp / ultimo.get("archivo", "")
+            if archivo.is_file():
+                return self._muestra_listo(emp, ultimo, archivo, guardado=True)
+        nombre = p.nombre if p else f"{emp} {self.periodo.get()}".strip()
+        self._texto(f"Todavía no se ha llenado «{nombre}».", GRIS, tam=10)
+        if ultimo:
+            self._texto(f"Las plantillas de {emp} tienen hoy los datos de "
+                        f"«{ultimo.get('planilla')}» (llenadas el "
+                        f"{ultimo.get('cuando', '?')}). Al llenar este período se "
+                        "reemplazan.", TENUE, tam=9)
+
+    def _muestra_listo(self, emp, ultimo, archivo, guardado=False):
+        self._limpia_resultado()
+        celdas, avisos = ultimo.get("celdas"), ultimo.get("avisos", 0)
+        n = ultimo.get("plantillas")
+        titulo = f"✔  «{ultimo['planilla']}» está llenado"
+        if celdas is not None:
+            titulo += f": {miles(celdas)} celdas"
+            if n:
+                titulo += f" en {n} plantillas"
+        if guardado:
+            titulo += f"  ·  el {ultimo.get('cuando', '?')}"
+        self._texto(titulo, VERDE, "bold", 11)
+
+        # El archivo que sirve para DBNeT, con lo que hay que hacer con el
+        caja = tk.Frame(self.resultado, bg="#F2F7FC", padx=14, pady=10,
+                        highlightbackground="#D5E3F1", highlightthickness=1)
+        caja.pack(fill="x", pady=(6, 10))
+        linea = tk.Frame(caja, bg="#F2F7FC")
+        linea.pack(fill="x")
+        # Los botones se empacan antes que el nombre: si la ventana es angosta
+        # se recorta el nombre, no los botones.
+        self._enlace(linea, "Mostrarlo en su carpeta", lambda: muestra_en_carpeta(archivo),
+                     bg="#F2F7FC").pack(side="right", padx=(10, 0))
+        self._boton(linea, "Abrir archivo", lambda: abre(archivo),
+                    principal=True).pack(side="right")
+        tk.Label(linea, text=f"Archivo para DBNeT:  {archivo.name}", bg="#F2F7FC",
+                 fg="#222", font=(FUENTE, 10, "bold"), anchor="w").pack(
+                     side="left", fill="x")
+        if archivo.suffix.lower() == ".xlsm":
+            ayuda = ("Ábrelo y usa su botón para generar los CSV que se suben a "
+                     "DBNeT. Trae todos los cuadros juntos.")
+        else:
+            ayuda = ("Sin macros: en este computador no se pudo usar Excel para "
+                     f"armarlo. Los CSV se pueden generar desde cada plantilla de "
+                     f"{emp}, que sí quedaron llenas y con sus botones.")
+        ayuda_l = tk.Label(caja, text=ayuda, bg="#F2F7FC", fg=GRIS, font=(FUENTE, 9),
+                           anchor="w", justify="left")
+        ayuda_l.pack(fill="x", pady=(4, 0))
+        caja.bind("<Configure>", lambda e: ayuda_l.config(
+            wraplength=max(200, e.width - 40)))
+
+        # Lo que hay que revisar antes de entregar
+        revisar = BASE / emp / "REVISAR.xlsx"
+        if not avisos or not revisar.exists():
+            self._texto("✔  Nada que revisar: todo calzó sin suponer nada.", VERDE)
+            return
+        fila = tk.Frame(self.resultado, bg=BLANCO)
+        fila.pack(fill="x", pady=(2, 4))
+        tk.Label(fila, text=f"⚠  Antes de entregar, revisa "
+                            f"{plural(avisos, 'aviso', 'avisos')}:",
+                 bg=BLANCO, fg=AMBAR, font=(FUENTE, 10, "bold")).pack(side="left")
+        self._enlace(fila, "Abrir REVISAR.xlsx", lambda: abre(revisar)).pack(
+            side="left", padx=(10, 0))
+        self._lista_avisos(revisar)
+
+    def _lista_avisos(self, ruta):
+        """Cada aviso completo, uno bajo otro, con barra si no caben. En una
+        tabla los textos quedaban cortados y habia que elegir fila por fila."""
+        marco = tk.Frame(self.resultado, bg=BLANCO)
+        marco.pack(fill="both", expand=True)
+        texto = tk.Text(marco, bg=AMBAR_FONDO, fg="#222", bd=0, wrap="word",
+                        padx=14, pady=10, font=(FUENTE, 9), height=4,
+                        spacing1=1, spacing3=1, cursor="arrow")
+        barra = ttk.Scrollbar(marco, orient="vertical", command=texto.yview)
+        texto.configure(yscrollcommand=barra.set)
+        barra.pack(side="right", fill="y")
+        texto.pack(side="left", fill="both", expand=True)
+        texto.tag_config("cuadro", font=(FUENTE, 10, "bold"), foreground=AMBAR,
+                         spacing1=6)
+        texto.tag_config("titulo", font=(FUENTE, 9, "bold"))
+        try:
+            from openpyxl import load_workbook
+            libro = load_workbook(ruta, read_only=True)
+            n = 0
+            for i, fila in enumerate(libro.active.iter_rows(values_only=True)):
+                if not i or not any(fila):
+                    continue
+                hoja, donde, paso, mirar = ([v if v is not None else ""
+                                             for v in fila] + [""] * 4)[:4]
+                n += 1
+                if n > 1:
+                    texto.insert("end", "\n")
+                texto.insert("end", f"{n}.  {hoja}\n", "cuadro")
+                for titulo, valor in (("Dónde mirar", donde), ("Qué pasó", paso),
+                                      ("Qué hay que revisar", mirar)):
+                    if valor:
+                        texto.insert("end", f"{titulo}: ", "titulo")
+                        texto.insert("end", f"{valor}\n")
+            libro.close()
+        except Exception as e:                           # noqa: BLE001
+            texto.insert("end", f"No se pudo leer {ruta.name}: {e}")
+        texto.config(state="disabled")
+
+    def _muestra_error(self, paso, texto):
+        self._limpia_resultado()
+        self._texto(f"✖  No se pudo terminar: {PASOS[paso]}", ROJO, "bold", 11)
+        self._texto(texto, "#222", tam=9)
+        self._texto("Nada quedó a medias: al volver a llenar se parte otra vez "
+                    "de las plantillas originales de DBNeT.", TENUE, tam=9)
+
     # ------------------------------------------------------------ llenado
     def llenar(self):
         if self.corriendo:
@@ -577,28 +820,29 @@ class Aplicacion(tk.Tk):
         emp, p = self.empresa.get(), self._planilla()
         if not emp or not p:
             messagebox.showwarning("Falta elegir",
-                                   "Elige una empresa y un período que existan en Workiva.")
+                                   "Elige una empresa y un período que existan en Workiva.",
+                                   parent=self)
             return
         if not plantillas_de(BASE / emp):
             messagebox.showwarning(
                 "Faltan las plantillas",
                 f"{emp} todavía no tiene sus plantillas de DBNeT.\n\n"
-                "Usa «Cargar plantillas de DBNeT…» y elige el .zip (o los .xlsm) "
-                "que entrega DBNeT para esta empresa.")
+                "Usa «Cargar plantillas de DBNeT…» y elige la carpeta donde "
+                "están las que entregó DBNeT para esta empresa.", parent=self)
             return
 
         self.corriendo = True
-        self.resultado = None
-        for b in (self.b_llenar, self.b_archivo, self.b_revisar,
-                  self.b_resultado, self.b_buscar, self.b_cargar):
+        for b in (self.b_llenar, self.b_buscar, self.b_cargar, self.b_cambia_carpeta):
             b.config(state="disabled")
         self.c_empresa.config(state="disabled")
         self.c_periodo.config(state="disabled")
-        self.tabla.delete(*self.tabla.get_children())
-        self._pon_detalle([])
-        self.log.config(state="normal")
-        self.log.delete("1.0", "end")
-        self.log.config(state="disabled")
+        self._limpia_resultado()
+        self._texto("Trabajando… el resultado aparece aquí al terminar.", TENUE)
+        self.registro = []
+        if self.ventana_log:
+            self.log.config(state="normal")
+            self.log.delete("1.0", "end")
+            self.log.config(state="disabled")
         for i in range(len(PASOS)):
             self._marca_paso(i, "pendiente")
         self.barra.config(mode="determinate")
@@ -634,21 +878,21 @@ class Aplicacion(tk.Tk):
             if codigo:
                 return self._falla(paso, lineas)
             celdas, avisos = self._resumen(lineas)
-            self.cola.put(("revisar", str(revisar)))
-            self.cola.put(("confirma", (emp, planilla.nombre, celdas, avisos,
-                                        len(plantillas_de(carpeta)))))
+            n = len(plantillas_de(carpeta))
+            self.cola.put(("confirma", (emp, planilla.nombre, celdas, avisos, n)))
             if not self.confirmacion.get():
-                return self.cola.put(("fin", ("cancelado", paso,
-                                              "Cancelado. No se escribió ningún archivo.")))
+                return self.cola.put(("fin", ("cancelado", paso, None)))
 
             # 3. Llenado
             paso = 2
             self.cola.put(("paso", (paso, "Llenando las plantillas…")))
+            # Desde aqui las plantillas cambian: lo que decia el ultimo
+            # llenado deja de ser cierto hasta que este termine.
+            (carpeta / ULTIMO).unlink(missing_ok=True)
             codigo, lineas = self._corre("llenar", comun)
             if codigo:
                 return self._falla(paso, lineas)
             celdas, avisos = self._resumen(lineas)
-            self.cola.put(("revisar", str(revisar)))
 
             # 4. Archivo unico
             paso = 3
@@ -668,14 +912,11 @@ class Aplicacion(tk.Tk):
             if codigo:
                 return self._falla(paso, lineas_x)
             final = Path(f"{base}.xlsx" if codigo_macros else f"{base}.xlsm")
-            if codigo_macros:
-                self.cola.put(("aviso", (
-                    "Sin macros",
-                    "No se pudo armar el archivo único con macros (hace falta Excel "
-                    "en este computador). Quedó el .xlsx, sin botones.\n\n"
-                    f"Los archivos de {emp}\\xls están llenos y sus botones "
-                    "funcionan igual.")))
-            self.cola.put(("fin", ("ok", paso, (final, revisar, celdas, avisos))))
+            ultimo = {"planilla": planilla.nombre, "archivo": final.name,
+                      "celdas": celdas, "avisos": avisos, "plantillas": n,
+                      "cuando": time.strftime("%d-%m-%Y a las %H:%M")}
+            (carpeta / ULTIMO).write_text(json.dumps(ultimo, indent=1), "utf-8")
+            self.cola.put(("fin", ("ok", paso, (emp, ultimo, final))))
         except ErrorWorkiva as e:
             self.cola.put(("linea", (str(e), "err")))
             self.cola.put(("fin", ("error", paso, str(e))))
@@ -725,8 +966,8 @@ class Aplicacion(tk.Tk):
 
     def _falla(self, paso, lineas):
         # El mensaje util es lo ultimo que imprimio el script (los sys.exit
-        # con texto explican que hacer); se salta el traceback si lo hay.
-        utiles = [l for l in lineas if l.strip()]
+        # con texto explican que hacer).
+        utiles = [l.strip() for l in lineas if l.strip()]
         texto = "\n".join(utiles[-8:]) or "El proceso terminó sin decir por qué."
         self.cola.put(("fin", ("error", paso, texto)))
 
@@ -746,7 +987,10 @@ class Aplicacion(tk.Tk):
         self._guarda_cache()
         self.b_buscar.config(state="normal" if not self.corriendo else "disabled",
                              text="↻  Buscar en Workiva")
-        self._refresca_empresas()
+        if self.corriendo:
+            self._refresca_info()
+        else:
+            self._refresca_empresas()
 
     def _en_planillas_error(self, texto):
         self.buscando = False
@@ -754,14 +998,14 @@ class Aplicacion(tk.Tk):
                              text="↻  Buscar en Workiva")
         self._refresca_info()
         if not self.planillas:
-            messagebox.showerror("Workiva", texto)
+            messagebox.showerror("Workiva", texto, parent=self)
         else:
             self.estado.set("No se pudo actualizar la lista de Workiva; "
                             "se muestra la última que se encontró.")
 
     def _en_linea(self, dato):
         texto, tag = dato
-        self._escribe(texto, tag)
+        self._anota(texto, tag)
         m = N_PLANTILLAS.match(texto)
         if m:
             self.total, self.hechos = int(m.group(1)), 0
@@ -787,63 +1031,49 @@ class Aplicacion(tk.Tk):
             self.barra.config(mode="determinate")
             self.barra["value"] = 0
 
-    def _en_revisar(self, ruta):
-        self._carga_revisar(Path(ruta))
-
-    def _en_aviso(self, dato):
-        messagebox.showwarning(*dato)
-
     def _en_confirma(self, dato):
         emp, nombre, celdas, avisos, n = dato
         texto = (f"La simulación con «{nombre}» está lista.\n\n"
-                 f"Se van a llenar los {n} archivos de {emp}\\xls"
+                 f"Se van a llenar las {n} plantillas de {emp}"
                  + (f" con {miles(celdas)} celdas" if celdas is not None else "") + ".")
         if avisos:
-            texto += (f"\n\nHay {avisos} aviso{'s' if avisos != 1 else ''} para revisar: "
-                      "los ves en la pestaña «Por revisar».")
-        texto += ("\n\nLos archivos se sobrescriben; las plantillas originales de "
-                  "DBNeT quedan respaldadas y se reponen en cada llenado.\n\n¿Continuar?")
+            texto += (f"\n\nHay {plural(avisos, 'aviso', 'avisos')} para revisar: "
+                      "los vas a ver en «Resultado» al terminar.")
+        texto += ("\n\nLas plantillas se sobrescriben; las originales de DBNeT "
+                  "quedan respaldadas y se reponen en cada llenado.\n\n¿Continuar?")
         self.barra.stop()
-        self.confirmacion.put(messagebox.askyesno("Confirmar llenado", texto))
+        self.confirmacion.put(messagebox.askyesno("Confirmar llenado", texto,
+                                                  parent=self))
 
     def _en_fin(self, dato):
         tipo, paso, info = dato
         self.corriendo = False
         self.barra.stop()
         self.barra.config(mode="determinate")
-        for b in (self.b_llenar, self.b_buscar, self.b_cargar):
+        for b in (self.b_llenar, self.b_buscar, self.b_cargar, self.b_cambia_carpeta):
             b.config(state="normal")
         self.c_empresa.config(state="readonly")
         self.c_periodo.config(state="readonly")
 
         if tipo == "ok":
-            final, revisar, celdas, avisos = info
+            emp, ultimo, final = info
             for i in range(len(PASOS)):
                 self._marca_paso(i, "hecho")
             self.barra["value"] = 100
-            self.resultado = {"archivo": final, "revisar": revisar,
-                              "carpeta": final.parent}
-            self.b_archivo.config(state="normal")
-            self.b_resultado.config(state="normal")
-            self.b_revisar.config(state="normal" if revisar.exists() else "disabled")
-            resumen = f"Listo: {final.name}"
-            if celdas is not None:
-                resumen += f" · {miles(celdas)} celdas"
-            resumen += (f" · {avisos} aviso{'s' if avisos != 1 else ''} por revisar"
-                        if avisos else " · nada que revisar")
-            self.estado.set(resumen)
-            self._escribe(f"\n{resumen}", "ok")
-            if avisos:
-                self.pestanas.select(0)
+            self.estado.set("Listo.")
+            self._anota(f"\nListo: {final}", "ok")
+            self._muestra_listo(emp, ultimo, final)
         elif tipo == "cancelado":
             self._marca_paso(paso, "pendiente")
             self.barra["value"] = 0
-            self.estado.set(info)
+            self.estado.set("Cancelado: no se escribió ningún archivo.")
+            self._muestra_guardado()
         else:
             self._marca_paso(paso, "error")
             self.estado.set(f"Se detuvo en: {PASOS[paso]}")
-            self._escribe(info, "err")
-            messagebox.showerror(f"No se pudo terminar: {PASOS[paso]}", info)
+            self._anota(info, "err")
+            self._muestra_error(paso, info)
+            self.bell()
 
     # ------------------------------------------------------------ utilidades
     def _marca_paso(self, i, como):
@@ -856,62 +1086,45 @@ class Aplicacion(tk.Tk):
         nombre.config(fg="#222" if como != "pendiente" else TENUE,
                       font=(FUENTE, 9, peso))
 
-    def _escribe(self, texto, tag=None):
+    def _anota(self, texto, tag=None):
+        self.registro.append((texto, tag))
+        if self.ventana_log:
+            self._escribe_log(texto, tag)
+
+    def _escribe_log(self, texto, tag):
         self.log.config(state="normal")
         self.log.insert("end", texto + "\n", tag or ())
         self.log.see("end")
         self.log.config(state="disabled")
 
-    def _carga_revisar(self, ruta):
-        self.tabla.delete(*self.tabla.get_children())
-        self.avisos = {}
-        if not ruta.exists():
-            self._pon_detalle([("Nada que revisar", "todo calzó sin suponer nada.")])
+    def _muestra_log(self):
+        """Lo que imprimieron los scripts, para diagnosticar. Aparte, porque
+        a la vista no le sirve a nadie mas."""
+        if self.ventana_log:
+            self.ventana_log.deiconify()
+            self.ventana_log.lift()
             return
-        try:
-            from openpyxl import load_workbook
-            libro = load_workbook(ruta, read_only=True)
-            for i, fila in enumerate(libro.active.iter_rows(values_only=True)):
-                if not i or not any(fila):
-                    continue
-                hoja, donde, paso, mirar, casos = ([v if v is not None else ""
-                                                    for v in fila] + [""] * 5)[:5]
-                iid = self.tabla.insert("", "end", values=(hoja, donde, casos))
-                self.avisos[iid] = (hoja, donde, paso, mirar)
-            libro.close()
-        except Exception as e:                           # noqa: BLE001
-            self._escribe(f"No se pudo leer {ruta.name}: {e}", "err")
-        filas = self.tabla.get_children()
-        if filas:
-            self.tabla.selection_set(filas[0])
-        else:
-            self._pon_detalle([])
+        v = self.ventana_log = tk.Toplevel(self)
+        v.title("XBRL DBNeT — detalle técnico")
+        v.geometry(f"{int(900 * self.escala)}x{int(500 * self.escala)}")
+        self.log = tk.Text(v, bg="#1E1E1E", fg="#D4D4D4", bd=0,
+                           font=("Consolas", 9), wrap="none", padx=10, pady=8)
+        barra = ttk.Scrollbar(v, orient="vertical", command=self.log.yview)
+        self.log.configure(yscrollcommand=barra.set)
+        self.log.pack(side="left", fill="both", expand=True)
+        barra.pack(side="right", fill="y")
+        self.log.tag_config("err", foreground="#F48771")
+        self.log.tag_config("ok", foreground="#7BD88F")
+        self.log.tag_config("paso", foreground="#9CDCFE")
+        if not self.registro:
+            self._escribe_log("Todavía no se ha llenado nada en esta sesión.", None)
+        for texto, tag in self.registro:
+            self._escribe_log(texto, tag)
 
-    def _muestra_aviso(self, _evento=None):
-        sel = self.tabla.selection()
-        if not sel or sel[0] not in self.avisos:
-            return
-        hoja, donde, paso, mirar = self.avisos[sel[0]]
-        self._pon_detalle([(hoja, ""), ("Dónde mirar", donde), ("Qué pasó", paso),
-                           ("Qué hay que revisar", mirar)])
-
-    def _pon_detalle(self, partes):
-        self.detalle.config(state="normal")
-        self.detalle.delete("1.0", "end")
-        if not partes:
-            self.detalle.insert("end", "Después de llenar, aquí aparece lo que "
-                                "hay que mirar antes de entregar. Si no aparece "
-                                "nada, no hay nada que revisar.", "vacio")
-        for i, (titulo, texto) in enumerate(partes):
-            if i:
-                self.detalle.insert("end", "\n")
-            self.detalle.insert("end", titulo + (": " if titulo and texto else ""), "titulo")
-            self.detalle.insert("end", str(texto))
-        self.detalle.config(state="disabled")
-
-    def _abre_resultado(self, que):
-        if self.resultado and Path(self.resultado[que]).exists():
-            abre(self.resultado[que])
+        def cierra():
+            self.ventana_log.destroy()
+            self.ventana_log = None
+        v.protocol("WM_DELETE_WINDOW", cierra)
 
 
 def main():
