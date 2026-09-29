@@ -44,6 +44,7 @@ import os
 import re
 import shutil
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -236,6 +237,9 @@ class Libro:
             sys.exit(f"\n  {Path(ruta).name} no se puede leer como archivo de Excel.\n"
                      "  Abrelo a mano: si Excel tambien se queja, esta danado y hay\n"
                      "  que reemplazarlo por el original de DBNeT.\n")
+
+    def cierra(self):
+        self.z.close()
 
     def xml(self, hoja):
         if hoja in self._xml:
@@ -704,7 +708,33 @@ def reescribe_zip(origen, destino, cambios, quitar=()):
             nuevo.create_system = info.create_system
             zout.writestr(nuevo, datos)
     if en_sitio:
-        os.replace(destino, real)
+        reemplaza(destino, real)
+
+
+def reemplaza(nuevo, real):
+    """os.replace, con paciencia y con un mensaje que se entienda.
+
+    Windows no deja reemplazar un archivo que alguien tiene abierto. Si es
+    Excel, hay que cerrarlo; pero OneDrive y el antivirus tambien lo abren un
+    momento cada vez que el archivo cambia, y eso se pasa solo: por eso se
+    reintenta unos segundos antes de rendirse."""
+    for espera in (0.5, 1, 2, 3, 4, 5, 0):
+        try:
+            os.replace(nuevo, real)
+            return
+        except PermissionError:
+            if espera:
+                time.sleep(espera)
+    Path(nuevo).unlink(missing_ok=True)
+    sys.exit(
+        f"\n  Windows no deja reemplazar {Path(real).name}\n\n"
+        "  Alguien lo tiene abierto. Casi siempre es una de estas:\n\n"
+        "  1. Esta abierto en Excel: cierralo (y si no aparece, en el\n"
+        "     Administrador de tareas termina EXCEL.EXE).\n"
+        "  2. OneDrive lo esta sincronizando: espera a que la carpeta quede\n"
+        "     con el visto verde y vuelve a llenar.\n\n"
+        "  No quedo nada a medias: al volver a llenar se parte otra vez de\n"
+        "     las plantillas originales de DBNeT.\n")
 
 
 # --------------------------------------------- columnas que faltan crear
@@ -1214,6 +1244,17 @@ class EnSitio:
                   f"{RESPALDO}, que es lo que va a llenar)\n")
         return salen
 
+    def anota_uno(self, ruta):
+        """Anota un archivo apenas se escribe, no recien al final.
+
+        Si el llenado se corta a la mitad, los que alcanzaron a llenarse
+        quedan anotados como nuestros y la corrida siguiente los repone. Sin
+        esto, un archivo ya lleno pero sin anotar pareceria una plantilla
+        nueva de DBNeT y pisaria la copia virgen del respaldo."""
+        self.dejamos[Path(ruta).name] = _huella(ruta)
+        self.guarda.mkdir(parents=True, exist_ok=True)
+        self.ficha.write_text(json.dumps(self.dejamos, indent=1), encoding="utf-8")
+
     def anota(self, plantillas):
         """Huella de lo que dejamos, para reconocerlo la proxima vez."""
         self.dejamos = {p.name: _huella(p) for p in plantillas if p.exists()}
@@ -1325,10 +1366,16 @@ def cmd_llenar(args):
         quitar = ()
         if dest.layout_cambiado and "xl/calcChain.xml" in dest.z.namelist():
             quitar = sin_calcchain(dest.z, cambios)
+        # El libro se cierra antes de escribir: Windows no deja reemplazar un
+        # archivo que sigue abierto, aunque lo tenga abierto este mismo
+        # programa (en Linux si deja, y por eso no se habia notado).
+        dest.cierra()
         if not args.dry_run:
             reescribe_zip(ruta, ruta if args.sobre_plantillas else salida / ruta.name,
                           cambios, quitar)
             archivos_escritos += 1
+            if en_sitio is not None:
+                en_sitio.anota_uno(ruta)
         print(f"  {ruta.name[:48]:50} {escritas_archivo:6} celdas  {estado}")
 
     if en_sitio is not None:

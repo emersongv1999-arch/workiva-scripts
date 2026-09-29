@@ -811,8 +811,9 @@ class Aplicacion(tk.Tk):
         self._limpia_resultado()
         self._texto(f"✖  No se pudo {FALLO[paso]}", ROJO, "bold", 11)
         self._texto(texto, "#222", tam=9)
-        self._texto("Nada quedó a medias: al volver a llenar se parte otra vez "
-                    "de las plantillas originales de DBNeT.", TENUE, tam=9)
+        if "a medias" not in texto:
+            self._texto("Nada quedó a medias: al volver a llenar se parte otra "
+                        "vez de las plantillas originales de DBNeT.", TENUE, tam=9)
 
     # ------------------------------------------------------------ llenado
     def llenar(self):
@@ -964,10 +965,36 @@ class Aplicacion(tk.Tk):
         return celdas, avisos
 
     def _falla(self, paso, lineas):
-        # El mensaje util es lo ultimo que imprimio el script (los sys.exit
-        # con texto explican que hacer).
-        utiles = [l.strip() for l in lineas if l.strip()]
-        texto = "\n".join(utiles[-8:]) or "El proceso terminó sin decir por qué."
+        """El mensaje para la persona: lo que el script explico al cortar.
+
+        Los sys.exit con texto dicen que hacer; un traceback no le dice nada
+        a nadie, asi que de el queda solo la ultima linea y el resto va al
+        detalle tecnico."""
+        if any(l.startswith("Traceback") for l in lineas):
+            ultima = next((l.strip() for l in reversed(lineas) if l.strip()), "")
+            texto = (f"{ultima}\n\nEsto es un error del programa, no tuyo. "
+                     "Manda una captura de «detalle técnico» para revisarlo.")
+        else:
+            utiles = [l.rstrip() for l in lineas
+                      if l.strip() and not AVANCE.match(l)]
+            # Desde donde empieza el ultimo mensaje (la linea sin sangria
+            # mas cercana al final, o las ultimas 12).
+            inicio = max(0, len(utiles) - 12)
+            for i in range(len(utiles) - 1, inicio - 1, -1):
+                if utiles[i].startswith("  ") and not utiles[i].startswith("   "):
+                    if i == 0 or not utiles[i - 1].startswith("  "):
+                        inicio = i
+                        break
+            # Las lineas con mas sangria continuan la anterior: el script
+            # corta a 70 columnas para la consola, y aqui eso sobra.
+            parrafos = []
+            for l in utiles[inicio:]:
+                if parrafos and l.startswith("     "):
+                    parrafos[-1] += " " + l.strip()
+                else:
+                    parrafos.append(l.strip())
+            texto = "\n".join(parrafos)
+        texto = texto or "El proceso terminó sin decir por qué."
         self.cola.put(("fin", ("error", paso, texto)))
 
     # ------------------------------------------------------------ recepcion
