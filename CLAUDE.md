@@ -53,3 +53,17 @@ pyinstaller --onefile --windowed --name Auditor ^
 
 ## Branch de desarrollo
 `claude/serene-heisenberg-lhy1mh`
+
+# XBRL DBNeT — app aparte (`XBRL_DBNeT.exe`)
+
+Llena las plantillas .xlsm de DBNeT directo desde Workiva, sin export manual.
+
+| Archivo | Qué hace |
+|---------|----------|
+| `xbrl_app.py` | Ventana (tkinter). Empresa + período → descarga, simula, llena en su lugar, arma el archivo único |
+| `xbrl_workiva.py` | API de Workiva: lista las planillas `E___ XBRL MM-AAAA` y las exporta a .xlsx |
+| `llenar_dbnet_desde_workiva.py` / `fusionar_cuadros.py` | Los mismos scripts del .bat; la app los corre como `XBRL_DBNeT.exe --tarea llenar|fusionar ...` |
+| `COMPILAR_XBRL.bat` | PyInstaller `--onefile --windowed` con los hidden imports de pywin32 |
+
+Estructura junto al .exe: una carpeta por empresa (`E211\xls\` con sus plantillas). Una empresa nueva
+= crear su carpeta; en Workiva aparece sola por el nombre de su planilla.
