@@ -2,7 +2,7 @@
 """XBRL DBNeT: llena las plantillas de DBNeT directo desde Workiva.
 
 Se elige empresa y periodo; la aplicacion descarga la planilla
-"E___ XBRL MM-AAAA" desde Workiva, simula, llena los .xlsm de DBNeT de esa
+"E___ XBRL MM-AAAA" desde Workiva, revisa, llena los .xlsm de DBNeT de esa
 empresa en su lugar y arma el archivo unico con los botones funcionando.
 
 Cada empresa es una carpeta dentro de la carpeta de trabajo (la que se
@@ -122,8 +122,16 @@ TOTAL = re.compile(r"^Total:\s*([\d.,]+)\s+celdas\s+en\s+(\d+)\s+hojas")
 AVISOS = re.compile(r"OJO:\s*(\d+)\s+avisos")
 EMPRESA = re.compile(r"E\d+", re.IGNORECASE)
 
-PASOS = ("Descargar de Workiva", "Simular", "Llenar las plantillas",
-         "Armar el archivo único")
+# Lo que se esta haciendo, dicho para quien usa la app y no para quien la
+# programo: «simular» o «armar el archivo unico» no le decian nada a nadie.
+PASOS = ("Trayendo los datos desde Workiva…",
+         "Revisando que los datos calcen con las plantillas…",
+         "Llenando las plantillas…",
+         "Preparando el archivo para DBNeT (toma un par de minutos)…")
+FALLO = ("traer los datos desde Workiva",
+         "revisar los datos",
+         "llenar las plantillas",
+         "preparar el archivo para DBNeT")
 
 
 # ═══════════════════════════════════════════════════ carpeta de trabajo ══
@@ -375,6 +383,12 @@ class Aplicacion(tk.Tk):
                                              bg=AZUL, fg="#CFE0F0")
         self.b_cambia_carpeta.pack(side="left", padx=(8, 0))
 
+        pie = tk.Frame(self, bg=FONDO, padx=24)
+        pie.pack(side="bottom", fill="x")
+        self.b_log = self._enlace(pie, "detalle técnico", self._muestra_log,
+                                  bg=FONDO, fg=TENUE)
+        self.b_log.config(font=(FUENTE, 8, "underline"))
+        self.b_log.pack(side="right", pady=(0, 4))
         cuerpo = tk.Frame(self, bg=FONDO, padx=24, pady=14)
         cuerpo.pack(fill="both", expand=True)
         cuerpo.columnconfigure(0, weight=1)
@@ -417,25 +431,13 @@ class Aplicacion(tk.Tk):
         self.b_ver_plantillas = self._enlace(fila_pl, "Ver plantillas",
                                              self._abre_plantillas)
 
-        tk.Frame(tarjeta, bg="#E6EAF0", height=1).pack(fill="x", pady=(12, 10))
-        avance = tk.Frame(tarjeta, bg=BLANCO)
-        avance.pack(fill="x")
-        self.l_pasos = []
-        for texto in PASOS:
-            marca = tk.Label(avance, text="○", bg=BLANCO, fg=TENUE,
-                             font=(FUENTE, 11), width=2)
-            marca.pack(side="left")
-            nombre = tk.Label(avance, text=texto, bg=BLANCO, fg=TENUE,
-                              font=(FUENTE, 9))
-            nombre.pack(side="left", padx=(0, 14))
-            self.l_pasos.append((marca, nombre))
-        self.b_log = self._enlace(avance, "Ver detalle técnico", self._muestra_log,
-                                  fg=TENUE)
-        self.b_log.pack(side="right")
-        self.barra = ttk.Progressbar(tarjeta, mode="determinate", maximum=100)
-        self.barra.pack(fill="x", pady=(8, 2))
-        tk.Label(tarjeta, textvariable=self.estado, bg=BLANCO, fg="#333",
-                 font=(FUENTE, 9), anchor="w").pack(fill="x")
+        # El avance solo aparece mientras trabaja: quieto no dice nada.
+        self.avance = tk.Frame(tarjeta, bg=BLANCO)
+        tk.Frame(self.avance, bg="#E6EAF0", height=1).pack(fill="x", pady=(12, 10))
+        tk.Label(self.avance, textvariable=self.estado, bg=BLANCO, fg="#222",
+                 font=(FUENTE, 10), anchor="w").pack(fill="x")
+        self.barra = ttk.Progressbar(self.avance, mode="determinate", maximum=100)
+        self.barra.pack(fill="x", pady=(6, 0))
 
         # ---- resultado: se arma de nuevo cada vez que cambia
         self.t_resultado = self._tarjeta(cuerpo, 1, "Resultado", estira=True)
@@ -538,10 +540,7 @@ class Aplicacion(tk.Tk):
         self._refresca_periodos()
         if self.corriendo:
             return
-        for i in range(len(PASOS)):
-            self._marca_paso(i, "pendiente")
-        self.barra["value"] = 0
-        self.estado.set("")
+        self.avance.pack_forget()
         if self.empresa.get():
             config = lee_config()
             periodos = {**config.get("periodos", {})}
@@ -651,7 +650,9 @@ class Aplicacion(tk.Tk):
             messagebox.showerror("No se pudieron cargar", str(e), parent=self)
             return
         self._cambia_eleccion()
-        self.estado.set(f"Listo: {emp} tiene {len(nuevas)} plantillas de DBNeT cargadas.")
+        messagebox.showinfo("Plantillas cargadas",
+                            f"Listo: {emp} tiene {len(nuevas)} plantillas de DBNeT cargadas.",
+                            parent=self)
 
     def _abre_plantillas(self):
         emp = self.empresa.get()
@@ -808,7 +809,7 @@ class Aplicacion(tk.Tk):
 
     def _muestra_error(self, paso, texto):
         self._limpia_resultado()
-        self._texto(f"✖  No se pudo terminar: {PASOS[paso]}", ROJO, "bold", 11)
+        self._texto(f"✖  No se pudo {FALLO[paso]}", ROJO, "bold", 11)
         self._texto(texto, "#222", tam=9)
         self._texto("Nada quedó a medias: al volver a llenar se parte otra vez "
                     "de las plantillas originales de DBNeT.", TENUE, tam=9)
@@ -843,8 +844,7 @@ class Aplicacion(tk.Tk):
             self.log.config(state="normal")
             self.log.delete("1.0", "end")
             self.log.config(state="disabled")
-        for i in range(len(PASOS)):
-            self._marca_paso(i, "pendiente")
+        self.avance.pack(fill="x")
         self.barra.config(mode="determinate")
         self.barra["value"] = 0
         self.confirmacion = queue.Queue()
@@ -865,7 +865,7 @@ class Aplicacion(tk.Tk):
         paso = 0
         try:
             # 1. Workiva
-            self.cola.put(("paso", (paso, f"Descargando «{planilla.nombre}» desde Workiva…")))
+            self.cola.put(("paso", paso))
             t0 = time.time()
             Workiva().descarga(planilla, export)
             self.cola.put(("linea", (f"Descargado de Workiva en {time.time() - t0:.0f} s: "
@@ -873,7 +873,7 @@ class Aplicacion(tk.Tk):
 
             # 2. Simulacion
             paso = 1
-            self.cola.put(("paso", (paso, "Simulando: todavía no se escribe nada…")))
+            self.cola.put(("paso", paso))
             codigo, lineas = self._corre("llenar", comun + ["--dry-run"])
             if codigo:
                 return self._falla(paso, lineas)
@@ -885,7 +885,7 @@ class Aplicacion(tk.Tk):
 
             # 3. Llenado
             paso = 2
-            self.cola.put(("paso", (paso, "Llenando las plantillas…")))
+            self.cola.put(("paso", paso))
             # Desde aqui las plantillas cambian: lo que decia el ultimo
             # llenado deja de ser cierto hasta que este termine.
             (carpeta / ULTIMO).unlink(missing_ok=True)
@@ -896,8 +896,7 @@ class Aplicacion(tk.Tk):
 
             # 4. Archivo unico
             paso = 3
-            self.cola.put(("paso", (paso, "Armando el archivo único con Excel "
-                                          "(toma un par de minutos)…")))
+            self.cola.put(("paso", paso))
             # Igual que el .bat: si el .xlsm con macros no sale (sin Excel en
             # el equipo), queda al menos el .xlsx. Un archivo abierto, en
             # cambio, es para cerrarlo y volver a correr, no para seguir.
@@ -1000,8 +999,9 @@ class Aplicacion(tk.Tk):
         if not self.planillas:
             messagebox.showerror("Workiva", texto, parent=self)
         else:
-            self.estado.set("No se pudo actualizar la lista de Workiva; "
-                            "se muestra la última que se encontró.")
+            self.info_workiva.set(self.info_workiva.get() + "   (no se pudo "
+                                  "actualizar la lista de Workiva; es la última "
+                                  "que se encontró)")
 
     def _en_linea(self, dato):
         texto, tag = dato
@@ -1012,16 +1012,11 @@ class Aplicacion(tk.Tk):
         elif self.total and AVANCE.match(texto):
             self.hechos += 1
             self.barra["value"] = min(100, self.hechos * 100 / self.total)
-            self.estado.set(f"{self.l_pasos[self.paso][1]['text']}… "
-                            f"{self.hechos} de {self.total} plantillas")
+            self.estado.set(f"{PASOS[self.paso]}  ({self.hechos} de {self.total})")
 
-    def _en_paso(self, dato):
-        paso, texto = dato
+    def _en_paso(self, paso):
         self.paso = paso
-        for i in range(paso):
-            self._marca_paso(i, "hecho")
-        self._marca_paso(paso, "actual")
-        self.estado.set(texto)
+        self.estado.set(PASOS[paso])
         self.total = self.hechos = 0
         if paso in (0, 3):
             self.barra.config(mode="indeterminate")
@@ -1033,12 +1028,12 @@ class Aplicacion(tk.Tk):
 
     def _en_confirma(self, dato):
         emp, nombre, celdas, avisos, n = dato
-        texto = (f"La simulación con «{nombre}» está lista.\n\n"
-                 f"Se van a llenar las {n} plantillas de {emp}"
-                 + (f" con {miles(celdas)} celdas" if celdas is not None else "") + ".")
+        texto = (f"Los datos de «{nombre}» están listos para pasar a las "
+                 f"{n} plantillas de {emp}"
+                 + (f" ({miles(celdas)} celdas)" if celdas is not None else "") + ".")
         if avisos:
-            texto += (f"\n\nHay {plural(avisos, 'aviso', 'avisos')} para revisar: "
-                      "los vas a ver en «Resultado» al terminar.")
+            texto += (f"\n\nHay {plural(avisos, 'cosa', 'cosas')} para revisar: "
+                      "las vas a ver en «Resultado» al terminar.")
         texto += ("\n\nLas plantillas se sobrescriben; las originales de DBNeT "
                   "quedan respaldadas y se reponen en cada llenado.\n\n¿Continuar?")
         self.barra.stop()
@@ -1055,37 +1050,20 @@ class Aplicacion(tk.Tk):
         self.c_empresa.config(state="readonly")
         self.c_periodo.config(state="readonly")
 
+        self.avance.pack_forget()
         if tipo == "ok":
             emp, ultimo, final = info
-            for i in range(len(PASOS)):
-                self._marca_paso(i, "hecho")
-            self.barra["value"] = 100
-            self.estado.set("Listo.")
             self._anota(f"\nListo: {final}", "ok")
             self._muestra_listo(emp, ultimo, final)
         elif tipo == "cancelado":
-            self._marca_paso(paso, "pendiente")
-            self.barra["value"] = 0
-            self.estado.set("Cancelado: no se escribió ningún archivo.")
             self._muestra_guardado()
+            self._texto("Cancelado: no se escribió ningún archivo.", AMBAR, tam=9)
         else:
-            self._marca_paso(paso, "error")
-            self.estado.set(f"Se detuvo en: {PASOS[paso]}")
             self._anota(info, "err")
             self._muestra_error(paso, info)
             self.bell()
 
     # ------------------------------------------------------------ utilidades
-    def _marca_paso(self, i, como):
-        marca, nombre = self.l_pasos[i]
-        simbolo, color, peso = {"pendiente": ("○", TENUE, "normal"),
-                                "actual": ("●", AZUL, "bold"),
-                                "hecho": ("✔", VERDE, "normal"),
-                                "error": ("✖", ROJO, "bold")}[como]
-        marca.config(text=simbolo, fg=color)
-        nombre.config(fg="#222" if como != "pendiente" else TENUE,
-                      font=(FUENTE, 9, peso))
-
     def _anota(self, texto, tag=None):
         self.registro.append((texto, tag))
         if self.ventana_log:
