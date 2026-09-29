@@ -1368,29 +1368,33 @@ def cmd_llenar(args):
 # mayoria son informativas; esto es solo lo que pide ojo humano antes de
 # entregar a la CMF.
 REVISABLES = [
+    # Lo lee quien prepara la entrega, y a veces su jefatura en una reunion:
+    # va con tildes y en tercera persona, sin "avisame", que supone que quien
+    # lo lee es el que escribio el programa.
     ("CUADRO SIN LLENAR",
-     "Este cuadro quedo vacio, y en Workiva sobro una hoja que se le parece "
-     "pero no lo bastante como para darla por buena. Lo mas probable es que "
-     "DBNeT haya cambiado el cuadro en esta version de la plantilla.",
-     "Abri esta hoja en el archivo llenado y comparala con la hoja {hojas} "
-     "de Workiva. Si son el mismo cuadro, avisame para ajustar el programa; "
-     "si no lo son, no hay nada que hacer."),
+     "El programa no llenó este cuadro porque no coincide lo suficiente con "
+     "ninguna hoja de Workiva. La más parecida tiene partidas distintas: lo más "
+     "probable es que DBNeT haya cambiado el cuadro en esta versión de la "
+     "plantilla.",
+     "Comparar este cuadro con la hoja {hojas} de Workiva. Si son el mismo "
+     "cuadro, hay que ajustar el programa para que los reconozca; si no lo son, "
+     "el cuadro no aplica y no hay nada que hacer."),
     ("TEXTO RECORTADO",
-     "El texto es mas largo de lo que cabe en una celda de Excel (el tope son "
-     "32.767 caracteres), asi que quedo cortado a media palabra.",
-     "Anda a esa celda y mira como termina el parrafo. Si no te sirve asi, "
-     "hay que acortar el texto en Workiva unos 200 caracteres."),
+     "El texto es más largo de lo que cabe en una celda de Excel (el tope es "
+     "de 32.767 caracteres), así que quedó cortado a media palabra.",
+     "Revisar cómo termina el párrafo en esa celda. Si no sirve así, hay que "
+     "acortar el texto en Workiva."),
     ("CALZADO POR POSICION",
-     "Workiva y la plantilla de DBNeT rotulan distinto si una cifra es del "
-     "periodo actual o del anterior, asi que el programa la ubico por el lugar "
+     "Workiva y la plantilla de DBNeT marcan distinto si una cifra es del "
+     "período actual o del anterior, así que el programa la ubicó por el lugar "
      "que ocupa en el cuadro.",
-     "Mira que las cifras del periodo anterior esten en las filas del periodo "
-     "anterior, y no mezcladas con las del actual."),
+     "Revisar que las cifras del período anterior estén en las filas del "
+     "período anterior y no mezcladas con las del actual."),
     ("CALZADO POR ETIQUETA",
-     "El mismo renglon del cuadro tiene distinto codigo interno en Workiva y "
-     "en DBNeT. El programa los junto porque el nombre del renglon y su lugar "
-     "en el cuadro si coinciden.",
-     "Mira que sea efectivamente el mismo renglon en los dos lados."),
+     "La misma fila tiene distinto código en Workiva y en DBNeT. El programa "
+     "las juntó porque el nombre de la fila y su lugar en el cuadro sí "
+     "coinciden.",
+     "Revisar que sea efectivamente la misma fila en los dos lados."),
 ]
 
 
@@ -1415,7 +1419,7 @@ def escribe_revisar(reporte, ruta):
     filas = []
     for tipo, porque, que_mirar in REVISABLES:
         casos = [r for r in reporte[1:] if str(r[7]).startswith(tipo)]
-        for (hoja, _), grupo in _agrupa(casos):
+        for (hoja, archivo), grupo in _agrupa(casos):
             refs = [str(r[4]) for r in grupo if r[4]]
             nums = [int(x.split()[1]) for x in refs if x.startswith("fila ")]
             celdas = sorted({x for x in refs if not x.startswith("fila ")})
@@ -1424,7 +1428,10 @@ def escribe_revisar(reporte, ruta):
             elif celdas:
                 donde = ("celdas " if len(celdas) > 1 else "celda ") + ", ".join(celdas)
             else:
-                donde = "toda la hoja"
+                # Un cuadro que no se lleno no entra al archivo unico: solo
+                # entran los que calzaron. Hay que decir donde encontrarlo.
+                donde = (f"Toda la hoja. Está en {archivo}, carpeta xls "
+                         "(no en el archivo único)" if archivo else "Toda la hoja")
             otras = sorted({str(r[2]) for r in grupo if r[2]})
             texto = (que_mirar.format(hojas="'" + "', '".join(otras) + "'")
                      if "{hojas}" in que_mirar and otras else que_mirar)
@@ -1440,8 +1447,7 @@ def escribe_revisar(reporte, ruta):
                 pass
         return None
 
-    cab = ["Hoja del archivo llenado", "Donde mirar", "Que paso",
-           "Que tienes que mirar", "Casos"]
+    cab = ["Hoja", "Dónde mirar", "Qué pasó", "Qué hay que revisar", "Casos"]
     ruta.parent.mkdir(parents=True, exist_ok=True)
     try:
         from openpyxl import Workbook
@@ -1463,7 +1469,7 @@ def escribe_revisar(reporte, ruta):
         c.fill = PatternFill("solid", fgColor="4472C4")
     for f in filas:
         ws.append(f)
-    for col, ancho in zip("ABCDE", (26, 18, 62, 62, 8)):
+    for col, ancho in zip("ABCDE", (24, 34, 58, 58, 8)):
         ws.column_dimensions[col].width = ancho
     for fila in ws.iter_rows(min_row=2):
         for c in fila:
