@@ -855,9 +855,12 @@ class Aplicacion(tk.Tk):
         """En un hilo aparte; habla con la ventana solo por la cola."""
         carpeta = BASE / emp
         xls = carpeta / "xls"
-        export = carpeta / "workiva" / f"{planilla.nombre}.xlsx"
         revisar = carpeta / "REVISAR.xlsx"
         temporal = TEMPORAL / emp
+        # Lo que baja de Workiva es solo material de trabajo: va a la carpeta
+        # temporal y no a la de la empresa, donde parecia un export que habia
+        # que guardar. Se reemplaza en cada llenado.
+        export = temporal / f"{planilla.nombre}.xlsx"
         temporal.mkdir(parents=True, exist_ok=True)
         base = carpeta / f"{planilla.nombre}_LLENADO"
         comun = ["--plantillas", str(xls), "--workiva", str(export),
@@ -909,12 +912,18 @@ class Aplicacion(tk.Tk):
             # calzo) se muestra, no se tapa con un archivo sin macros.
             if codigo_macros and not any("hace falta pywin32" in l for l in lineas):
                 return self._falla(paso, lineas)
-            codigo, lineas_x = self._corre(
-                "fusionar", ["--origen", str(xls), "--salida", f"{base}.xlsx",
-                             "--solo-workiva"])
-            if codigo:
-                return self._falla(paso, lineas_x)
-            final = Path(f"{base}.xlsx" if codigo_macros else f"{base}.xlsm")
+            # El .xlsx sin macros es solo el plan B: si el .xlsm salio, sobra
+            # (y dos archivos con el mismo nombre confundian cual entregar).
+            if codigo_macros:
+                codigo, lineas_x = self._corre(
+                    "fusionar", ["--origen", str(xls), "--salida", f"{base}.xlsx",
+                                 "--solo-workiva"])
+                if codigo:
+                    return self._falla(paso, lineas_x)
+                final = Path(f"{base}.xlsx")
+            else:
+                final = Path(f"{base}.xlsm")
+                Path(f"{base}.xlsx").unlink(missing_ok=True)
             ultimo = {"planilla": planilla.nombre, "archivo": final.name,
                       "celdas": celdas, "avisos": avisos, "plantillas": n,
                       "cuando": time.strftime("%d-%m-%Y a las %H:%M")}
