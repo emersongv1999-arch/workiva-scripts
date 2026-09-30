@@ -73,5 +73,5 @@ anterior pasa entero a `E211\plantillas_anteriores\<fecha>\`, nunca se mezcla (c
 y se llenaría dos veces). Si hay dos archivos con el mismo nombre y distinto contenido no carga nada.
 La cantidad varía por empresa (E211: 41; E200: ~48). Una empresa nueva aparece sola por el nombre de su planilla.
 Lo bajado de Workiva va a `%TEMP%\XBRL_llenado\<empresa>`, no a la carpeta de la empresa; el .xlsx sin
-macros solo se arma si el .xlsm no pudo (sin Excel). Cada llenado deja `E211\ultimo_llenado.json`: al volver a la empresa/período la app muestra el resultado,
+macros solo se arma si el .xlsm no pudo (sin Excel). Cada llenado deja `E211\xls\_original_dbnet\ultimo_llenado.json` (interno, no a la vista): al volver a la empresa/período la app muestra el resultado,
 y si se elige otro período avisa qué período tienen hoy las plantillas.

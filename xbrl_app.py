@@ -105,6 +105,16 @@ DATOS = Path(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()) / "XBRL_DB
 CACHE = DATOS / "planillas.json"
 CONFIG = DATOS / "config.json"
 ULTIMO = "ultimo_llenado.json"
+
+
+def nota_ultimo(carpeta):
+    """Donde la app anota el ultimo llenado de una empresa.
+
+    Dentro de xls\\_original_dbnet, la carpeta interna del respaldo, y no a
+    la vista en la carpeta de la empresa, donde un .json confundia. Ademas
+    asi viaja con las plantillas: al cambiarlas por otras, la carpeta xls
+    entera pasa a plantillas_anteriores y la nota se va con ella."""
+    return carpeta / "xls" / RESPALDO / ULTIMO
 SIN_CONSOLA = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 
 AZUL, AZUL_OSC, FONDO, BLANCO = "#0B5394", "#083D6E", "#F4F6F8", "#FFFFFF"
@@ -280,13 +290,19 @@ def instala_plantillas(carpeta, plantillas):
     (carpeta / "csv").mkdir(exist_ok=True)
     # Las plantillas nuevas estan virgenes: lo que decia el ultimo llenado
     # ya no es cierto.
-    (carpeta / ULTIMO).unlink(missing_ok=True)
+    nota_ultimo(carpeta).unlink(missing_ok=True)
+    (carpeta / ULTIMO).unlink(missing_ok=True)    # donde la dejaban versiones anteriores
     return archivado
 
 
 def lee_ultimo(carpeta):
     try:
-        return json.loads((carpeta / ULTIMO).read_text("utf-8"))
+        vieja = carpeta / ULTIMO
+        if vieja.exists():
+            # Versiones anteriores la dejaban a la vista: se lleva adentro.
+            nota_ultimo(carpeta).parent.mkdir(parents=True, exist_ok=True)
+            vieja.replace(nota_ultimo(carpeta))
+        return json.loads(nota_ultimo(carpeta).read_text("utf-8"))
     except (OSError, ValueError):
         return None
 
@@ -892,7 +908,7 @@ class Aplicacion(tk.Tk):
             self.cola.put(("paso", paso))
             # Desde aqui las plantillas cambian: lo que decia el ultimo
             # llenado deja de ser cierto hasta que este termine.
-            (carpeta / ULTIMO).unlink(missing_ok=True)
+            nota_ultimo(carpeta).unlink(missing_ok=True)
             codigo, lineas = self._corre("llenar", comun)
             if codigo:
                 return self._falla(paso, lineas)
@@ -927,7 +943,8 @@ class Aplicacion(tk.Tk):
             ultimo = {"planilla": planilla.nombre, "archivo": final.name,
                       "celdas": celdas, "avisos": avisos, "plantillas": n,
                       "cuando": time.strftime("%d-%m-%Y a las %H:%M")}
-            (carpeta / ULTIMO).write_text(json.dumps(ultimo, indent=1), "utf-8")
+            nota_ultimo(carpeta).parent.mkdir(parents=True, exist_ok=True)
+            nota_ultimo(carpeta).write_text(json.dumps(ultimo, indent=1), "utf-8")
             self.cola.put(("fin", ("ok", paso, (emp, ultimo, final))))
         except ErrorWorkiva as e:
             self.cola.put(("linea", (str(e), "err")))
