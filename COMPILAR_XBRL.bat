@@ -35,9 +35,8 @@ copy /y "dist\XBRL_DBNeT.exe" "XBRL_DBNeT.exe" >nul
 echo.
 echo   Listo: %~dp0XBRL_DBNeT.exe
 echo.
-echo   Ponlo en la carpeta de trabajo, junto a una carpeta por empresa:
-echo       XBRL_DBNeT.exe
-echo       E211\xls\   ^<- las plantillas .xlsm de DBNeT de E211
+echo   Abrelo con doble clic. Las plantillas de DBNeT de cada empresa
+echo   se cargan desde la misma app, con "Cargar plantillas de DBNeT".
 echo.
 pause
 goto :eof
