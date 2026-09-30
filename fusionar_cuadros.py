@@ -47,6 +47,7 @@ Uso:
 import argparse
 import base64
 import collections
+import html
 import re
 import shutil
 import sys
@@ -298,6 +299,72 @@ class Estilos:
             "</styleSheet>")
 
 
+# Carpetas que la app deja dentro de xls y que NO son plantillas a fusionar:
+# _original_dbnet guarda las copias virgenes (mismo nombre que las llenas).
+CARPETAS_APARTE = ("_original_dbnet", "plantillas_anteriores")
+
+
+def libros_de(origen, salida, patron):
+    """Los libros a fusionar, iguales para las dos formas de fusionar.
+
+    Antes cada una armaba su propia lista y solo una se saltaba
+    _original_dbnet. La otra -- la con macros, la que se usa en Windows --
+    metia tambien las copias virgenes, y como Windows ordena sin distinguir
+    mayusculas, '_original_dbnet' quedaba antes que las llenas: el archivo
+    final salia con todas las hojas vacias. Por eso ademas se corta si dos
+    libros se llaman igual: elegir uno de los dos seria adivinar."""
+    salida = Path(salida).resolve()
+    libros = sorted((p for p in Path(origen).rglob(patron)
+                     if not p.name.startswith("~$")
+                     and not any(c in p.parts for c in CARPETAS_APARTE)
+                     and p.resolve() != salida),
+                    key=lambda p: str(p).lower())
+    repetidos = sorted(n for n, c in collections.Counter(
+        p.name.lower() for p in libros).items() if c > 1)
+    if repetidos:
+        sys.exit("Hay plantillas con el mismo nombre en mas de una carpeta "
+                 f"dentro de {origen}:\n  " + "\n  ".join(repetidos[:10]) +
+                 "\nDeja un solo juego de plantillas y vuelve a correr.")
+    return libros
+
+
+def celdas_con_valor(ruta):
+    """{hoja: cuantas celdas tienen un valor}, leyendo el archivo directo."""
+    out = {}
+    with zipfile.ZipFile(ruta) as z:
+        rels = rels_de(z.read("xl/_rels/workbook.xml.rels").decode("utf-8"))
+        wb = z.read("xl/workbook.xml").decode("utf-8")
+        for tag in re.findall(r"<sheet [^>]*?>", wb):
+            nombre = html.unescape(re.search(r'name="([^"]*)"', tag).group(1))
+            rid = re.search(r'r:id="([^"]+)"', tag)
+            destino = rels.get(rid.group(1), "").lstrip("/") if rid else ""
+            if not destino:
+                continue
+            parte = destino if destino.startswith("xl/") else "xl/" + destino
+            try:
+                xml = z.read(parte).decode("utf-8")
+            except KeyError:
+                continue
+            out[nombre] = len(re.findall(r"<v>[^<]", xml)) + xml.count("<is>")
+    return out
+
+
+def compara_con_origen(salida, fuentes):
+    """Las hojas que llegaron al archivo final con menos datos que en su
+    plantilla. Es la prueba de que se copio la plantilla llena y no otra:
+    si falla, el archivo no se entrega."""
+    en_salida = celdas_con_valor(salida)
+    leidas, faltan = {}, []
+    for ruta, hoja in fuentes:
+        if ruta not in leidas:
+            leidas[ruta] = celdas_con_valor(ruta)
+        antes = leidas[ruta].get(hoja, 0)
+        despues = en_salida.get(hoja, 0)
+        if antes - despues > max(3, antes // 50):
+            faltan.append((hoja, antes, despues))
+    return faltan
+
+
 def orden_de_workiva(origen):
     """{(archivo, hoja): posicion en el export}, o None si no hay archivo.
 
@@ -408,12 +475,7 @@ def dibujo_de_hoja(z, parte_hoja):
 
 
 def fusionar(origen, salida, verbose=False, donante=None, solo_workiva=False):
-    # _original_dbnet guarda las plantillas virgenes cuando se llena en sitio:
-    # tienen el mismo nombre que las llenas y se colarian como duplicados.
-    libros = sorted(p for p in Path(origen).rglob("*.xls[mx]")
-                    if not p.name.startswith("~$")
-                    and "_original_dbnet" not in p.parts
-                    and p.resolve() != salida.resolve())
+    libros = libros_de(origen, salida, "*.xls[mx]")
     if not libros:
         sys.exit(f"No hay .xlsm ni .xlsx en {origen}")
 
@@ -1408,9 +1470,7 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
             "es un archivo hecho a mano por Python -- por eso hace falta el "
             "Excel real, no solo la libreria.")
 
-    libros = sorted(p for p in Path(origen).rglob("*.xlsm")
-                    if not p.name.startswith("~$")
-                    and p.resolve() != Path(salida).resolve())
+    libros = libros_de(origen, salida, "*.xlsm")
     if not libros:
         sys.exit(f"No hay .xlsm en {origen}")
 
@@ -1441,6 +1501,7 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
     fallidos = []
     reparados = []
     copiadas = []                     # (archivo, hoja) en el orden en que entran
+    fuentes = []                      # (ruta de la plantilla, hoja) copiadas
     try:
         # ignore_cleanup_errors: si algo revienta a mitad de camino puede
         # quedar un libro abierto reteniendo un archivo de la carpeta
@@ -1541,6 +1602,7 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
                         _reapunta_botones_com(nueva)
                         vistos.add(nombre)
                         copiadas.append(((ruta.name, nombre), nombre))
+                        fuentes.append((ruta, nombre))
                         total += 1
                         n_libro += 1
                     libro.Close(False)          # posicional: SaveChanges es el 1er parametro
@@ -1613,6 +1675,21 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
         print("    2. Si insiste con los mismos archivos, abrelos a mano en")
         print("       Excel: el motivo de arriba suele decir que les pasa.")
         sys.exit(1)
+
+    faltan = compara_con_origen(salida, fuentes)
+    if faltan:
+        print("\n" + "!" * 60)
+        print("  ATENCION: el .xlsm NO quedo igual a las plantillas llenas.")
+        print("!" * 60)
+        print("\n  Estas hojas tienen menos datos que en su plantilla:\n")
+        for hoja, antes, despues in faltan[:15]:
+            print(f"    - {hoja}: {antes} celdas en la plantilla, {despues} en el archivo")
+        if len(faltan) > 15:
+            print(f"    ... y {len(faltan) - 15} mas")
+        print("\n  No lo entregues asi. Las plantillas de xls si estan llenas.")
+        salida.unlink(missing_ok=True)
+        sys.exit(1)
+    print(f"  comparado con las plantillas: {len(fuentes)} hojas con todos sus datos")
     return total, salida
 
 

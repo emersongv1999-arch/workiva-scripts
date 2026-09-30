@@ -904,7 +904,10 @@ class Aplicacion(tk.Tk):
             codigo_macros, lineas = self._corre(
                 "fusionar", ["--origen", str(xls), "--salida", f"{base}.xlsm",
                              "--con-macros", "--solo-workiva"])
-            if codigo_macros and any("esta abierto en Excel" in l for l in lineas):
+            # Solo la falta de Excel/pywin32 tiene salida por el .xlsx; cualquier
+            # otro corte (un archivo abierto, o que el control de datos no
+            # calzo) se muestra, no se tapa con un archivo sin macros.
+            if codigo_macros and not any("hace falta pywin32" in l for l in lineas):
                 return self._falla(paso, lineas)
             codigo, lineas_x = self._corre(
                 "fusionar", ["--origen", str(xls), "--salida", f"{base}.xlsx",
