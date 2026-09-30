@@ -329,7 +329,13 @@ def libros_de(origen, salida, patron):
 
 
 def celdas_con_valor(ruta):
-    """{hoja: cuantas celdas tienen un valor}, leyendo el archivo directo."""
+    """{hoja: cuantas celdas tienen un valor escrito}, leyendo el archivo.
+
+    Solo valores escritos, no formulas: los datos que pone el llenado son
+    siempre valores, y el resultado guardado de una formula depende de si
+    Excel alcanzo a calcularla antes de guardar (con las 135 formulas de
+    total de IFRS7-ExpoRiesCred no alcanzaba, y el control daba una falsa
+    alarma)."""
     out = {}
     with zipfile.ZipFile(ruta) as z:
         rels = rels_de(z.read("xl/_rels/workbook.xml.rels").decode("utf-8"))
@@ -345,7 +351,10 @@ def celdas_con_valor(ruta):
                 xml = z.read(parte).decode("utf-8")
             except KeyError:
                 continue
-            out[nombre] = len(re.findall(r"<v>[^<]", xml)) + xml.count("<is>")
+            out[nombre] = sum(
+                1 for cuerpo in re.findall(r"<c\b[^>]*?>(.*?)</c>", xml, re.S)
+                if "<f" not in cuerpo
+                and (re.search(r"<v>[^<]", cuerpo) or "<is>" in cuerpo))
     return out
 
 
@@ -1628,6 +1637,14 @@ def fusionar_con_macros(origen, salida, verbose=False, solo_workiva=False):
                 rotos = _corta_vinculos_com(base)
                 if rotos:
                     print(f"  vinculos externos convertidos a valor: {rotos}")
+
+                # Los totales con formula se calculan antes de guardar: si no,
+                # Excel los guarda sin resultado y el archivo depende de que
+                # quien lo abra recalcule.
+                try:
+                    app.CalculateFull()
+                except Exception:
+                    pass
 
                 base.SaveAs(str(salida), FileFormat=52)   # xlOpenXMLWorkbookMacroEnabled
             finally:
