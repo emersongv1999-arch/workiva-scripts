@@ -1,14 +1,15 @@
 @echo off
-rem Arma XBRL_DBNeT.exe a partir de los .py de esta carpeta.
+rem Arma "Enlace XBRL.exe" a partir de los archivos de esta carpeta.
 rem Hacen falta, juntos en la misma carpeta que este .bat:
 rem     xbrl_app.py  xbrl_workiva.py  llenar_dbnet_desde_workiva.py  fusionar_cuadros.py
+rem     enlace_xbrl.ico   (el icono del .exe)
 chcp 65001 >nul
 cd /d "%~dp0"
 
 py --version >nul 2>&1
 if errorlevel 1 goto sin_python
 
-for %%f in (xbrl_app.py xbrl_workiva.py llenar_dbnet_desde_workiva.py fusionar_cuadros.py) do (
+for %%f in (xbrl_app.py xbrl_workiva.py llenar_dbnet_desde_workiva.py fusionar_cuadros.py enlace_xbrl.ico) do (
     if not exist "%%f" (
         echo   Falta %%f en esta carpeta.
         pause
@@ -19,11 +20,12 @@ for %%f in (xbrl_app.py xbrl_workiva.py llenar_dbnet_desde_workiva.py fusionar_c
 echo   Instalando lo necesario para compilar...
 py -m pip install pyinstaller openpyxl pywin32 --quiet --trusted-host pypi.org --trusted-host files.pythonhosted.org
 
-echo   Compilando XBRL_DBNeT.exe (toma uno o dos minutos)...
+echo   Compilando Enlace XBRL.exe (toma uno o dos minutos)...
 rem win32com, pythoncom y pywintypes van explicitos: fusionar_cuadros los
 rem importa dentro de una funcion, y sin ellos el .exe arma el archivo unico
 rem sin macros.
-py -m PyInstaller --noconfirm --onefile --windowed --name XBRL_DBNeT ^
+py -m PyInstaller --noconfirm --onefile --windowed --name "Enlace XBRL" ^
+  --icon enlace_xbrl.ico ^
   --hidden-import openpyxl ^
   --hidden-import win32com.client ^
   --hidden-import pythoncom ^
@@ -31,9 +33,9 @@ py -m PyInstaller --noconfirm --onefile --windowed --name XBRL_DBNeT ^
   xbrl_app.py
 if errorlevel 1 goto error
 
-copy /y "dist\XBRL_DBNeT.exe" "XBRL_DBNeT.exe" >nul
+copy /y "dist\Enlace XBRL.exe" "Enlace XBRL.exe" >nul
 echo.
-echo   Listo: %~dp0XBRL_DBNeT.exe
+echo   Listo: %~dp0Enlace XBRL.exe
 echo.
 echo   Abrelo con doble clic. Las plantillas de DBNeT de cada empresa
 echo   se cargan desde la misma app, con "Cargar plantillas de DBNeT".

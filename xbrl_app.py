@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""XBRL DBNeT: llena las plantillas de DBNeT directo desde Workiva.
+"""Enlace XBRL: llena las plantillas de DBNeT directo desde Workiva.
 
 Se elige empresa y periodo; la aplicacion descarga la planilla
 "E___ XBRL MM-AAAA" desde Workiva, revisa, llena los .xlsm de DBNeT de esa
@@ -101,6 +101,8 @@ from tkinter import filedialog, messagebox, ttk          # noqa: E402
 from xbrl_workiva import ErrorWorkiva, Planilla, Workiva  # noqa: E402
 
 TEMPORAL = Path(tempfile.gettempdir()) / "XBRL_llenado"
+# La carpeta interna conserva el nombre de antes del cambio a "Enlace XBRL":
+# ahi estan la carpeta de trabajo elegida y la lista de planillas guardada.
 DATOS = Path(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()) / "XBRL_DBNeT"
 CACHE = DATOS / "planillas.json"
 CONFIG = DATOS / "config.json"
@@ -115,6 +117,10 @@ def nota_ultimo(carpeta):
     asi viaja con las plantillas: al cambiarlas por otras, la carpeta xls
     entera pasa a plantillas_anteriores y la nota se va con ella."""
     return carpeta / "xls" / RESPALDO / ULTIMO
+# El icono (un eslabon) va embebido para no depender de un archivo al lado
+# del .exe; el .ico del ejecutable lo pone COMPILAR_XBRL.bat (enlace_xbrl.ico).
+ICONO_64 = "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"
+ICONO_32 = "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"
 SIN_CONSOLA = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 
 AZUL, AZUL_OSC, FONDO, BLANCO = "#0B5394", "#083D6E", "#F4F6F8", "#FFFFFF"
@@ -334,7 +340,8 @@ def muestra_en_carpeta(ruta):
 class Aplicacion(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("XBRL DBNeT")
+        self.title("Enlace XBRL")
+        self._pon_icono()
         self.configure(bg=FONDO)
         # Los notebooks de CGE van con la pantalla al 125-150%: el tamano se
         # escala con eso y se limita a la pantalla, o la ventana no cabe.
@@ -367,6 +374,15 @@ class Aplicacion(tk.Tk):
         self.after(80, self._drena)
 
     # ------------------------------------------------------------ aspecto
+    def _pon_icono(self):
+        """El eslabon en la barra de titulo y de tareas, en vez de la pluma
+        de tkinter (que es tambien la del Auditor)."""
+        try:
+            self._iconos = [tk.PhotoImage(data=d) for d in (ICONO_64, ICONO_32)]
+            self.iconphoto(True, *self._iconos)
+        except tk.TclError:
+            pass
+
     def _estilos(self):
         s = ttk.Style(self)
         try:
@@ -383,7 +399,7 @@ class Aplicacion(tk.Tk):
         cab.pack(fill="x")
         izq = tk.Frame(cab, bg=AZUL)
         izq.pack(side="left", fill="x", expand=True)
-        tk.Label(izq, text="XBRL DBNeT", bg=AZUL, fg=BLANCO,
+        tk.Label(izq, text="Enlace XBRL", bg=AZUL, fg=BLANCO,
                  font=(FUENTE, 18, "bold")).pack(anchor="w")
         tk.Label(izq, text="Llena las plantillas de DBNeT directo desde Workiva",
                  bg=AZUL, fg="#CFE0F0", font=(FUENTE, 10)).pack(anchor="w")
@@ -1172,7 +1188,7 @@ class Aplicacion(tk.Tk):
             self.ventana_log.lift()
             return
         v = self.ventana_log = tk.Toplevel(self)
-        v.title("XBRL DBNeT — detalle técnico")
+        v.title("Enlace XBRL — detalle técnico")
         v.geometry(f"{int(900 * self.escala)}x{int(500 * self.escala)}")
         self.log = tk.Text(v, bg="#1E1E1E", fg="#D4D4D4", bd=0,
                            font=("Consolas", 9), wrap="none", padx=10, pady=8)
