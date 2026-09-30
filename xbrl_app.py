@@ -541,8 +541,8 @@ class Aplicacion(tk.Tk):
 
     def _refresca_periodos(self):
         propias = [p for p in self.planillas if p.empresa == self.empresa.get()]
-        propias.sort(key=lambda p: p.orden, reverse=True)
-        valores = [p.periodo for p in propias]
+        propias.sort(key=lambda p: (p.orden, p.modificada), reverse=True)
+        valores = list(dict.fromkeys(p.periodo for p in propias))
         self.c_periodo["values"] = valores
         if self.periodo.get() not in valores:
             # El ultimo que se eligio para esta empresa; si no, el mas nuevo.
@@ -576,8 +576,12 @@ class Aplicacion(tk.Tk):
         if p:
             f = p.modificada_local()
             cuando = f" · modificada el {f:%d-%m-%Y a las %H:%M}" if f else ""
-            self.info_workiva.set(f"En Workiva: «{p.nombre}»{cuando}")
-            self.l_workiva.config(fg=GRIS)
+            iguales = sum(1 for q in self.planillas
+                          if q.empresa == p.empresa and q.periodo == p.periodo)
+            extra = (f"   (hay {iguales} planillas con este nombre; se usa la "
+                     "modificada más recientemente)" if iguales > 1 else "")
+            self.info_workiva.set(f"En Workiva: «{p.nombre}»{cuando}{extra}")
+            self.l_workiva.config(fg=AMBAR if iguales > 1 else GRIS)
         elif self.buscando:
             self.info_workiva.set("Buscando las planillas XBRL en Workiva…")
             self.l_workiva.config(fg=GRIS)
@@ -723,6 +727,35 @@ class Aplicacion(tk.Tk):
             if archivo.is_file():
                 return self._muestra_listo(emp, ultimo, archivo, guardado=True)
         nombre = p.nombre if p else f"{emp} {self.periodo.get()}".strip()
+        # Se lleno antes, y despues se lleno otro periodo encima: las
+        # plantillas ya no son de este periodo, pero su archivo para DBNeT
+        # sigue siendo valido, porque trae sus propias copias de las hojas.
+        archivo = next((a for a in (BASE / emp / f"{nombre}_LLENADO.xlsm",
+                                    BASE / emp / f"{nombre}_LLENADO.xlsx")
+                        if a.is_file()), None)
+        if archivo:
+            cuando = time.strftime("%d-%m-%Y a las %H:%M",
+                                   time.localtime(archivo.stat().st_mtime))
+            self._texto(f"✔  El archivo para DBNeT de «{nombre}» sigue en la "
+                        f"carpeta (armado el {cuando}) y se puede usar.",
+                        VERDE, "bold", 11)
+            caja = tk.Frame(self.resultado, bg="#F2F7FC", padx=14, pady=10,
+                            highlightbackground="#D5E3F1", highlightthickness=1)
+            caja.pack(fill="x", pady=(6, 10))
+            self._enlace(caja, "Mostrarlo en su carpeta",
+                         lambda: muestra_en_carpeta(archivo), bg="#F2F7FC").pack(
+                             side="right", padx=(10, 0))
+            self._boton(caja, "Abrir archivo", lambda: abre(archivo),
+                        principal=True).pack(side="right")
+            tk.Label(caja, text=f"Archivo para DBNeT:  {archivo.name}", bg="#F2F7FC",
+                     fg="#222", font=(FUENTE, 10, "bold"), anchor="w").pack(
+                         side="left", fill="x")
+            if ultimo:
+                self._texto(f"Las plantillas de {emp} tienen hoy los datos de "
+                            f"«{ultimo.get('planilla')}». Si vuelves a llenar "
+                            "este período, se llenan de nuevo y el archivo se "
+                            "reemplaza.", TENUE, tam=9)
+            return
         self._texto(f"Todavía no se ha llenado «{nombre}».", GRIS, tam=10)
         if ultimo:
             self._texto(f"Las plantillas de {emp} tienen hoy los datos de "

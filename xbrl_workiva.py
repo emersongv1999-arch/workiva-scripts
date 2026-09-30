@@ -154,7 +154,9 @@ class Workiva:
                     anio=int(m.group(3)), nombre=s["name"].strip(),
                     id=s["id"], modificada=mod or ""))
             url = datos.get("@nextLink") or datos.get("nextLink")
-        encontradas.sort(key=lambda p: (p.empresa, p.orden), reverse=True)
+        # Si dos planillas se llaman igual, primero la modificada mas
+        # recientemente: es la que se usa.
+        encontradas.sort(key=lambda p: (p.empresa, p.orden, p.modificada), reverse=True)
         return encontradas
 
     def descarga(self, planilla, destino):
