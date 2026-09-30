@@ -72,5 +72,6 @@ Las plantillas se cargan desde la app eligiendo una CARPETA (toma los .xlsm y lo
 anterior pasa entero a `E211\plantillas_anteriores\<fecha>\`, nunca se mezcla (cambia el año en el nombre
 y se llenaría dos veces). Si hay dos archivos con el mismo nombre y distinto contenido no carga nada.
 La cantidad varía por empresa (E211: 41; E200: ~48). Una empresa nueva aparece sola por el nombre de su planilla.
-Cada llenado deja `E211\ultimo_llenado.json`: al volver a la empresa/período la app muestra el resultado,
+Lo bajado de Workiva va a `%TEMP%\XBRL_llenado\<empresa>`, no a la carpeta de la empresa; el .xlsx sin
+macros solo se arma si el .xlsm no pudo (sin Excel). Cada llenado deja `E211\ultimo_llenado.json`: al volver a la empresa/período la app muestra el resultado,
 y si se elige otro período avisa qué período tienen hoy las plantillas.
