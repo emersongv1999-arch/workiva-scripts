@@ -53,3 +53,7 @@ pyinstaller --onefile --windowed --name Auditor ^
 
 ## Branch de desarrollo
 `claude/serene-heisenberg-lhy1mh`
+
+## Utilidad aparte — Mantener Activo
+`mantener_activo.py` — ventana pequeña que impide que Windows se suspenda (API `SetThreadExecutionState`, sin mover el mouse).
+Compilar: `pyinstaller --onefile --windowed --name MantenerActivo mantener_activo.py`
