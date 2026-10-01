@@ -55,5 +55,5 @@ pyinstaller --onefile --windowed --name Auditor ^
 `claude/serene-heisenberg-lhy1mh`
 
 ## Utilidad aparte — Mantener Activo
-`mantener_activo.py` — ventana pequeña que impide que Windows se suspenda (API `SetThreadExecutionState`, sin mover el mouse).
+`mantener_activo.py` — ventana pequeña que impide que Windows se suspenda (API `SetThreadExecutionState`). Opción "Simular actividad": pulsa F15 tras 2 min sin uso para que Teams no pase a Ausente.
 Compilar: `pyinstaller --onefile --windowed --name MantenerActivo mantener_activo.py`

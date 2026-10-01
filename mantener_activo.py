@@ -2,7 +2,11 @@
 Mantener Activo — evita que el PC entre en suspensión mientras está abierto.
 
 Usa la API oficial de Windows SetThreadExecutionState (la misma que usan
-reproductores de video o PowerToys Awake). No mueve el mouse ni simula teclas.
+reproductores de video o PowerToys Awake).
+
+Opcional: "Simular actividad" envía una pulsación de F15 (tecla que ningún
+programa usa) cuando no has tocado teclado/mouse en un rato, para que Teams
+no pase a "Ausente". Si estás usando el PC no hace nada.
 
 Compilar:
     pyinstaller --onefile --windowed --name MantenerActivo mantener_activo.py
@@ -20,6 +24,10 @@ ES_DISPLAY_REQUIRED = 0x00000002
 
 REFRESCO_MS = 30_000  # re-afirma el estado cada 30 s
 
+VK_F15 = 0x7E
+KEYEVENTF_KEYUP = 0x0002
+INACTIVIDAD_SIMULAR_S = 120  # Teams pasa a "Ausente" a los ~5 min
+
 DURACIONES = {
     "Indefinido": None,
     "30 minutos": 30 * 60,
@@ -32,6 +40,24 @@ DURACIONES = {
 
 def _set_state(flags):
     return ctypes.windll.kernel32.SetThreadExecutionState(flags)
+
+
+class _LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+
+
+def _segundos_inactivo():
+    info = _LASTINPUTINFO(cbSize=ctypes.sizeof(_LASTINPUTINFO))
+    if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
+        return 0
+    ticks = ctypes.windll.kernel32.GetTickCount() & 0xFFFFFFFF
+    return ((ticks - info.dwTime) & 0xFFFFFFFF) / 1000
+
+
+def _pulsar_f15():
+    user32 = ctypes.windll.user32
+    user32.keybd_event(VK_F15, 0, 0, 0)
+    user32.keybd_event(VK_F15, 0, KEYEVENTF_KEYUP, 0)
 
 
 class MantenerActivoApp:
@@ -61,22 +87,28 @@ class MantenerActivoApp:
             variable=self.var_pantalla, command=self._aplicar,
         ).grid(row=2, column=0, columnspan=2, sticky="w")
 
-        ttk.Label(frm, text="Duración:").grid(row=3, column=0, sticky="w", pady=(8, 0))
+        self.var_simular = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            frm, text="Simular actividad (Teams en verde)",
+            variable=self.var_simular,
+        ).grid(row=3, column=0, columnspan=2, sticky="w")
+
+        ttk.Label(frm, text="Duración:").grid(row=4, column=0, sticky="w", pady=(8, 0))
         self.var_duracion = tk.StringVar(value="Indefinido")
         cmb = ttk.Combobox(
             frm, textvariable=self.var_duracion, values=list(DURACIONES),
             state="readonly", width=14,
         )
-        cmb.grid(row=3, column=1, sticky="e", pady=(8, 0))
+        cmb.grid(row=4, column=1, sticky="e", pady=(8, 0))
         cmb.bind("<<ComboboxSelected>>", lambda e: self._reiniciar_duracion())
 
         self.btn = ttk.Button(frm, command=self.alternar, width=24)
-        self.btn.grid(row=4, column=0, columnspan=2, pady=(12, 0))
+        self.btn.grid(row=5, column=0, columnspan=2, pady=(12, 0))
 
         ttk.Label(
             frm, text="Puedes minimizar esta ventana; sigue funcionando.",
             foreground="#888", font=("Segoe UI", 8),
-        ).grid(row=5, column=0, columnspan=2, pady=(8, 0))
+        ).grid(row=6, column=0, columnspan=2, pady=(8, 0))
 
         self.activar()
         self._tick()
@@ -92,8 +124,13 @@ class MantenerActivoApp:
             messagebox.showerror("Mantener Activo", "Windows rechazó la solicitud.")
             self.detener()
 
+    def _simular_si_inactivo(self):
+        if self.activo and self.var_simular.get() and _segundos_inactivo() >= INACTIVIDAD_SIMULAR_S:
+            _pulsar_f15()
+
     def _refrescar(self):
         self._aplicar()
+        self._simular_si_inactivo()
         self._after_refresco = self.root.after(REFRESCO_MS, self._refrescar)
 
     def _reiniciar_duracion(self):
