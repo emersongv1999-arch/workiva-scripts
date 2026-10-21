@@ -1004,7 +1004,7 @@ BLOCKED_MODULES = {"mod2", "mod7"}
 BLOCKED_MESSAGE = (
     "Este módulo está restringido.\n\n"
     "El acceso a Llenar Comparativos y Crear Periodo no está habilitado "
-    "para Rodrigo, Violeta y Olympia en esta versión del Auditor."
+    "para Rodrigo Lazo, Violeta Rangel y Olympia Moya en esta versión del Auditor."
 )
 
 NAV_ITEMS = [
