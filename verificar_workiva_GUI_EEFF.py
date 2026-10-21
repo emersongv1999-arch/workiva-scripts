@@ -1003,8 +1003,8 @@ RESTRICTED_MODULES = {}
 BLOCKED_MODULES = {"mod2", "mod7"}
 BLOCKED_MESSAGE = (
     "Este módulo no está disponible en esta versión del Auditor.\n\n"
-    "Para Llenar Comparativos o Crear Periodo, contacta a Rodrigo, "
-    "Violeta u Olympia."
+    "Para Llenar Comparativos o Crear Periodo, contacta a Rodrigo Lazo, "
+    "Violeta Rangel u Olympia Moya."
 )
 
 NAV_ITEMS = [
