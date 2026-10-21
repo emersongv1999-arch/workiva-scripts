@@ -1002,9 +1002,9 @@ RESTRICTED_MODULES = {}
 # se usan desde el build personal de cada auditor.
 BLOCKED_MODULES = {"mod2", "mod7"}
 BLOCKED_MESSAGE = (
-    "Este módulo está restringido.\n\n"
-    "El acceso a Llenar Comparativos y Crear Periodo no está habilitado "
-    "para Rodrigo Lazo, Violeta Rangel y Olympia Moya en esta versión del Auditor."
+    "Este módulo no está disponible en esta versión del Auditor.\n\n"
+    "Para Llenar Comparativos o Crear Periodo, contacta a Rodrigo, "
+    "Violeta u Olympia."
 )
 
 NAV_ITEMS = [
