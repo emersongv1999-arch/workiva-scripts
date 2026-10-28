@@ -492,34 +492,20 @@ def nombre_carpeta_periodo(mes: int, anio: int) -> str:
 
 
 def periodo_origen(mes_destino: int, anio_destino: int) -> tuple[int, int]:
-    """Determina que periodo hay que copiar segun la regla del usuario:
-    - Meses de cierre trimestral (03, 06, 09, 12): se copia el trimestre
-      anterior (ej. septiembre copia de junio, no de agosto).
-    - Resto de los meses: se copia el mes calendario anterior QUE TAMPOCO
-      sea cierre trimestral -- un cierre trimestral (dic, jun, mar, sep)
-      tiene una estructura distinta (año/trimestre cerrado) y no sirve de
-      base para un mes normal. Si el mes inmediato anterior es un cierre,
-      se sigue retrocediendo hasta encontrar uno que no lo sea (ej. enero
-      NO copia de diciembre -- copia de noviembre; abril NO copia de marzo
-      -- copia de febrero).
-    En ambos casos se maneja el cruce de año (ej. enero copia de noviembre
-    del año anterior; marzo copia de diciembre del año anterior)."""
-    anio_origen = anio_destino
-    if mes_destino in MESES_CIERRE_TRIMESTRE:
-        mes_origen = mes_destino - 3
-        if mes_origen < 1:
-            mes_origen += 12
-            anio_origen -= 1
-        return mes_origen, anio_origen
+    """Periodo que se copia como base: SIEMPRE el mes inmediatamente
+    anterior, sea o no cierre trimestral (ej. octubre copia de septiembre,
+    septiembre copia de agosto, enero copia de diciembre del año anterior).
 
-    mes_origen = mes_destino
-    while True:
-        mes_origen -= 1
-        if mes_origen < 1:
-            mes_origen += 12
-            anio_origen -= 1
-        if mes_origen not in MESES_CIERRE_TRIMESTRE:
-            return mes_origen, anio_origen
+    Antes habia una regla que saltaba los cierres trimestrales (octubre
+    copiaba de agosto, septiembre de junio). Se quito a pedido del usuario
+    para partir siempre del periodo mas reciente. Cuando el mes copiado es
+    un cierre trimestral, el periodo nuevo queda con carpetas que no
+    corresponden a un mes normal: el usuario elige cuales mandar a la
+    papelera despues de la copia (ver listar_carpetas_periodo y
+    mandar_carpetas_a_papelera)."""
+    if mes_destino == 1:
+        return 12, anio_destino - 1
+    return mes_destino - 1, anio_destino
 
 
 async def _listar_hijos(container_id: Optional[str], kind: Optional[str] = "Folder") -> list[dict]:
@@ -1003,10 +989,14 @@ async def publicar_linking_periodo(mes: int, anio: int, log=None,
 
 async def copiar_periodo(mes_destino: int, anio_destino: int,
                           log=None, poll_interval: float = 5.0) -> dict:
-    """Copia la carpeta del periodo que corresponda (mes anterior, o trimestre
-    anterior si mes_destino es cierre trimestral) dentro de la carpeta del año
-    de destino, con el nombre del periodo destino. 'log' es una funcion
-    opcional log(mensaje) para reportar progreso.
+    """Copia la carpeta del mes inmediatamente anterior dentro de la carpeta
+    del año de destino, con el nombre del periodo destino. 'log' es una
+    funcion opcional log(mensaje) para reportar progreso.
+
+    Devuelve, ademas del resultado del renombrado, 'carpeta_destino_id' y
+    'origen_es_trimestre': si el mes copiado era cierre trimestral, el
+    periodo nuevo trae carpetas de mas y el GUI ofrece elegir cuales mandar
+    a la papelera.
 
     IMPORTANTE: la copia corre del lado de Workiva una vez iniciada -- no hay
     endpoint de cancelacion en la API, asi que cerrar la app NO la detiene.
@@ -1083,7 +1073,17 @@ async def copiar_periodo(mes_destino: int, anio_destino: int,
                     f"{len(resultado_rename['sin_calzar'])} sin tocar. "
                     f"{len(resultado_rename['conexiones_actualizadas'])} conexión(es) "
                     f"actualizadas, {len(resultado_rename['conexiones_sin_calzar'])} sin actualizar.")
-            return {"estado": "completed", "operation": op, **resultado_rename}
+            carpeta_nueva = await _buscar_hijo_por_nombre(
+                rutas["anio_destino_folder_id"], rutas["nombre_destino"])
+            return {
+                "estado":              "completed",
+                "operation":           op,
+                "carpeta_destino_id":  carpeta_nueva["id"] if carpeta_nueva else None,
+                "nombre_origen":       rutas["nombre_origen"],
+                "nombre_destino":      rutas["nombre_destino"],
+                "origen_es_trimestre": mes_origen in MESES_CIERRE_TRIMESTRE,
+                **resultado_rename,
+            }
         if estado in ("failed", "cancelled"):
             raise CopiaPeriodoError(f"La copia terminó con estado '{estado}' en Workiva.")
         espera = r2.headers.get("Retry-After", "")
@@ -1092,6 +1092,120 @@ async def copiar_periodo(mes_destino: int, anio_destino: int,
         if log and intentos_sin_avance % 6 == 0:
             log(f"  Sigue en curso (estado: {estado})...")
         await asyncio.sleep(max(espera, poll_interval))
+
+
+async def listar_carpetas_periodo(carpeta_periodo_id: str,
+                                  _padre: Optional[dict] = None,
+                                  _profundidad: int = 0) -> list[dict]:
+    """Todas las subcarpetas (a cualquier nivel) dentro de la carpeta de un
+    periodo, en orden de arbol: cada carpeta seguida de sus subcarpetas.
+    Cada elemento: {id, nombre, ruta, profundidad, padre_id}. No incluye la
+    carpeta del periodo en si."""
+    if _profundidad > 10:   # guarda contra jerarquias patologicas/ciclos
+        return []
+    hijos = await _listar_hijos(carpeta_periodo_id, kind="Folder")
+    hijos.sort(key=lambda h: h.get("name", "").lower())
+    subarboles = await asyncio.gather(*(
+        listar_carpetas_periodo(
+            h["id"],
+            _padre={"id": h["id"],
+                    "ruta": (f"{_padre['ruta']} / " if _padre else "") + h.get("name", "")},
+            _profundidad=_profundidad + 1)
+        for h in hijos
+    ))
+    salida: list[dict] = []
+    for h, sub in zip(hijos, subarboles):
+        nombre = h.get("name", "(sin nombre)")
+        salida.append({
+            "id":          h["id"],
+            "nombre":      nombre,
+            "ruta":        (f"{_padre['ruta']} / " if _padre else "") + nombre,
+            "profundidad": _profundidad,
+            "padre_id":    _padre["id"] if _padre else None,
+        })
+        salida.extend(sub)
+    return salida
+
+
+async def mandar_carpetas_a_papelera(carpeta_periodo_id: str, ids: list[str],
+                                     log=None, poll_interval: float = 3.0) -> dict:
+    """Manda a la papelera de Workiva (POST /files/{id}/trash) las carpetas
+    elegidas por el usuario dentro del periodo recien creado. Es recuperable:
+    Workiva permite restaurarlas desde la papelera (POST /files/{id}/restore).
+
+    Protecciones:
+    - Solo acepta carpetas que esten DENTRO de carpeta_periodo_id (se vuelve
+      a listar el arbol y se descarta cualquier id que no este ahi). Nunca
+      toca la carpeta del periodo en si ni nada fuera de ella.
+    - Si se eligio una carpeta y tambien una subcarpeta suya, solo se manda
+      la de arriba (la papelera de Workiva se lleva el contenido completo;
+      mandar la de abajo despues fallaria por ya estar en la papelera).
+    - Si una carpeta falla, se anota el error y se sigue con las demas.
+
+    Devuelve {"enviadas": [rutas], "con_error": [textos], "rechazadas": [ids]}."""
+    arbol = await listar_carpetas_periodo(carpeta_periodo_id)
+    por_id = {c["id"]: c for c in arbol}
+
+    rechazadas = [i for i in ids if i not in por_id]
+    elegidas = {i for i in ids if i in por_id}
+
+    def _tiene_ancestro_elegido(cid: str) -> bool:
+        padre = por_id[cid]["padre_id"]
+        while padre is not None:
+            if padre in elegidas:
+                return True
+            padre = por_id[padre]["padre_id"] if padre in por_id else None
+        return False
+
+    a_enviar = [c for c in arbol if c["id"] in elegidas
+                and not _tiene_ancestro_elegido(c["id"])]
+
+    client = await _wk._ensure_client()
+    enviadas: list[str] = []
+    con_error: list[str] = []
+    for c in a_enviar:
+        try:
+            if log:
+                log(f"Enviando a la papelera: {c['ruta']}...")
+            r = await client.post(f"{_API_ROOT_2026}/files/{c['id']}/trash",
+                                  headers=await _headers_2026(), json={})
+            if r.status_code in (200, 204):
+                enviadas.append(c["ruta"])
+                if log:
+                    log(f"  OK: {c['ruta']}")
+                continue
+            if r.status_code != 202:
+                con_error.append(f"{c['ruta']} (HTTP {r.status_code}: {r.text[:150]})")
+                if log:
+                    log(f"  ERROR ({c['ruta']}): HTTP {r.status_code}")
+                continue
+            op_url = r.headers.get("Location") or r.json().get("operationLocation")
+            if not op_url:
+                con_error.append(f"{c['ruta']} (sin URL de operacion)")
+                continue
+            while True:
+                r2 = await client.get(op_url, headers=await _headers_2026())
+                r2.raise_for_status()
+                estado = r2.json().get("status", "")
+                if estado == "completed":
+                    enviadas.append(c["ruta"])
+                    if log:
+                        log(f"  OK: {c['ruta']}")
+                    break
+                if estado in ("failed", "cancelled"):
+                    con_error.append(f"{c['ruta']} (operación {estado} en Workiva)")
+                    if log:
+                        log(f"  ERROR ({c['ruta']}): operación {estado}")
+                    break
+                espera = r2.headers.get("Retry-After", "")
+                espera = float(espera) if espera.replace(".", "", 1).isdigit() else poll_interval
+                await asyncio.sleep(max(espera, poll_interval))
+        except Exception as e:
+            con_error.append(f"{c['ruta']} ({e})")
+            if log:
+                log(f"  ERROR ({c['ruta']}): {e}")
+
+    return {"enviadas": enviadas, "con_error": con_error, "rechazadas": rechazadas}
 
 
 def _handle_error(e: Exception) -> str:
