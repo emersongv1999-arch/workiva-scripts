@@ -62,6 +62,7 @@ Llena las plantillas .xlsm de DBNeT directo desde Workiva, sin export manual.
 |---------|----------|
 | `xbrl_app.py` | Ventana (tkinter). Empresa + período → descarga, simula, llena en su lugar, arma el archivo único |
 | `xbrl_workiva.py` | API de Workiva: lista las planillas `E___ XBRL MM-AAAA` y las exporta a .xlsx |
+| `miles_workiva.py` | Antes de llenar, deja la planilla bajada en miles (redondea cada monto escrito, recalcula las formulas; tasas/cantidades no se tocan) y revisa el control de `IFRS7-ObligConBanc` |
 | `llenar_dbnet_desde_workiva.py` / `fusionar_cuadros.py` | Los mismos scripts del .bat; la app los corre como `XBRL_DBNeT.exe --tarea llenar|fusionar ...` |
 | `COMPILAR_XBRL.bat` | PyInstaller `--onefile --windowed` con los hidden imports de pywin32 |
 | `integracion_xbrl.ico` | Ícono del .exe (un eslabón). En la ventana va embebido en `xbrl_app.py` (ICONO_64/32) |
@@ -76,3 +77,8 @@ La cantidad varía por empresa (E211: 41; E200: ~48). Una empresa nueva aparece 
 Lo bajado de Workiva va a `%TEMP%\XBRL_llenado\<empresa>`, no a la carpeta de la empresa; el .xlsx sin
 macros solo se arma si el .xlsm no pudo (sin Excel). Cada llenado deja `E211\xls\_original_dbnet\ultimo_llenado.json` (interno, no a la vista): al volver a la empresa/período la app muestra el resultado,
 y si se elige otro período avisa qué período tienen hoy las plantillas.
+
+Miles: en la planilla XBRL conviven hojas en pesos y en miles; DBNeT rechaza un mismo dato con 1 peso de
+diferencia (E211 06-2026: 93 de 115). `miles_workiva.ajusta()` corre en la app justo despues de bajar la
+planilla, reescribiendo solo los `<v>` del XML (openpyxl perderia los valores de las formulas). Quedan
+diferencias de 1.000 cuando la suma de lineas redondeadas no calza con el total redondeado de otro cuadro.

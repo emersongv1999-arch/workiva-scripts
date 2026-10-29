@@ -98,6 +98,7 @@ if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[1] == "--tarea":
 import tkinter as tk                                     # noqa: E402
 from tkinter import filedialog, messagebox, ttk          # noqa: E402
 
+import miles_workiva                                     # noqa: E402
 from xbrl_workiva import ErrorWorkiva, Planilla, Workiva  # noqa: E402
 
 TEMPORAL = Path(tempfile.gettempdir()) / "XBRL_llenado"
@@ -820,10 +821,24 @@ class Aplicacion(tk.Tk):
         caja.bind("<Configure>", lambda e: ayuda_l.config(
             wraplength=max(200, e.width - 40)))
 
+        if "a_miles" in ultimo:
+            if ultimo["a_miles"] is None:
+                self._texto("⚠  No se pudieron pasar los montos a miles: DBNeT puede "
+                            "marcar diferencias de pesos entre cuadros. El detalle "
+                            "está en «detalle técnico».", AMBAR, tam=9)
+            else:
+                self._texto(f"Montos en miles, como los estados presentados "
+                            f"({miles(ultimo['a_miles'])} cifras redondeadas y sus "
+                            "totales recalculados).", TENUE, tam=9)
+        self._recordatorio_bancos(ultimo.get("control_bancos") or [])
+
         # Lo que hay que revisar antes de entregar
         revisar = BASE / emp / "REVISAR.xlsx"
         if not avisos or not revisar.exists():
-            self._texto("✔  Nada que revisar: todo calzó sin suponer nada.", VERDE)
+            if ultimo.get("control_bancos"):
+                self._texto("Fuera de eso, el llenado no tuvo nada que revisar.", VERDE)
+            else:
+                self._texto("✔  Nada que revisar: todo calzó sin suponer nada.", VERDE)
             return
         fila = tk.Frame(self.resultado, bg=BLANCO)
         fila.pack(fill="x", pady=(2, 4))
@@ -833,6 +848,24 @@ class Aplicacion(tk.Tk):
         self._enlace(fila, "Abrir REVISAR.xlsx", lambda: abre(revisar)).pack(
             side="left", padx=(10, 0))
         self._lista_avisos(revisar)
+
+    def _recordatorio_bancos(self, control):
+        """La hoja de obligaciones con bancos cambia con cada prestamo nuevo o
+        pagado, y en junio 2026 le faltaban 11.232 millones sin que se notara
+        hasta que DBNeT la rechazo. Se recuerda siempre; si su propio control
+        no da 0, se avisa con el monto."""
+        if control:
+            for hoja, celda, dif in control:
+                self._texto(f"⚠  Revisa en Workiva la hoja {hoja}: su control "
+                            f"(celda {celda}) marca una diferencia de {miles(dif)}. "
+                            "A algún préstamo le falta su valor contable, y DBNeT "
+                            "lo va a rechazar. Corrígelo y vuelve a llenar.",
+                            AMBAR, "bold", 10)
+        else:
+            self._texto("Antes de entregar, revisa en Workiva la hoja "
+                        f"{miles_workiva.HOJA_BANCOS} (obligaciones con bancos): cambia "
+                        "con cada préstamo nuevo o pagado, y cada préstamo tiene que "
+                        "tener su valor contable en los dos períodos.", AZUL, tam=9)
 
     def _lista_avisos(self, ruta):
         """Cada aviso completo, uno bajo otro, con barra si no caben. En una
@@ -939,6 +972,21 @@ class Aplicacion(tk.Tk):
             Workiva().descarga(planilla, export)
             self.cola.put(("linea", (f"Descargado de Workiva en {time.time() - t0:.0f} s: "
                                      f"{export}", "ok")))
+            # En la planilla conviven hojas en pesos y hojas en miles, y para
+            # DBNeT un mismo dato con 1 peso de diferencia ya es un error.
+            # Se deja todo en miles, como los estados presentados. Si esto
+            # falla se sigue con los montos tal cual, avisando en el resultado.
+            try:
+                ajuste = miles_workiva.ajusta(export)
+                self.cola.put(("linea", (
+                    f"Montos pasados a miles: {ajuste['redondeadas']} cifras redondeadas, "
+                    f"{ajuste['celdas_cambiadas']} celdas con sus totales recalculados", "ok")))
+                for hoja, celda, dif in ajuste["control_bancos"]:
+                    self.cola.put(("linea", (f"Control de {hoja} no da 0: {celda} = "
+                                             f"{miles(dif)}", "err")))
+            except Exception:                            # noqa: BLE001
+                ajuste = None
+                self.cola.put(("linea", (traceback.format_exc(), "err")))
 
             # 2. Simulacion
             paso = 1
@@ -991,7 +1039,9 @@ class Aplicacion(tk.Tk):
                 Path(f"{base}.xlsx").unlink(missing_ok=True)
             ultimo = {"planilla": planilla.nombre, "archivo": final.name,
                       "celdas": celdas, "avisos": avisos, "plantillas": n,
-                      "cuando": time.strftime("%d-%m-%Y a las %H:%M")}
+                      "cuando": time.strftime("%d-%m-%Y a las %H:%M"),
+                      "a_miles": ajuste["redondeadas"] if ajuste else None,
+                      "control_bancos": ajuste["control_bancos"] if ajuste else []}
             nota_ultimo(carpeta).parent.mkdir(parents=True, exist_ok=True)
             nota_ultimo(carpeta).write_text(json.dumps(ultimo, indent=1), "utf-8")
             self.cola.put(("fin", ("ok", paso, (emp, ultimo, final))))

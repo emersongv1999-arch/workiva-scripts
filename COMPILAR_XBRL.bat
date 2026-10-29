@@ -1,7 +1,8 @@
 @echo off
 rem Arma "Integracion XBRL.exe" a partir de los archivos de esta carpeta.
 rem Hacen falta, juntos en la misma carpeta que este .bat:
-rem     xbrl_app.py  xbrl_workiva.py  llenar_dbnet_desde_workiva.py  fusionar_cuadros.py
+rem     xbrl_app.py  xbrl_workiva.py  miles_workiva.py  llenar_dbnet_desde_workiva.py
+rem     fusionar_cuadros.py
 rem     integracion_xbrl.ico   (el icono del .exe)
 chcp 65001 >nul
 cd /d "%~dp0"
@@ -9,7 +10,7 @@ cd /d "%~dp0"
 py --version >nul 2>&1
 if errorlevel 1 goto sin_python
 
-for %%f in (xbrl_app.py xbrl_workiva.py llenar_dbnet_desde_workiva.py fusionar_cuadros.py integracion_xbrl.ico) do (
+for %%f in (xbrl_app.py xbrl_workiva.py miles_workiva.py llenar_dbnet_desde_workiva.py fusionar_cuadros.py integracion_xbrl.ico) do (
     if not exist "%%f" (
         echo   Falta %%f en esta carpeta.
         pause
