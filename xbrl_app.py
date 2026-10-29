@@ -972,15 +972,15 @@ class Aplicacion(tk.Tk):
             Workiva().descarga(planilla, export)
             self.cola.put(("linea", (f"Descargado de Workiva en {time.time() - t0:.0f} s: "
                                      f"{export}", "ok")))
-            # En la planilla conviven hojas en pesos y hojas en miles, y para
-            # DBNeT un mismo dato con 1 peso de diferencia ya es un error.
-            # Se deja todo en miles, como los estados presentados. Si esto
-            # falla se sigue con los montos tal cual, avisando en el resultado.
+            # Revisa el control de la hoja de obligaciones con bancos y, si
+            # miles_workiva.REDONDEAR esta encendido, deja los montos en miles.
+            # Si esto falla se sigue con la planilla tal cual.
             try:
                 ajuste = miles_workiva.ajusta(export)
-                self.cola.put(("linea", (
-                    f"Montos pasados a miles: {ajuste['redondeadas']} cifras redondeadas, "
-                    f"{ajuste['celdas_cambiadas']} celdas con sus totales recalculados", "ok")))
+                if ajuste["redondeadas"] is not None:
+                    self.cola.put(("linea", (
+                        f"Montos pasados a miles: {ajuste['redondeadas']} cifras redondeadas, "
+                        f"{ajuste['celdas_cambiadas']} celdas con sus totales recalculados", "ok")))
                 for hoja, celda, dif in ajuste["control_bancos"]:
                     self.cola.put(("linea", (f"Control de {hoja} no da 0: {celda} = "
                                              f"{miles(dif)}", "err")))
@@ -1040,8 +1040,9 @@ class Aplicacion(tk.Tk):
             ultimo = {"planilla": planilla.nombre, "archivo": final.name,
                       "celdas": celdas, "avisos": avisos, "plantillas": n,
                       "cuando": time.strftime("%d-%m-%Y a las %H:%M"),
-                      "a_miles": ajuste["redondeadas"] if ajuste else None,
                       "control_bancos": ajuste["control_bancos"] if ajuste else []}
+            if miles_workiva.REDONDEAR:
+                ultimo["a_miles"] = ajuste["redondeadas"] if ajuste else None
             nota_ultimo(carpeta).parent.mkdir(parents=True, exist_ok=True)
             nota_ultimo(carpeta).write_text(json.dumps(ultimo, indent=1), "utf-8")
             self.cola.put(("fin", ("ok", paso, (emp, ultimo, final))))

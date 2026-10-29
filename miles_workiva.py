@@ -20,6 +20,11 @@ Lo que hace, igual que se arman los estados presentados en miles:
 
 Solo usa openpyxl para leer; el archivo se reescribe tocando el XML, porque
 openpyxl al guardar pierde los valores calculados de las formulas.
+
+APAGADO (REDONDEAR = False): se decidio replicar en Workiva las notas en pesos,
+asi todos los cuadros salen de la misma cifra sin redondeo. Mientras este
+apagado, ajusta() no toca la planilla y solo revisa el control de la hoja de
+obligaciones con bancos.
 """
 
 import io
@@ -37,6 +42,9 @@ from openpyxl.utils import column_index_from_string, get_column_letter
 NO_MONTO = re.compile(r"(NumberOf|PerShare$|Percentage|Proportion|Ratio$|RatioOf|"
                       r"Porcentaje|Numero|Cantidad|Tasa|EnDias$|PeriodoPromedio|"
                       r"Years$|Duration)")
+# Pasar a miles. Apagado: las notas se replican en pesos en Workiva.
+REDONDEAR = False
+
 # Hoja de obligaciones con bancos: trae su propio control de diferencias.
 HOJA_BANCOS = "IFRS7-ObligConBanc"
 CONTROL = re.compile(r"^=\+?\$?([A-Z]{1,3})\$?(\d+)-\$?([A-Z]{1,3})\$?(\d+)$")
@@ -68,7 +76,7 @@ def elemento_de_fila(hoja, fila):
 
 
 class Planilla:
-    def __init__(self, ruta):
+    def __init__(self, ruta, redondear=True):
         self.formulas_wb = load_workbook(ruta)
         self.valores_wb = load_workbook(ruta, data_only=True)
         self.orig, self.nuevo, self.formulas = {}, {}, {}
@@ -87,7 +95,7 @@ class Planilla:
                         self.orig[k] = v
                         if not visto:
                             elemento, visto = elemento_de_fila(hoja, c.row), True
-                        if elemento and abs(v) >= 1 and es_monto(elemento, v):
+                        if redondear and elemento and abs(v) >= 1 and es_monto(elemento, v):
                             nv = a_miles(v)
                             if nv != v:
                                 self.nuevo[k] = nv
@@ -237,12 +245,16 @@ def _parcha(xml, nuevos):
     return re.sub(r'<c r="([A-Z]{1,3}\d+)"([^>]*?)(?:/>|>(.*?)</c>)', cambia, xml, flags=re.S)
 
 
-def ajusta(ruta):
-    """Deja la planilla en miles. Devuelve lo que hizo, para mostrarlo."""
+def ajusta(ruta, redondear=None):
+    """Deja la planilla en miles (si REDONDEAR) y revisa la hoja de bancos.
+    Devuelve lo que hizo, para mostrarlo."""
     ruta = Path(ruta)
-    p = Planilla(ruta)
-    cambios = p.cambios()
+    redondear = REDONDEAR if redondear is None else redondear
+    p = Planilla(ruta, redondear)
     control = p.control_bancos()
+    if not redondear:
+        return {"redondeadas": None, "celdas_cambiadas": 0, "control_bancos": control}
+    cambios = p.cambios()
     with zipfile.ZipFile(ruta) as z:
         rutas = _rutas_hojas(z)
         destino = {rutas[h]: n for h, n in cambios.items() if h in rutas}
@@ -262,8 +274,9 @@ def ajusta(ruta):
 
 
 if __name__ == "__main__":
-    r = ajusta(sys.argv[1])
-    print(f"Montos redondeados a miles: {r['redondeadas']}  "
-          f"(celdas que cambian, con totales: {r['celdas_cambiadas']})")
+    r = ajusta(sys.argv[1], redondear="--miles" in sys.argv or None)
+    if r["redondeadas"] is not None:
+        print(f"Montos redondeados a miles: {r['redondeadas']}  "
+              f"(celdas que cambian, con totales: {r['celdas_cambiadas']})")
     for hoja, celda, v in r["control_bancos"]:
         print(f"  Control de {hoja} no da 0: {celda} = {v:,}".replace(",", "."))
