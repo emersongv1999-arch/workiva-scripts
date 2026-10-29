@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import difflib
 import io
 import json
 import os
@@ -474,6 +475,7 @@ MESES_NOMBRE = {
     7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre",
     12: "Diciembre",
 }
+MESES_CIERRE_TRIMESTRE = {3, 6, 9, 12}
 
 
 async def _headers_2026() -> dict[str, str]:
@@ -491,20 +493,34 @@ def nombre_carpeta_periodo(mes: int, anio: int) -> str:
 
 
 def periodo_origen(mes_destino: int, anio_destino: int) -> tuple[int, int]:
-    """Periodo que se copia como base: SIEMPRE el mes inmediatamente
-    anterior, con todas sus carpetas, sea o no cierre trimestral (ej.
-    octubre copia de septiembre, septiembre de agosto, enero de diciembre
-    del año anterior).
+    """Determina que periodo hay que copiar segun la regla del usuario:
+    - Meses de cierre trimestral (03, 06, 09, 12): se copia el trimestre
+      anterior (ej. septiembre copia de junio, no de agosto).
+    - Resto de los meses: se copia el mes calendario anterior QUE TAMPOCO
+      sea cierre trimestral -- un cierre trimestral (dic, jun, mar, sep)
+      tiene una estructura distinta (año/trimestre cerrado) y no sirve de
+      base para un mes normal. Si el mes inmediato anterior es un cierre,
+      se sigue retrocediendo hasta encontrar uno que no lo sea (ej. enero
+      NO copia de diciembre -- copia de noviembre; abril NO copia de marzo
+      -- copia de febrero).
+    En ambos casos se maneja el cruce de año (ej. enero copia de noviembre
+    del año anterior; marzo copia de diciembre del año anterior)."""
+    anio_origen = anio_destino
+    if mes_destino in MESES_CIERRE_TRIMESTRE:
+        mes_origen = mes_destino - 3
+        if mes_origen < 1:
+            mes_origen += 12
+            anio_origen -= 1
+        return mes_origen, anio_origen
 
-    Antes habia una regla que saltaba los cierres trimestrales (octubre
-    copiaba de agosto, septiembre de junio). Se quito a pedido del usuario
-    para que cada periodo parta del mas reciente y no pierda los cambios de
-    los meses intermedios. Como nunca se borra nada, las carpetas que solo
-    usan los cierres trimestrales pasan de mes a mes y cada cierre las
-    trae, con los cambios de los meses anteriores incluidos."""
-    if mes_destino == 1:
-        return 12, anio_destino - 1
-    return mes_destino - 1, anio_destino
+    mes_origen = mes_destino
+    while True:
+        mes_origen -= 1
+        if mes_origen < 1:
+            mes_origen += 12
+            anio_origen -= 1
+        if mes_origen not in MESES_CIERRE_TRIMESTRE:
+            return mes_origen, anio_origen
 
 
 async def _listar_hijos(container_id: Optional[str], kind: Optional[str] = "Folder") -> list[dict]:
@@ -988,9 +1004,10 @@ async def publicar_linking_periodo(mes: int, anio: int, log=None,
 
 async def copiar_periodo(mes_destino: int, anio_destino: int,
                           log=None, poll_interval: float = 5.0) -> dict:
-    """Copia la carpeta del mes inmediatamente anterior dentro de la carpeta
-    del año de destino, con el nombre del periodo destino. 'log' es una
-    funcion opcional log(mensaje) para reportar progreso.
+    """Copia la carpeta del periodo que corresponda (mes anterior, o trimestre
+    anterior si mes_destino es cierre trimestral) dentro de la carpeta del año
+    de destino, con el nombre del periodo destino. 'log' es una funcion
+    opcional log(mensaje) para reportar progreso.
 
     IMPORTANTE: la copia corre del lado de Workiva una vez iniciada -- no hay
     endpoint de cancelacion en la API, asi que cerrar la app NO la detiene.
@@ -1076,6 +1093,453 @@ async def copiar_periodo(mes_destino: int, anio_destino: int,
         if log and intentos_sin_avance % 6 == 0:
             log(f"  Sigue en curso (estado: {estado})...")
         await asyncio.sleep(max(espera, poll_interval))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# COMPARAR ESTRUCTURA Y FORMATO ENTRE DOS PERIODOS
+# ══════════════════════════════════════════════════════════════════════════════
+# Crear Periodo copia un periodo que no siempre es el mes inmediatamente
+# anterior (ej. octubre copia agosto, saltando el cierre de septiembre). Lo
+# que se haya cambiado en los meses intermedios (una fila nueva, una formula
+# corregida, un formato) no llega al periodo nuevo. Esto compara cada
+# planilla del periodo copiado con la misma planilla del mes mas reciente y
+# lista los cambios de estructura y formato. Los VALORES no se comparan:
+# cambian de mes en mes por naturaleza. Solo lectura: no escribe nada.
+
+# El endpoint de sheetdata tiene un limite de ~600 consultas por minuto
+# compartido con TODO el workspace: concurrencia moderada para no frenarle
+# Workiva al resto del equipo, y se respeta el Retry-After de los 429.
+_COMPARAR_CONCURRENCIA = 6
+# Hojas de datos (consultas): sus filas cambian con los datos de cada mes, asi
+# que comparar su contenido solo genera ruido. Se revisa solo si existen.
+_HOJA_DE_DATOS_RE = re.compile(r"^\s*(query|reporte)\b", re.IGNORECASE)
+# Detalle maximo por hoja y por tipo (formula / formato); el resto se cuenta.
+_MAX_DETALLE_POR_HOJA = 40
+
+_NOMBRES_FORMATO = {
+    "textFormat.bold":               "negrita",
+    "textFormat.italic":             "cursiva",
+    "textFormat.underline":          "subrayado",
+    "textFormat.strikethrough":      "tachado",
+    "textFormat.fontColor":          "color de letra",
+    "textFormat.fontFamily":         "fuente",
+    "textFormat.fontSize":           "tamaño de letra",
+    "cellFormat.backgroundColor":    "color de fondo",
+    "cellFormat.horizontalAlign":    "alineación horizontal",
+    "cellFormat.verticalAlign":      "alineación vertical",
+    "cellFormat.textRotation":       "rotación del texto",
+    "cellFormat.leaderDots":         "puntos guía",
+}
+
+
+def mes_inmediatamente_anterior(mes: int, anio: int) -> tuple[int, int]:
+    """El mes calendario anterior (enero -> diciembre del año anterior)."""
+    return (12, anio - 1) if mes == 1 else (mes - 1, anio)
+
+
+async def _carpeta_periodo(mes: int, anio: int) -> Optional[dict]:
+    """'Estados Financieros/{anio}/{NN Mes AAAA}', o None si no existe."""
+    raiz = await _buscar_hijo_por_nombre(None, "Estados Financieros")
+    if raiz is None:
+        return None
+    anio_folder = await _buscar_hijo_por_nombre(raiz["id"], str(anio))
+    if anio_folder is None:
+        return None
+    return await _buscar_hijo_por_nombre(anio_folder["id"], nombre_carpeta_periodo(mes, anio))
+
+
+async def _get_2026_con_reintentos(url: str, params: Optional[dict] = None,
+                                   intentos: int = 6) -> httpx.Response:
+    """GET a la API 2026-01-01 esperando lo que pida Workiva (Retry-After)
+    ante 429 o errores transitorios, en vez de fallar al primer rechazo."""
+    client = await _wk._ensure_client()
+    r: Optional[httpx.Response] = None
+    for intento in range(intentos):
+        try:
+            r = await client.get(url, headers=await _headers_2026(), params=params)
+        except httpx.TransportError:
+            if intento == intentos - 1:
+                raise
+            await asyncio.sleep(2 + 2 * intento)
+            continue
+        if r.status_code in (429, 500, 502, 503, 504) and intento < intentos - 1:
+            ra = r.headers.get("Retry-After", "")
+            espera = float(ra) if ra.replace(".", "", 1).isdigit() else 2 + 3 * intento
+            await asyncio.sleep(espera)
+            continue
+        r.raise_for_status()
+        return r
+    assert r is not None
+    r.raise_for_status()
+    return r
+
+
+async def _leer_hoja_estructura(ss_id: str, sheet_id: str) -> dict:
+    """Lee una hoja con lo necesario para comparar estructura y formato:
+    texto/formula de cada celda (value, NO el valor calculado), formatos,
+    celdas combinadas, filas/columnas ocultas y ancho de columnas.
+    Junta todas las paginas usando el rango que trae cada una."""
+    url: Optional[str] = f"{_API_ROOT_2026}/spreadsheets/{ss_id}/sheets/{sheet_id}/sheetdata"
+    params: Optional[dict] = {
+        "$fields": "range,cells.value,cells.formats,merges,rowMetadata,columnMetadata",
+        "$maxcellsperpage": 50000,
+    }
+    celdas: dict[tuple[int, int], dict] = {}
+    filas_ocultas: set[int] = set()
+    cols_ocultas: set[int] = set()
+    anchos: dict[int, Any] = {}
+    merges: set[tuple] = set()
+    n_filas = n_cols = 0
+    while url:
+        body = (await _get_2026_con_reintentos(url, params)).json()
+        d = body.get("data") or {}
+        rng = d.get("range") or {}
+        r0 = rng.get("startRow") or 0
+        c0 = rng.get("startColumn") or 0
+        filas = d.get("cells") or []
+        for i, fila in enumerate(filas):
+            fila = fila or []
+            for j, cel in enumerate(fila):
+                if isinstance(cel, dict) and (cel.get("value") not in (None, "") or cel.get("formats")):
+                    celdas[(r0 + i, c0 + j)] = cel
+            n_cols = max(n_cols, c0 + len(fila))
+        n_filas = max(n_filas, r0 + len(filas))
+        for i, m in enumerate(d.get("rowMetadata") or []):
+            if isinstance(m, dict) and m.get("hidden"):
+                filas_ocultas.add(r0 + i)
+        for j, m in enumerate(d.get("columnMetadata") or []):
+            if isinstance(m, dict):
+                if m.get("hidden"):
+                    cols_ocultas.add(c0 + j)
+                if m.get("size") is not None:
+                    anchos[c0 + j] = m["size"]
+        for m in d.get("merges") or []:
+            if isinstance(m, dict):
+                merges.add((m.get("startRow"), m.get("startColumn"),
+                            m.get("stopRow"), m.get("stopColumn")))
+        url, params = body.get("@nextLink"), None
+    return {"celdas": celdas, "filas_ocultas": filas_ocultas, "cols_ocultas": cols_ocultas,
+            "anchos": anchos, "merges": merges, "n_filas": n_filas, "n_cols": n_cols}
+
+
+def _etiqueta_valor(hoja: dict, fila: int) -> str:
+    """Rotulo de la fila (columna B, si no A, si no C) segun su texto o
+    formula -- no su valor calculado, para que un rotulo con fecha armado
+    por formula no cuente como cambio de un mes a otro."""
+    for j in (1, 0, 2):
+        v = (hoja["celdas"].get((fila, j)) or {}).get("value")
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _formato_plano(formats: Any, prefijo: str = "") -> dict[str, Any]:
+    """{'textFormat.bold': True, 'cellFormat.backgroundColor': '#fff', ...}
+    sin los valores vacios, para comparar formatos campo por campo."""
+    plano: dict[str, Any] = {}
+    if not isinstance(formats, dict):
+        return plano
+    for k, v in formats.items():
+        ruta = f"{prefijo}{k}"
+        if isinstance(v, dict):
+            plano.update(_formato_plano(v, ruta + "."))
+        elif v is not None:
+            plano[ruta] = v
+    return plano
+
+
+_LADOS_BORDE = {"top": "superior", "bottom": "inferior", "left": "izquierdo",
+                "right": "derecho", "diagonalDown": "diagonal", "diagonalUp": "diagonal"}
+
+
+def _nombre_formato(ruta: str) -> str:
+    if ruta in _NOMBRES_FORMATO:
+        return _NOMBRES_FORMATO[ruta]
+    if ruta.startswith("cellFormat.borders."):
+        lado = ruta.split(".")[2]
+        return "borde " + _LADOS_BORDE.get(lado, lado)
+    if ruta.startswith("valueFormat."):
+        return "formato de número"
+    if ruta.startswith("cellFormat.indent"):
+        return "sangría"
+    return ruta
+
+
+def _describir_formato(plano_antes: dict, plano_ahora: dict) -> tuple[str, str]:
+    """Textos 'antes' y 'ahora' con solo los atributos de formato que
+    cambiaron. Los atributos con varias partes (un borde: estilo + color; el
+    formato de numero: tipo + decimales + simbolo...) se muestran completos
+    en una sola mencion, para no perder ninguna parte del cambio."""
+    def _txt(v: Any) -> str:
+        if v is True:
+            return "sí"
+        if v is False:
+            return "no"
+        if isinstance(v, dict):
+            return json.dumps(v, ensure_ascii=False, sort_keys=True) if v else "—"
+        return "—" if v is None else str(v)
+
+    grupos: dict[str, list[str]] = {}
+    for ruta in sorted(set(plano_antes) | set(plano_ahora)):
+        grupos.setdefault(_nombre_formato(ruta), []).append(ruta)
+
+    antes, ahora = [], []
+    for nombre, rutas in grupos.items():
+        if all(plano_antes.get(r) == plano_ahora.get(r) for r in rutas):
+            continue
+        if len(rutas) == 1 and rutas[0] in _NOMBRES_FORMATO:
+            va, vn = plano_antes.get(rutas[0]), plano_ahora.get(rutas[0])
+        else:
+            va = {r.split(".")[-1]: plano_antes[r] for r in rutas if r in plano_antes}
+            vn = {r.split(".")[-1]: plano_ahora[r] for r in rutas if r in plano_ahora}
+        antes.append(f"{nombre}: {_txt(va)}")
+        ahora.append(f"{nombre}: {_txt(vn)}")
+    return "; ".join(antes), "; ".join(ahora)
+
+
+def _norm_formula(v: Any) -> str:
+    if isinstance(v, str) and v.startswith("="):
+        return re.sub(r"\s+", "", v)
+    return "(valor fijo)" if v not in (None, "") else "(vacía)"
+
+
+def _comparar_hojas(base: dict, ref: dict) -> list[dict]:
+    """Compara una hoja del periodo copiado (base) con la misma hoja del mes
+    mas reciente (ref). Devuelve los cambios como dicts con: tipo,
+    en_nuevo (ubicacion en el periodo nuevo, que es una copia de base),
+    en_ref (ubicacion en el mes mas reciente), antes, ahora.
+
+    Las filas se alinean por su rotulo (no por posicion), asi una fila
+    agregada en el medio no hace que todo lo de abajo aparezca cambiado."""
+    cambios: list[dict] = []
+
+    def _add(tipo, en_nuevo, en_ref, antes, ahora):
+        cambios.append({"tipo": tipo, "en_nuevo": en_nuevo, "en_ref": en_ref,
+                        "antes": antes, "ahora": ahora})
+
+    sig_b = [_norm_lbl(_etiqueta_valor(base, f)) for f in range(base["n_filas"])]
+    sig_r = [_norm_lbl(_etiqueta_valor(ref, f)) for f in range(ref["n_filas"])]
+    mapa: dict[int, int] = {}   # fila del periodo copiado -> fila del mes mas reciente
+    sm = difflib.SequenceMatcher(None, sig_b, sig_r, autojunk=False)
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            for k in range(i2 - i1):
+                mapa[i1 + k] = j1 + k
+            continue
+        con_b = [f for f in range(i1, i2) if sig_b[f]]
+        con_r = [f for f in range(j1, j2) if sig_r[f]]
+        if tag == "replace" and con_b and len(con_b) == len(con_r):
+            # Mismo numero de filas con rotulo a cada lado: es la misma fila
+            # con el nombre cambiado (ej. 'Costo de X' -> 'Gasto de X').
+            for fb, fr in zip(con_b, con_r):
+                mapa[fb] = fr
+                _add("Fila con nombre distinto", f"fila {fb + 1}", f"fila {fr + 1}",
+                     _etiqueta_valor(base, fb), _etiqueta_valor(ref, fr))
+            continue
+        for fb in con_b:
+            _add("Fila eliminada", f"fila {fb + 1}", "", _etiqueta_valor(base, fb), "")
+        for fr in con_r:
+            _add("Fila nueva", f"insertar antes de la fila {i1 + 1}", f"fila {fr + 1}",
+                 "", _etiqueta_valor(ref, fr))
+
+    n_cols = max(base["n_cols"], ref["n_cols"])
+    n_formula = n_formato = 0
+    for fb, fr in sorted(mapa.items()):
+        for c in range(n_cols):
+            cb = base["celdas"].get((fb, c)) or {}
+            cr = ref["celdas"].get((fr, c)) or {}
+            vb, vr = cb.get("value"), cr.get("value")
+            es_formula = (isinstance(vb, str) and vb.startswith("=")) or \
+                         (isinstance(vr, str) and vr.startswith("="))
+            if es_formula and _norm_formula(vb) != _norm_formula(vr):
+                n_formula += 1
+                if n_formula <= _MAX_DETALLE_POR_HOJA:
+                    _add("Fórmula", f"{_col_letter(c)}{fb + 1}", f"{_col_letter(c)}{fr + 1}",
+                         _norm_formula(vb) if not isinstance(vb, str) else vb,
+                         _norm_formula(vr) if not isinstance(vr, str) else vr)
+            pb, pr = _formato_plano(cb.get("formats")), _formato_plano(cr.get("formats"))
+            if pb != pr:
+                n_formato += 1
+                if n_formato <= _MAX_DETALLE_POR_HOJA:
+                    antes, ahora = _describir_formato(pb, pr)
+                    _add("Formato", f"{_col_letter(c)}{fb + 1}", f"{_col_letter(c)}{fr + 1}",
+                         antes, ahora)
+    if n_formula > _MAX_DETALLE_POR_HOJA:
+        _add("Fórmula", "", "", "", f"... y {n_formula - _MAX_DETALLE_POR_HOJA} celda(s) más con fórmula distinta")
+    if n_formato > _MAX_DETALLE_POR_HOJA:
+        _add("Formato", "", "", "", f"... y {n_formato - _MAX_DETALLE_POR_HOJA} celda(s) más con formato distinto")
+
+    # Filas ocultas / visibles (solo filas alineadas)
+    for fb, fr in sorted(mapa.items()):
+        ob, or_ = fb in base["filas_ocultas"], fr in ref["filas_ocultas"]
+        if ob != or_:
+            _add("Fila oculta" if or_ else "Fila visible", f"fila {fb + 1}", f"fila {fr + 1}",
+                 "oculta" if ob else "visible", "oculta" if or_ else "visible")
+
+    # Columnas ocultas y ancho de columnas
+    for c in range(n_cols):
+        ob, or_ = c in base["cols_ocultas"], c in ref["cols_ocultas"]
+        if ob != or_:
+            _add("Columna oculta" if or_ else "Columna visible", f"columna {_col_letter(c)}",
+                 f"columna {_col_letter(c)}", "oculta" if ob else "visible",
+                 "oculta" if or_ else "visible")
+        ab, ar = base["anchos"].get(c), ref["anchos"].get(c)
+        if ab is not None and ar is not None and abs(float(ab) - float(ar)) > 1:
+            _add("Ancho de columna", f"columna {_col_letter(c)}", f"columna {_col_letter(c)}",
+                 str(ab), str(ar))
+
+    # Celdas combinadas (solo las que caen en filas alineadas)
+    filas_ref_alineadas = set(mapa.values())
+    merges_b = {(mapa[r1], c1, mapa[r2], c2) for (r1, c1, r2, c2) in base["merges"]
+                if r1 in mapa and r2 in mapa}
+    merges_r = {m for m in ref["merges"] if m[0] in filas_ref_alineadas and m[2] in filas_ref_alineadas}
+    inv = {v: k for k, v in mapa.items()}
+    def _rango(m, filas_nuevo: bool):
+        r1, c1, r2, c2 = m
+        if filas_nuevo:
+            r1, r2 = inv.get(r1, r1), inv.get(r2, r2)
+        return f"{_col_letter(c1)}{r1 + 1}:{_col_letter(c2)}{r2 + 1}"
+    for m in sorted(merges_r - merges_b):
+        _add("Celdas combinadas", _rango(m, True), _rango(m, False), "sin combinar", "combinadas")
+    for m in sorted(merges_b - merges_r):
+        _add("Celdas combinadas", _rango(m, True), _rango(m, False), "combinadas", "sin combinar")
+    return cambios
+
+
+def _norm_nombre_archivo(nombre: str) -> str:
+    return re.sub(r"\s+", " ", _quitar_sufijo_copia(nombre or "")).strip().lower()
+
+
+async def _comparar_planilla(par: dict, sem: "asyncio.Semaphore",
+                             mes_base: int, anio_base: int, mes_ref: int, anio_ref: int) -> dict:
+    """Compara una planilla del periodo copiado con su par del mes mas
+    reciente: hojas que existen en una y no en la otra, y el contenido de
+    las hojas que estan en ambas. Un error en una hoja se anota y se sigue."""
+    base_id, ref_id = par["base"]["id"], par["ref"]["id"]
+    sheets_b = await _get_sheets(base_id)
+    sheets_r = await _get_sheets(ref_id)
+
+    def _mapear(nombre_hoja: str) -> str:
+        return _renombrar_periodo_en_nombre(
+            nombre_hoja, mes_base, anio_base, mes_ref, anio_ref) or nombre_hoja
+
+    base_por_nombre_ref = {_mapear(n): n for n in sheets_b}
+    nuevas = [n for n in sheets_r if n not in base_por_nombre_ref]
+    eliminadas = [nb for nr, nb in base_por_nombre_ref.items() if nr not in sheets_r]
+    cambios: list[dict] = []
+    if len(nuevas) == 1 and len(eliminadas) == 1:
+        cambios.append({"hoja": nuevas[0], "tipo": "Hoja con nombre distinto",
+                        "en_nuevo": eliminadas[0], "en_ref": nuevas[0],
+                        "antes": eliminadas[0], "ahora": nuevas[0]})
+    else:
+        for n in nuevas:
+            cambios.append({"hoja": n, "tipo": "Hoja nueva", "en_nuevo": "", "en_ref": n,
+                            "antes": "", "ahora": n})
+        for n in eliminadas:
+            cambios.append({"hoja": n, "tipo": "Hoja eliminada", "en_nuevo": n, "en_ref": "",
+                            "antes": n, "ahora": ""})
+
+    omitidas: list[str] = []
+    errores: list[str] = []
+    comunes = [(nb, nr) for nr, nb in base_por_nombre_ref.items() if nr in sheets_r]
+    if len(nuevas) == 1 and len(eliminadas) == 1:
+        comunes.append((eliminadas[0], nuevas[0]))   # la renombrada tambien se compara
+
+    async def _una_hoja(nb: str, nr: str) -> None:
+        if _HOJA_DE_DATOS_RE.match(nr):
+            omitidas.append(nr)
+            return
+        try:
+            async with sem:
+                datos_b = await _leer_hoja_estructura(base_id, sheets_b[nb])
+            async with sem:
+                datos_r = await _leer_hoja_estructura(ref_id, sheets_r[nr])
+            for c in _comparar_hojas(datos_b, datos_r):
+                cambios.append({"hoja": nr, **c})
+        except Exception as e:
+            errores.append(f"{nr}: {e}")
+
+    await asyncio.gather(*(_una_hoja(nb, nr) for nb, nr in comunes))
+    return {"cambios": cambios, "omitidas": sorted(omitidas), "errores": errores}
+
+
+async def comparar_estructura_periodos(mes_base: int, anio_base: int,
+                                       mes_ref: int, anio_ref: int,
+                                       mes_nuevo: int, anio_nuevo: int,
+                                       log=None) -> dict:
+    """Compara todas las planillas del periodo copiado (base, ej. agosto) con
+    las mismas planillas del mes mas reciente (ref, ej. septiembre), y
+    nombra cada planilla como quedo en el periodo nuevo (ej. octubre).
+    Las planillas se emparejan por nombre cambiando el periodo (ej.
+    'E200_IND_08-2026_...' con 'E200_IND_09-2026_...'). Solo lectura."""
+    nombre_base = nombre_carpeta_periodo(mes_base, anio_base)
+    nombre_ref = nombre_carpeta_periodo(mes_ref, anio_ref)
+    carpeta_b = await _carpeta_periodo(mes_base, anio_base)
+    carpeta_r = await _carpeta_periodo(mes_ref, anio_ref)
+    if carpeta_b is None:
+        raise CopiaPeriodoError(f"No se encontró la carpeta '{nombre_base}' para comparar.")
+    if carpeta_r is None:
+        raise CopiaPeriodoError(f"No se encontró la carpeta '{nombre_ref}' para comparar.")
+
+    if log:
+        log(f"Comparando estructura y formato: {nombre_base} (lo que se copió) "
+            f"vs {nombre_ref} (lo más reciente)...")
+    archivos_b = [f for f in await _listar_archivos_recursivo(carpeta_b["id"])
+                  if f.get("kind") == "Spreadsheet"]
+    archivos_r = [f for f in await _listar_archivos_recursivo(carpeta_r["id"])
+                  if f.get("kind") == "Spreadsheet"]
+    por_nombre_r = {_norm_nombre_archivo(f.get("name", "")): f for f in archivos_r}
+
+    pares: list[dict] = []
+    sin_par_base: list[str] = []
+    for f in archivos_b:
+        nombre = f.get("name", "")
+        en_ref = _renombrar_periodo_en_nombre(nombre, mes_base, anio_base, mes_ref, anio_ref) or nombre
+        nombre_nuevo = _renombrar_periodo_en_nombre(
+            nombre, mes_base, anio_base, mes_nuevo, anio_nuevo) or _quitar_sufijo_copia(nombre)
+        r = por_nombre_r.pop(_norm_nombre_archivo(en_ref), None)
+        if r is None:
+            sin_par_base.append(nombre)
+        else:
+            pares.append({"base": f, "ref": r, "nombre_nuevo": nombre_nuevo})
+    solo_en_ref = sorted(f.get("name", "") for f in por_nombre_r.values())
+    if log:
+        log(f"{len(pares)} planilla(s) para comparar"
+            + (f"; {len(sin_par_base)} sin par en {nombre_ref}" if sin_par_base else "")
+            + (f"; {len(solo_en_ref)} solo en {nombre_ref}" if solo_en_ref else "") + ".")
+
+    sem = asyncio.Semaphore(_COMPARAR_CONCURRENCIA)
+    hechas = 0
+
+    async def _uno(par: dict) -> dict:
+        nonlocal hechas
+        try:
+            res = await _comparar_planilla(par, sem, mes_base, anio_base, mes_ref, anio_ref)
+        except Exception as e:
+            res = {"cambios": [], "omitidas": [], "errores": [f"(planilla completa): {e}"]}
+        hechas += 1
+        if log:
+            log(f"  [{hechas}/{len(pares)}] {par['nombre_nuevo']}: "
+                f"{len(res['cambios'])} cambio(s)"
+                + (f", {len(res['errores'])} hoja(s) sin poder comparar" if res["errores"] else ""))
+        return {"nombre_nuevo": par["nombre_nuevo"], "nombre_base": par["base"].get("name", ""),
+                "nombre_ref": par["ref"].get("name", ""), **res}
+
+    planillas = await asyncio.gather(*(_uno(p) for p in pares))
+    planillas = sorted(planillas, key=lambda p: (-len(p["cambios"]), p["nombre_nuevo"]))
+    total = sum(len(p["cambios"]) for p in planillas)
+    if log:
+        log(f"Comparación lista: {total} cambio(s) en "
+            f"{sum(1 for p in planillas if p['cambios'])} planilla(s).")
+    return {
+        "periodo_base":  nombre_base,
+        "periodo_ref":   nombre_ref,
+        "periodo_nuevo": nombre_carpeta_periodo(mes_nuevo, anio_nuevo),
+        "planillas":     planillas,
+        "sin_par_base":  sorted(sin_par_base),
+        "solo_en_ref":   solo_en_ref,
+        "total_cambios": total,
+    }
 
 
 def _handle_error(e: Exception) -> str:
