@@ -245,6 +245,88 @@ def _parcha(xml, nuevos):
     return re.sub(r'<c r="([A-Z]{1,3}\d+)"([^>]*?)(?:/>|>(.*?)</c>)', cambia, xml, flags=re.S)
 
 
+def _parcha_archivo(ruta, cambios):
+    """Reescribe en el .xlsx solo los valores de las celdas indicadas."""
+    with zipfile.ZipFile(ruta) as z:
+        rutas = _rutas_hojas(z)
+        destino = {rutas[h]: n for h, n in cambios.items() if h in rutas}
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as out:
+            for item in z.infolist():
+                datos = z.read(item.filename)
+                if item.filename in destino:
+                    datos = _parcha(datos.decode("utf-8"), destino[item.filename]).encode("utf-8")
+                out.writestr(item, datos)
+    temporal = Path(ruta).with_name(Path(ruta).name + ".miles")
+    temporal.write_bytes(buf.getvalue())
+    temporal.replace(ruta)
+
+
+def agrega_ceros(ruta, ruta_vista):
+    """Lleva a la planilla los montos como se ven en Workiva, con sus 3 ceros.
+
+    ruta:       la planilla exportada con el valor completo (la que se llena).
+    ruta_vista: la misma planilla exportada "como se ve" (exportPrecision
+                displayed): una celda mostrada en miles sale en miles.
+
+    Una celda de monto que en Workiva se ve en miles (4.513.821 cuando guarda
+    4.513.821.365) queda como se ve, mas los 3 ceros: 4.513.821.000, que es lo
+    que pide la CMF. La app no calcula ni redondea: el numero es el que
+    muestra Workiva. Una celda que se ve en unidades no se toca, y si es un
+    monto que no termina en 000 se informa, para cambiarla en Workiva.
+    Tasas, cantidades, ganancia por accion, etc. nunca se tocan."""
+    completo = load_workbook(ruta, data_only=True)
+    vista = load_workbook(ruta_vista, data_only=True)
+    cambios, sin_miles, en_miles = {}, [], 0
+    for hoja in completo.worksheets:
+        if hoja.title not in vista.sheetnames:
+            continue
+        hv = vista[hoja.title]
+        elementos = {}
+        for fila in hoja.iter_rows():
+            for c in fila:
+                v = c.value
+                if not isinstance(v, (int, float)) or isinstance(v, bool):
+                    continue
+                if c.row not in elementos:
+                    elementos[c.row] = elemento_de_fila(hoja, c.row)
+                elemento = elementos[c.row]
+                if not elemento or not es_monto(elemento, v):
+                    continue
+                d = hv.cell(c.row, c.column).value
+                if not isinstance(d, (int, float)) or isinstance(d, bool):
+                    continue
+                if abs(d - v) < 1e-6:
+                    # Se ve en unidades: queda en pesos exactos
+                    if abs(v) >= 1000 and round(v) % 1000:
+                        sin_miles.append((hoja.title.strip(), c.coordinate, round(v),
+                                          _etiqueta(hoja, c.row)))
+                    continue
+                if abs(d * 1000 - v) <= 500.5:
+                    nuevo = round(d * 1000, 6)
+                    if float(nuevo).is_integer():
+                        nuevo = int(nuevo)
+                    en_miles += 1
+                    if nuevo != v:
+                        cambios.setdefault(hoja.title, {})[c.coordinate] = nuevo
+                # Otra escala (millones, porcentajes...): se deja el valor completo
+    if cambios:
+        _parcha_archivo(ruta, cambios)
+    control = Planilla(ruta, redondear=False).control_bancos()
+    return {"en_miles": en_miles,
+            "celdas_cambiadas": sum(len(v) for v in cambios.values()),
+            "sin_miles": sin_miles,
+            "control_bancos": control}
+
+
+def _etiqueta(hoja, fila):
+    for col in range(5, 8):
+        v = hoja.cell(fila, col).value
+        if isinstance(v, str) and v.strip() and "#" not in v:
+            return re.sub(r"\s+", " ", v).replace("[Número]", "").strip()[:70]
+    return ""
+
+
 def ajusta(ruta, redondear=None):
     """Deja la planilla en miles (si REDONDEAR) y revisa la hoja de bancos.
     Devuelve lo que hizo, para mostrarlo."""
@@ -274,6 +356,15 @@ def ajusta(ruta, redondear=None):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 2 and not sys.argv[2].startswith("--"):
+        r = agrega_ceros(sys.argv[1], sys.argv[2])
+        print(f"Celdas en miles: {r['en_miles']}  (cambiadas: {r['celdas_cambiadas']})")
+        print(f"Montos que no estan en miles en Workiva: {len(r['sin_miles'])}")
+        for hoja, celda, v, et in r["sin_miles"][:40]:
+            print(f"  {hoja}!{celda}  {v:,}  {et}".replace(",", "."))
+        for hoja, celda, v in r["control_bancos"]:
+            print(f"  Control de {hoja} no da 0: {celda} = {v:,}".replace(",", "."))
+        sys.exit()
     r = ajusta(sys.argv[1], redondear="--miles" in sys.argv or None)
     if r["redondeadas"] is not None:
         print(f"Montos redondeados a miles: {r['redondeadas']}  "

@@ -821,6 +821,8 @@ class Aplicacion(tk.Tk):
         caja.bind("<Configure>", lambda e: ayuda_l.config(
             wraplength=max(200, e.width - 40)))
 
+        if "en_miles" in ultimo:
+            self._muestra_miles(ultimo["en_miles"], ultimo.get("sin_miles") or [])
         if "a_miles" in ultimo:
             if ultimo["a_miles"] is None:
                 self._texto("⚠  No se pudieron pasar los montos a miles: DBNeT puede "
@@ -835,7 +837,7 @@ class Aplicacion(tk.Tk):
         # Lo que hay que revisar antes de entregar
         revisar = BASE / emp / "REVISAR.xlsx"
         if not avisos or not revisar.exists():
-            if ultimo.get("control_bancos"):
+            if ultimo.get("control_bancos") or ultimo.get("sin_miles"):
                 self._texto("Fuera de eso, el llenado no tuvo nada que revisar.", VERDE)
             else:
                 self._texto("✔  Nada que revisar: todo calzó sin suponer nada.", VERDE)
@@ -848,6 +850,39 @@ class Aplicacion(tk.Tk):
         self._enlace(fila, "Abrir REVISAR.xlsx", lambda: abre(revisar)).pack(
             side="left", padx=(10, 0))
         self._lista_avisos(revisar)
+
+    def _muestra_miles(self, en_miles, sin_miles):
+        """Cuantos montos llegaron con sus 3 ceros y cuales siguen en unidades."""
+        if en_miles is None:
+            self._texto("⚠  No se pudieron agregar los 3 ceros a los montos: llegaron "
+                        "a DBNeT tal como estan guardados en Workiva. El detalle está "
+                        "en «detalle técnico».", AMBAR, tam=9)
+            return
+        if not sin_miles:
+            self._texto(f"Montos en miles con sus 3 ceros, tal como se ven en Workiva "
+                        f"({miles(en_miles)} celdas).", TENUE, tam=9)
+            return
+        self._texto(f"⚠  {plural(len(sin_miles), 'celda', 'celdas')} con montos no "
+                    "están mostradas en miles en Workiva, así que llegaron a DBNeT en "
+                    "pesos exactos. Cámbialas a «Shown in: Thousands» y vuelve a llenar:",
+                    AMBAR, "bold", 10)
+        marco = tk.Frame(self.resultado, bg=BLANCO)
+        marco.pack(fill="x", pady=(0, 8))
+        texto = tk.Text(marco, bg=AMBAR_FONDO, fg="#222", bd=0, wrap="none",
+                        padx=14, pady=8, font=(FUENTE, 9), height=6, cursor="arrow")
+        barra = ttk.Scrollbar(marco, orient="vertical", command=texto.yview)
+        texto.configure(yscrollcommand=barra.set)
+        barra.pack(side="right", fill="y")
+        texto.pack(side="left", fill="x", expand=True)
+        texto.tag_config("hoja", font=(FUENTE, 9, "bold"), foreground=AMBAR)
+        por_hoja = {}
+        for hoja, celda, valor, etiqueta in sin_miles:
+            por_hoja.setdefault(hoja, []).append((celda, valor, etiqueta))
+        for i, (hoja, celdas) in enumerate(por_hoja.items()):
+            texto.insert("end", ("\n" if i else "") + f"{hoja}  ({len(celdas)})\n", "hoja")
+            for celda, valor, etiqueta in celdas:
+                texto.insert("end", f"    {celda:<7} {miles(valor):>18}   {etiqueta}\n")
+        texto.config(state="disabled")
 
     def _recordatorio_bancos(self, control):
         """La hoja de obligaciones con bancos cambia con cada prestamo nuevo o
@@ -969,18 +1004,20 @@ class Aplicacion(tk.Tk):
             # 1. Workiva
             self.cola.put(("paso", paso))
             t0 = time.time()
-            Workiva().descarga(planilla, export)
+            wk = Workiva()
+            wk.descarga(planilla, export)
+            # La CMF pide la cifra en miles con 3 ceros. Se baja tambien la
+            # planilla "como se ve" en Workiva: cada monto mostrado en miles
+            # queda tal cual se ve, mas los 000. La app no calcula ni redondea.
+            vista = temporal / f"{planilla.nombre} (como se ve).xlsx"
+            wk.descarga(planilla, vista, precision="displayed")
             self.cola.put(("linea", (f"Descargado de Workiva en {time.time() - t0:.0f} s: "
                                      f"{export}", "ok")))
-            # Revisa el control de la hoja de obligaciones con bancos y, si
-            # miles_workiva.REDONDEAR esta encendido, deja los montos en miles.
-            # Si esto falla se sigue con la planilla tal cual.
             try:
-                ajuste = miles_workiva.ajusta(export)
-                if ajuste["redondeadas"] is not None:
-                    self.cola.put(("linea", (
-                        f"Montos pasados a miles: {ajuste['redondeadas']} cifras redondeadas, "
-                        f"{ajuste['celdas_cambiadas']} celdas con sus totales recalculados", "ok")))
+                ajuste = miles_workiva.agrega_ceros(export, vista)
+                self.cola.put(("linea", (
+                    f"Montos en miles con sus 3 ceros: {ajuste['en_miles']} celdas; "
+                    f"en unidades (sin tocar): {len(ajuste['sin_miles'])}", "ok")))
                 for hoja, celda, dif in ajuste["control_bancos"]:
                     self.cola.put(("linea", (f"Control de {hoja} no da 0: {celda} = "
                                              f"{miles(dif)}", "err")))
@@ -1040,9 +1077,9 @@ class Aplicacion(tk.Tk):
             ultimo = {"planilla": planilla.nombre, "archivo": final.name,
                       "celdas": celdas, "avisos": avisos, "plantillas": n,
                       "cuando": time.strftime("%d-%m-%Y a las %H:%M"),
-                      "control_bancos": ajuste["control_bancos"] if ajuste else []}
-            if miles_workiva.REDONDEAR:
-                ultimo["a_miles"] = ajuste["redondeadas"] if ajuste else None
+                      "control_bancos": ajuste["control_bancos"] if ajuste else [],
+                      "en_miles": ajuste["en_miles"] if ajuste else None,
+                      "sin_miles": ajuste["sin_miles"] if ajuste else []}
             nota_ultimo(carpeta).parent.mkdir(parents=True, exist_ok=True)
             nota_ultimo(carpeta).write_text(json.dumps(ultimo, indent=1), "utf-8")
             self.cola.put(("fin", ("ok", paso, (emp, ultimo, final))))

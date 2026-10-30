@@ -62,7 +62,7 @@ Llena las plantillas .xlsm de DBNeT directo desde Workiva, sin export manual.
 |---------|----------|
 | `xbrl_app.py` | Ventana (tkinter). Empresa + período → descarga, simula, llena en su lugar, arma el archivo único |
 | `xbrl_workiva.py` | API de Workiva: lista las planillas `E___ XBRL MM-AAAA` y las exporta a .xlsx |
-| `miles_workiva.py` | Antes de llenar revisa el control de `IFRS7-ObligConBanc`. El paso a miles esta APAGADO (`REDONDEAR = False`): se decidio replicar las notas en pesos en Workiva |
+| `miles_workiva.py` | `agrega_ceros()`: con la planilla bajada completa y "como se ve" (exportPrecision displayed), deja cada monto mostrado en miles en Workiva tal cual se ve + 000 (regla CMF); los que se ven en unidades no se tocan y se listan. Revisa el control de `IFRS7-ObligConBanc`. El redondeo propio (`REDONDEAR`) esta apagado |
 | `llenar_dbnet_desde_workiva.py` / `fusionar_cuadros.py` | Los mismos scripts del .bat; la app los corre como `XBRL_DBNeT.exe --tarea llenar|fusionar ...` |
 | `COMPILAR_XBRL.bat` | PyInstaller `--onefile --windowed` con los hidden imports de pywin32 |
 | `integracion_xbrl.ico` | Ícono del .exe (un eslabón). En la ventana va embebido en `xbrl_app.py` (ICONO_64/32) |
@@ -82,3 +82,8 @@ Miles (APAGADO desde 29-10-2026, se replican las notas en pesos): en la planilla
 diferencia (E211 06-2026: 93 de 115). `miles_workiva.ajusta()` corre en la app justo despues de bajar la
 planilla, reescribiendo solo los `<v>` del XML (openpyxl perderia los valores de las formulas). Quedan
 diferencias de 1.000 cuando la suma de lineas redondeadas no calza con el total redondeado de otro cuadro.
+
+Miles (30-10-2026): la CMF pide la cifra en miles + 3 ceros. En Workiva se deja cada monto "Shown in: Thousands";
+la app baja la planilla dos veces (valor completo y `displayed`) y a las celdas de monto que se ven en miles les pone
+lo que se ve x1000. El export "displayed" de una celda en unidades trae el valor completo: por eso no se multiplica a
+ciegas (quedaria 1.000 veces mas grande); esas se informan en el Resultado para cambiarlas en Workiva.

@@ -159,10 +159,16 @@ class Workiva:
         encontradas.sort(key=lambda p: (p.empresa, p.orden, p.modificada), reverse=True)
         return encontradas
 
-    def descarga(self, planilla, destino):
-        """Exporta la planilla a .xlsx y la deja en destino."""
+    def descarga(self, planilla, destino, precision=None):
+        """Exporta la planilla a .xlsx y la deja en destino.
+
+        precision: None (valor completo), "rounded" o "displayed" (cada celda
+        como se ve en Workiva: una mostrada en miles sale en miles)."""
+        cuerpo = {"format": "xlsx"}
+        if precision:
+            cuerpo["xlsxOptions"] = {"exportAsFormulas": True, "exportPrecision": precision}
         estado, cab, _ = self._api(
-            "POST", f"/spreadsheets/{planilla.id}/export", {"format": "xlsx"})
+            "POST", f"/spreadsheets/{planilla.id}/export", cuerpo)
         operacion = cab.get("Location")
         if estado != 202 or not operacion:
             raise ErrorWorkiva(f"Workiva no acepto exportar '{planilla.nombre}' "
