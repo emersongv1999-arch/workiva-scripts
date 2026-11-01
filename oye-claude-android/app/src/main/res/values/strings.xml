@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Oye Claude</string>
+    <string name="accessibility_label">Oye Claude: botón de voz</string>
+    <string name="accessibility_description">Cuando dices «Oye Claude», este servicio abre la app de Claude y toca su botón de voz por ti. También detecta cuándo sales de Claude para volver a escuchar. No lee ni guarda el contenido de otras apps.</string>
+</resources>

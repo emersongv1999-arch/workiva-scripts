@@ -1,0 +1,8 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+# El modelo Vosk se descarga automáticamente al compilar (~40 MB)
+app/src/main/assets/model-es/
