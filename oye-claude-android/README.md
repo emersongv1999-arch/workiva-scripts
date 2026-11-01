@@ -40,6 +40,15 @@ Cada push que cambia `oye-claude-android/` compila el APK con GitHub Actions
 4. Pulsa **Probar ahora (sin hablar)** para comprobar que Claude se abre y se toca
    el botón de voz. Después prueba diciendo «Oye Claude» con una pausa breve al final.
 
+### Si vibra pero no se abre nada
+
+Android solo deja abrir pantallas desde segundo plano a una app que tenga una
+ventana visible. Por eso, justo antes de abrir, Oye Claude muestra una ventana
+invisible de 1 px usando la **accesibilidad** (o «Mostrar sobre otras apps»).
+Comprueba en la app que la accesibilidad tenga ✅. En *Registro* verás con qué
+método intentó abrir y si Android lo bloqueó. En Xiaomi/HyperOS activa además
+«Mostrar ventanas emergentes en segundo plano».
+
 ### Si toca el botón equivocado o no lo encuentra
 
 La app busca automáticamente un botón cuya descripción contenga «modo de voz»,

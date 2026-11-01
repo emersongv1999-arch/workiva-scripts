@@ -22,6 +22,7 @@ class StartListeningActivity : Activity() {
         super.onResume()
         if (launched) return
         launched = true
+        BackgroundStarter.done()
         try {
             WakeWordService.start(this)
             EventLog.add("Escucha reanudada automáticamente")

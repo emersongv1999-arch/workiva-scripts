@@ -1,6 +1,7 @@
 package com.emersongv.oyeclaude
 
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -18,19 +19,20 @@ object WakeLauncher {
         Flow.set(Flow.Phase.UNLOCKING)
         wakeScreen(ctx)
         val requestedAt = SystemClock.elapsedRealtime()
-        try {
-            // Permitido desde segundo plano porque el servicio de accesibilidad está
-            // vinculado por el sistema (o si se concedió «Mostrar sobre otras apps»).
-            ctx.startActivity(UnlockActivity.intent(ctx))
-        } catch (e: Exception) {
-            EventLog.add("No se pudo abrir la pantalla de desbloqueo: ${e.message}")
-        }
+        val how = BackgroundStarter.start(ctx, UnlockActivity.intent(ctx))
+        EventLog.add("Abriendo pantalla de desbloqueo ($how) · Android ${Build.VERSION.RELEASE}")
         main.postDelayed({
             if (lastUnlockActivityStart < requestedAt) {
-                EventLog.add("Android bloqueó la apertura directa; uso notificación de pantalla completa")
+                EventLog.add(
+                    if (ClaudeAccessibilityService.instance == null) {
+                        "Android bloqueó la apertura: activa la accesibilidad de Oye Claude. Uso una notificación."
+                    } else {
+                        "Android bloqueó la apertura. Uso una notificación (tócala)."
+                    },
+                )
                 Notifications.showFullScreenLaunch(ctx)
             }
-        }, 1500)
+        }, 2_500)
     }
 
     @Suppress("DEPRECATION")

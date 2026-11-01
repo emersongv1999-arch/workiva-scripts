@@ -63,12 +63,10 @@ class ClaudeAccessibilityService : AccessibilityService() {
         if (prefs.listeningEnabled && !WakeWordService.running && micOk) {
             handler.postDelayed({
                 if (!WakeWordService.running) {
-                    try {
-                        startActivity(StartListeningActivity.intent(this))
-                    } catch (e: Exception) {
-                        EventLog.add("No se pudo reanudar la escucha: ${e.message}")
-                        Notifications.showReactivate(this)
-                    }
+                    BackgroundStarter.start(this, StartListeningActivity.intent(this))
+                    handler.postDelayed({
+                        if (!WakeWordService.running) Notifications.showReactivate(this)
+                    }, 5_000)
                 }
             }, 2_000)
         }

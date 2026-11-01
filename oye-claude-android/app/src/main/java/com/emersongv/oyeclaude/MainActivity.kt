@@ -266,7 +266,7 @@ class MainActivity : AppCompatActivity() {
         b.checklist.text = buildString {
             appendLine(check(claudeInstalled, "App de Claude instalada"))
             appendLine(check(mic, "Micrófono"))
-            appendLine(check(a11yOn, "Accesibilidad (abrir Claude y tocar el botón de voz)"))
+            appendLine(check(a11yOn, "Accesibilidad (imprescindible para abrir Claude por voz)"))
             append(check(ModelManager.isReady(this@MainActivity), "Modelo de voz preparado"))
         }
 

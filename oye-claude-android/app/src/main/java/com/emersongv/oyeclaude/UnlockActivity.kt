@@ -51,6 +51,7 @@ class UnlockActivity : Activity() {
     private fun markStarted() {
         WakeLauncher.lastUnlockActivityStart = SystemClock.elapsedRealtime()
         Notifications.cancelFullScreen(this)
+        BackgroundStarter.done()
     }
 
     override fun onResume() {
