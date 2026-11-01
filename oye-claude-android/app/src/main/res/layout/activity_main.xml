@@ -115,7 +115,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="4dp"
-                    android:text="Si Android dice «Ajuste restringido»: abre Info de la app → menú ⋮ (arriba a la derecha) → «Permitir ajustes restringidos», y vuelve a activar la accesibilidad."
+                    android:text="Primero intenta activarla. Si sale «Ajuste restringido», toca Aceptar; luego «Abrir Info de la app» → menú ⋮ (arriba a la derecha) → «Permitir ajustes restringidos» y vuelve a activar la accesibilidad. El menú ⋮ solo muestra esa opción después de ese primer intento."
                     android:textAppearance="?attr/textAppearanceBodySmall" />
 
                 <com.google.android.material.button.MaterialButton

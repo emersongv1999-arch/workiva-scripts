@@ -47,7 +47,8 @@ class WakeWordService : Service() {
         private const val SAMPLE_RATE = 16000
         private const val MAX_IN_CLAUDE_MS = 30 * 60_000L
         private const val MAX_UNLOCK_MS = 60_000L
-        private const val NO_A11Y_PAUSE_MS = 60_000L
+        private const val NO_A11Y_MIN_PAUSE_MS = 10_000L
+        private const val PAUSED_IN_CLAUDE = "En pausa mientras usas Claude"
 
         @Volatile
         var running = false
@@ -380,15 +381,16 @@ class WakeWordService : Service() {
                 Flow.Phase.IDLE -> true
                 Flow.Phase.UNLOCKING -> elapsed > MAX_UNLOCK_MS
                 Flow.Phase.IN_CLAUDE -> {
+                    if (status != PAUSED_IN_CLAUDE) setStatus(PAUSED_IN_CLAUDE)
                     val a11y = ClaudeAccessibilityService.instance
-                    if (a11y == null) {
-                        elapsed > NO_A11Y_PAUSE_MS
-                    } else {
-                        val fg = a11y.currentAppPackage()
-                        leftClaudeChecks = if (fg != null && fg != prefs.claudePackage) leftClaudeChecks + 1 else 0
-                        // Esperamos a que salgas de Claude y que nadie más use el micrófono.
-                        (leftClaudeChecks >= 2 && !someoneElseRecording()) || elapsed > MAX_IN_CLAUDE_MS
-                    }
+                    // Con accesibilidad: esperamos a que salgas de Claude y nadie use el micrófono.
+                    // Sin accesibilidad no sabemos qué app está delante: basta con que nadie grabe.
+                    val free = !someoneElseRecording() && (
+                        a11y == null || a11y.currentAppPackage().let { it != null && it != prefs.claudePackage }
+                        )
+                    leftClaudeChecks = if (free) leftClaudeChecks + 1 else 0
+                    val minPause = if (a11y == null) NO_A11Y_MIN_PAUSE_MS else 0L
+                    (leftClaudeChecks >= 2 && elapsed >= minPause) || elapsed > MAX_IN_CLAUDE_MS
                 }
             }
             if (resume) {
