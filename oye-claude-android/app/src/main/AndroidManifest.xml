@@ -15,6 +15,7 @@
 
     <!-- Para poder encontrar y abrir la app de Claude (u otra configurada). -->
     <queries>
+        <package android:name="com.anthropic.claude" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

@@ -30,6 +30,11 @@ object VoiceButtonFinder {
         "silenciar", "mute", "idioma", "language", "eliminar", "delete", "cerrar", "close",
     )
 
+    private val NEW_CHAT = listOf(
+        "nuevo chat", "chat nuevo", "new chat", "nueva conversacion", "new conversation",
+        "iniciar un chat", "start new chat", "start a new chat",
+    )
+
     private const val MAX_NODES = 3000
 
     class Found(val node: AccessibilityNodeInfo, val label: String)
@@ -112,6 +117,16 @@ object VoiceButtonFinder {
             }
         }
         return best?.let { Found(it, bestLabel) }
+    }
+
+    /** Botón para empezar un chat nuevo (cuando Claude se abrió en otra pantalla). */
+    fun findNewChat(root: AccessibilityNodeInfo): Found? {
+        for (n in visibleNodes(root)) {
+            val label = labelOf(n)
+            val l = normalize(label)
+            if (l.isNotEmpty() && NEW_CHAT.any { l.contains(it) } && isTappable(n)) return Found(n, label)
+        }
+        return null
     }
 
     /** Lista de elementos tocables para que el usuario elija (inspector). */

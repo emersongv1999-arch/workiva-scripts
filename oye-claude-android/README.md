@@ -62,6 +62,10 @@ La app busca automáticamente un botón cuya descripción contenga «modo de voz
 ## Ajustes avanzados
 
 - **Paquete de la app de Claude**: `com.anthropic.claude` por defecto.
+- **Abrir siempre un chat nuevo** (activado): abre Claude con el enlace `https://claude.ai/new`
+  (la app de Claude acepta los enlaces de claude.ai), así no reaparece donde lo dejaste
+  (por ejemplo en Claude Code, donde no hay botón de voz). Si aun así no ve el botón de voz,
+  toca «Nuevo chat» antes de buscarlo.
 - **Palabra de activación**: `oye` (se pueden poner varias separadas por comas).
 - **Cómo puede oír «Claude»**: `claude, cloud, claudio`. El modelo pequeño escribe
   así las pronunciaciones más comunes («clod», «claud»). Mira *Registro → Último texto oído*

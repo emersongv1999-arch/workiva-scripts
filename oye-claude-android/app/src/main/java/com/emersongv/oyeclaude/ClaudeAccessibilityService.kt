@@ -48,6 +48,8 @@ class ClaudeAccessibilityService : AccessibilityService() {
     private var tapPackage: String? = null
     private var tapDeadline = 0L
     private var tapAttempts = 0
+    private var newChatFallback = false
+    private var newChatTapped = false
     private var attemptScheduled = false
     private var snapshotScheduled = false
 
@@ -110,10 +112,12 @@ class ClaudeAccessibilityService : AccessibilityService() {
 
     // ---------------------------------------------------------------- tocar botón de voz
 
-    fun requestVoiceTap(pkg: String) {
+    fun requestVoiceTap(pkg: String, newChat: Boolean) {
         tapPackage = pkg
         tapDeadline = SystemClock.elapsedRealtime() + TAP_TIMEOUT_MS
         tapAttempts = 0
+        newChatFallback = newChat
+        newChatTapped = false
         attemptScheduled = false
         scheduleAttempt(800)
     }
@@ -148,6 +152,17 @@ class ClaudeAccessibilityService : AccessibilityService() {
             if (click(found.node)) {
                 tapPackage = null
                 EventLog.add("Toqué «${found.label}»")
+                return
+            }
+        } else if (newChatFallback && !newChatTapped && tapAttempts >= 4) {
+            // Claude se abrió en otra pantalla (p. ej. Claude Code): buscamos «Nuevo chat».
+            val newChat = VoiceButtonFinder.findNewChat(root)
+            if (newChat != null && click(newChat.node)) {
+                newChatTapped = true
+                tapDeadline = SystemClock.elapsedRealtime() + TAP_TIMEOUT_MS
+                EventLog.add("Toqué «${newChat.label}» para abrir un chat nuevo")
+                attemptScheduled = false
+                scheduleAttempt(1_200)
                 return
             }
         } else if (prefs.hasTargetPoint && tapAttempts >= 5) {

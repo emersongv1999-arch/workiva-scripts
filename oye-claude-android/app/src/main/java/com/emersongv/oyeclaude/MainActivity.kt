@@ -93,6 +93,9 @@ class MainActivity : AppCompatActivity() {
         b.inputTriggers.setText(prefs.triggerWords.joinToString(", "))
         b.inputVariants.setText(prefs.nameVariants.joinToString(", "))
         b.beepSwitch.isChecked = prefs.beepOnWake
+        b.beepSwitch.setOnCheckedChangeListener { _, checked -> prefs.beepOnWake = checked }
+        b.newChatSwitch.isChecked = prefs.openNewChat
+        b.newChatSwitch.setOnCheckedChangeListener { _, checked -> prefs.openNewChat = checked }
         b.btnSave.setOnClickListener { saveAdvanced() }
 
         handleAutostart(intent)

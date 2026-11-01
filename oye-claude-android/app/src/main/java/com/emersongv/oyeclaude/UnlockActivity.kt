@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -19,6 +20,9 @@ import android.widget.Toast
 class UnlockActivity : Activity() {
 
     companion object {
+        /** La app de Claude abre los enlaces de claude.ai (ver claude.ai/.well-known/assetlinks.json). */
+        private const val NEW_CHAT_URL = "https://claude.ai/new"
+
         fun intent(ctx: Context): Intent = Intent(ctx, UnlockActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
     }
@@ -83,18 +87,18 @@ class UnlockActivity : Activity() {
     private fun openClaude() {
         if (done) return
         done = true
-        val pkg = Prefs(this).claudePackage
-        val launch = packageManager.getLaunchIntentForPackage(pkg)
+        val prefs = Prefs(this)
+        val pkg = prefs.claudePackage
+        val launch = claudeIntent(pkg, prefs.openNewChat)
         if (launch == null) {
             Toast.makeText(this, "No encontré la app de Claude ($pkg)", Toast.LENGTH_LONG).show()
             fail("App de Claude no instalada: $pkg")
             return
         }
-        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
         Flow.set(Flow.Phase.IN_CLAUDE)
         val a11y = ClaudeAccessibilityService.instance
         if (a11y != null) {
-            a11y.requestVoiceTap(pkg)
+            a11y.requestVoiceTap(pkg, prefs.openNewChat)
         } else {
             EventLog.add("Accesibilidad desactivada: abro Claude pero no puedo tocar el botón de voz")
             Toast.makeText(this, "Activa la accesibilidad de Oye Claude para tocar el botón de voz", Toast.LENGTH_LONG).show()
@@ -102,6 +106,20 @@ class UnlockActivity : Activity() {
         EventLog.add("Abriendo Claude")
         startActivity(launch)
         finish()
+    }
+
+    /** Chat nuevo vía enlace si la app lo acepta; si no, la app tal como quedó. */
+    private fun claudeIntent(pkg: String, newChat: Boolean): Intent? {
+        if (newChat) {
+            val view = Intent(Intent.ACTION_VIEW, Uri.parse(NEW_CHAT_URL)).setPackage(pkg)
+            if (view.resolveActivity(packageManager) != null) {
+                EventLog.add("Abriendo un chat nuevo en Claude")
+                return view.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            EventLog.add("Claude no acepta el enlace de chat nuevo; abro la app tal como quedó")
+        }
+        return packageManager.getLaunchIntentForPackage(pkg)
+            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
     }
 
     private fun fail(reason: String) {

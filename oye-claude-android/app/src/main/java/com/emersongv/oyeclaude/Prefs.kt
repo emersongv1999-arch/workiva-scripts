@@ -26,6 +26,11 @@ class Prefs(context: Context) {
         get() = splitWords(sp.getString(K_VARIANTS, null)).ifEmpty { WakeMatcher.DEFAULT_VARIANTS }
         set(v) = sp.edit { putString(K_VARIANTS, v.joinToString(", ")) }
 
+    /** Abrir Claude en un chat nuevo (enlace claude.ai/new) en vez de donde lo dejaste. */
+    var openNewChat: Boolean
+        get() = sp.getBoolean(K_NEW_CHAT, true)
+        set(v) = sp.edit { putBoolean(K_NEW_CHAT, v) }
+
     var beepOnWake: Boolean
         get() = sp.getBoolean(K_BEEP, true)
         set(v) = sp.edit { putBoolean(K_BEEP, v) }
@@ -61,6 +66,7 @@ class Prefs(context: Context) {
         private const val K_TRIGGERS = "trigger_words"
         private const val K_VARIANTS = "name_variants"
         private const val K_BEEP = "beep_on_wake"
+        private const val K_NEW_CHAT = "open_new_chat"
         private const val K_TARGET_LABEL = "target_label"
         private const val K_TARGET_X = "target_x"
         private const val K_TARGET_Y = "target_y"
