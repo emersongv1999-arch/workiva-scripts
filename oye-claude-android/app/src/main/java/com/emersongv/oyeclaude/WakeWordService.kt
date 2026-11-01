@@ -114,8 +114,9 @@ class WakeWordService : Service() {
         super.onCreate()
         prefs = Prefs(this)
         Notifications.createChannels(this)
+        // SCREEN_OFF es una difusión protegida: solo la envía el sistema.
         ContextCompat.registerReceiver(
-            this, screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED,
+            this, screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_EXPORTED,
         )
         try {
             LibVosk.setLogLevel(LogLevel.WARNINGS)
