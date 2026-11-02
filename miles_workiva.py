@@ -302,7 +302,11 @@ def agrega_ceros(ruta, ruta_vista):
                         sin_miles.append((hoja.title.strip(), c.coordinate, round(v),
                                           _etiqueta(hoja, c.row)))
                     continue
-                if abs(d * 1000 - v) <= 500.5:
+                # En miles: lo que se ve x1000 queda cerca del valor guardado.
+                # Un total que en Workiva suma "como se muestra" puede alejarse
+                # mas de 500 (la suma de las lineas redondeadas), por eso se da
+                # holgura; otra escala (millones, %) queda lejisimos.
+                if abs(d * 1000 - v) <= max(5000, 0.05 * abs(v)):
                     nuevo = round(d * 1000, 6)
                     if float(nuevo).is_integer():
                         nuevo = int(nuevo)
