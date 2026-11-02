@@ -18,6 +18,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -49,6 +50,7 @@ class WakeWordService : Service() {
         private const val MAX_UNLOCK_MS = 60_000L
         private const val NO_A11Y_MIN_PAUSE_MS = 10_000L
         private const val PAUSED_IN_CLAUDE = "En pausa mientras usas Claude"
+        private const val PAUSED_SCREEN_OFF = "En pausa con la pantalla apagada"
 
         @Volatile
         var running = false
@@ -56,6 +58,11 @@ class WakeWordService : Service() {
 
         @Volatile
         var status: String = "Detenido"
+            private set
+
+        /** % del tiempo en que el reconocedor estuvo trabajando (el resto, en reposo por silencio). */
+        @Volatile
+        var recognizerActivePercent: Int = -1
             private set
 
         fun start(ctx: Context) {
@@ -99,12 +106,20 @@ class WakeWordService : Service() {
     private var leftClaudeChecks = 0
     private var retryDelay = 2_000L
 
-    private val screenOffReceiver = object : BroadcastReceiver() {
+    private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            // Si se apagó la pantalla sin desbloquear, volvemos a escuchar.
-            if (awaitingReturn && Flow.phase == Flow.Phase.UNLOCKING) {
-                Flow.set(Flow.Phase.IDLE)
-                finishWaiting("pantalla apagada sin desbloquear")
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    // Si se apagó la pantalla sin desbloquear, volvemos a escuchar.
+                    if (awaitingReturn && Flow.phase == Flow.Phase.UNLOCKING) {
+                        Flow.set(Flow.Phase.IDLE)
+                        finishWaiting("pantalla apagada sin desbloquear")
+                    } else if (prefs.pauseWhenScreenOff && listener != null) {
+                        stopListening()
+                        setStatus(PAUSED_SCREEN_OFF)
+                    }
+                }
+                Intent.ACTION_SCREEN_ON -> if (prefs.pauseWhenScreenOff) startListening()
             }
         }
     }
@@ -115,10 +130,12 @@ class WakeWordService : Service() {
         super.onCreate()
         prefs = Prefs(this)
         Notifications.createChannels(this)
-        // SCREEN_OFF es una difusión protegida: solo la envía el sistema.
-        ContextCompat.registerReceiver(
-            this, screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_EXPORTED,
-        )
+        // SCREEN_OFF/ON son difusiones protegidas: solo las envía el sistema.
+        val screenFilter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+        }
+        ContextCompat.registerReceiver(this, screenReceiver, screenFilter, ContextCompat.RECEIVER_EXPORTED)
         try {
             LibVosk.setLogLevel(LogLevel.WARNINGS)
         } catch (_: Throwable) {
@@ -164,7 +181,7 @@ class WakeWordService : Service() {
         running = false
         handler.removeCallbacksAndMessages(null)
         try {
-            unregisterReceiver(screenOffReceiver)
+            unregisterReceiver(screenReceiver)
         } catch (_: Exception) {
         }
         stopListening()
@@ -214,6 +231,10 @@ class WakeWordService : Service() {
         if (destroyed || listener != null || loading || manualPause || awaitingReturn) return
         if (!hasMicPermission()) {
             setStatus("Falta el permiso de micrófono")
+            return
+        }
+        if (prefs.pauseWhenScreenOff && getSystemService(PowerManager::class.java)?.isInteractive == false) {
+            setStatus(PAUSED_SCREEN_OFF)
             return
         }
         val m = model
@@ -288,6 +309,10 @@ class WakeWordService : Service() {
             stopRequested = true
         }
 
+        private fun post(result: String) {
+            handler.post { if (listener === this) handleResult(result) }
+        }
+
         @SuppressLint("MissingPermission") // comprobado en startListening()
         override fun run() {
             var record: AudioRecord? = null
@@ -305,13 +330,18 @@ class WakeWordService : Service() {
                 if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) throw IllegalStateException("micrófono en uso")
                 handler.post { retryDelay = 2_000L }
                 val buffer = ShortArray(chunk)
+                val gate = SilenceGate(chunk, chunk * 1000 / SAMPLE_RATE)
+                val feed: (ShortArray, Int) -> Unit = { data, len ->
+                    if (rec.acceptWaveForm(data, len)) post(rec.result)
+                }
+                val close: () -> Unit = { post(rec.finalResult) }
                 while (!stopRequested) {
                     val n = record.read(buffer, 0, buffer.size)
                     if (n < 0) throw IllegalStateException("error de lectura $n")
                     if (n == 0 || stopRequested) continue
-                    if (rec.acceptWaveForm(buffer, n)) {
-                        val result = rec.result
-                        handler.post { if (listener === this) handleResult(result) }
+                    gate.process(buffer, n, feed, close)
+                    if (gate.totalChunks % 50 == 0L) {
+                        recognizerActivePercent = (100 * gate.fedChunks / gate.totalChunks).toInt()
                     }
                 }
             } catch (e: Throwable) {

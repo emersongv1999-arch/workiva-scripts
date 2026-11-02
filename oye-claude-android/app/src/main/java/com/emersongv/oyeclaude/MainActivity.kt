@@ -95,6 +95,8 @@ class MainActivity : AppCompatActivity() {
         b.beepSwitch.isChecked = prefs.beepOnWake
         b.beepSwitch.setOnCheckedChangeListener { _, checked -> prefs.beepOnWake = checked }
         b.newChatSwitch.isChecked = prefs.openNewChat
+        b.screenOffSwitch.isChecked = prefs.pauseWhenScreenOff
+        b.screenOffSwitch.setOnCheckedChangeListener { _, checked -> prefs.pauseWhenScreenOff = checked }
         b.newChatSwitch.setOnCheckedChangeListener { _, checked -> prefs.openNewChat = checked }
         b.btnSave.setOnClickListener { saveAdvanced() }
 
@@ -252,7 +254,10 @@ class MainActivity : AppCompatActivity() {
         b.listenSwitch.isChecked = prefs.listeningEnabled
         updatingUi = false
         b.serviceStatus.text = when {
-            WakeWordService.running -> WakeWordService.status
+            WakeWordService.running -> WakeWordService.status +
+                WakeWordService.recognizerActivePercent.let {
+                    if (it >= 0) "\nReconocedor activo el $it % del tiempo (en silencio descansa)" else ""
+                }
             prefs.listeningEnabled -> "No está escuchando. Apaga y enciende el interruptor."
             else -> "Detenido"
         }

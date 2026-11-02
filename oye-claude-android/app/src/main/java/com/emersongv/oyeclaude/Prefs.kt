@@ -31,6 +31,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(K_NEW_CHAT, true)
         set(v) = sp.edit { putBoolean(K_NEW_CHAT, v) }
 
+    /** Dejar de escuchar con la pantalla apagada (ahorra batería; no responde con la pantalla apagada). */
+    var pauseWhenScreenOff: Boolean
+        get() = sp.getBoolean(K_SCREEN_OFF, false)
+        set(v) = sp.edit { putBoolean(K_SCREEN_OFF, v) }
+
     var beepOnWake: Boolean
         get() = sp.getBoolean(K_BEEP, true)
         set(v) = sp.edit { putBoolean(K_BEEP, v) }
@@ -67,6 +72,7 @@ class Prefs(context: Context) {
         private const val K_VARIANTS = "name_variants"
         private const val K_BEEP = "beep_on_wake"
         private const val K_NEW_CHAT = "open_new_chat"
+        private const val K_SCREEN_OFF = "pause_when_screen_off"
         private const val K_TARGET_LABEL = "target_label"
         private const val K_TARGET_X = "target_x"
         private const val K_TARGET_Y = "target_y"

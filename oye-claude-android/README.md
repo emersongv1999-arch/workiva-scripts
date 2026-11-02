@@ -81,7 +81,11 @@ detectó 42/42 frases «Oye Claude» con 0 falsos positivos en 132 frases pareci
 - Mientras estás en Claude, Oye Claude no escucha (deja el micrófono libre para Claude).
 - Tras reiniciar el teléfono, la escucha se reanuda sola si la accesibilidad está
   activa; si no, aparece una notificación para reactivarla con un toque.
-- El reconocimiento continuo gasta algo de batería.
+- Gasta más batería que «Ok Google» o «Oye Siri»: esos usan un chip de bajo consumo que
+  Android reserva al asistente del sistema. Para reducirlo, el reconocedor solo trabaja
+  cuando hay sonido (compuerta de silencio; la app muestra qué % del tiempo está activo) y
+  en *Avanzado* puedes activar «Pausar con la pantalla apagada». El micrófono sigue abierto,
+  por eso Android muestra el punto verde.
 - La interfaz de Claude puede cambiar; si deja de encontrar el botón, vuelve a elegirlo.
 - El APK se firma con `app/oyeclaude.keystore` (incluido a propósito para que las
   actualizaciones se instalen encima). Como el repo es público, instala solo el APK
