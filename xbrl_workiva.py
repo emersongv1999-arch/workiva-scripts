@@ -163,10 +163,12 @@ class Workiva:
         """Exporta la planilla a .xlsx y la deja en destino.
 
         precision: None (valor completo), "rounded" o "displayed" (cada celda
-        como se ve en Workiva: una mostrada en miles sale en miles)."""
+        como se ve en Workiva: una mostrada en miles sale en miles).
+        Con precision se exporta sin formulas: si van formulas, Workiva deja
+        en los totales el valor completo aunque se vean en miles."""
         cuerpo = {"format": "xlsx"}
         if precision:
-            cuerpo["xlsxOptions"] = {"exportAsFormulas": True, "exportPrecision": precision}
+            cuerpo["xlsxOptions"] = {"exportAsFormulas": False, "exportPrecision": precision}
         estado, cab, _ = self._api(
             "POST", f"/spreadsheets/{planilla.id}/export", cuerpo)
         operacion = cab.get("Location")
