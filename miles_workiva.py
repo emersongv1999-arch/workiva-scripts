@@ -41,7 +41,10 @@ from openpyxl.utils import column_index_from_string, get_column_letter
 # planilla no trae el tipo de dato.
 NO_MONTO = re.compile(r"(NumberOf|PerShare$|Percentage|Proportion|Ratio$|RatioOf|"
                       r"Porcentaje|Numero|Cantidad|Tasa|EnDias$|PeriodoPromedio|"
-                      r"Years$|Duration)")
+                      r"Years$|Duration|"
+                      # Conceptos de texto (politicas, explicaciones): un numero
+                      # suelto en esa fila es un calculo auxiliar, no un monto.
+                      r"Explanatory$|TextBlock$)")
 # Pasar a miles. Apagado: las notas se replican en pesos en Workiva.
 REDONDEAR = False
 
