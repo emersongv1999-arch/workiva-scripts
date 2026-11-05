@@ -41,10 +41,7 @@ from openpyxl.utils import column_index_from_string, get_column_letter
 # planilla no trae el tipo de dato.
 NO_MONTO = re.compile(r"(NumberOf|PerShare$|Percentage|Proportion|Ratio$|RatioOf|"
                       r"Porcentaje|Numero|Cantidad|Tasa|EnDias$|PeriodoPromedio|"
-                      r"Years$|Duration|"
-                      # Conceptos de texto (politicas, explicaciones): un numero
-                      # suelto en esa fila es un calculo auxiliar, no un monto.
-                      r"Explanatory$|TextBlock$)")
+                      r"Years$|Duration)")
 # Pasar a miles. Apagado: las notas se replican en pesos en Workiva.
 REDONDEAR = False
 
@@ -265,6 +262,49 @@ def _parcha_archivo(ruta, cambios):
     temporal.replace(ruta)
 
 
+def celdas_del_cuadro(ruta):
+    """{hoja: {(fila, columna)}}: las celdas que el llenado lleva a DBNeT.
+
+    Son las mismas que mira llenar_dbnet_desde_workiva: filas con concepto
+    XBRL y columnas con encabezado de periodo o de miembro. Lo que queda fuera
+    (columnas de control, calculos auxiliares al lado del cuadro) no llega a
+    DBNeT, asi que no se toca ni se avisa."""
+    import llenar_dbnet_desde_workiva as llenado
+    libro = llenado.Libro(ruta)
+    try:
+        out = {}
+        for hoja in libro.hojas:
+            cel = libro.celdas(hoja)
+            cols, _ = llenado.columnas_de_datos(cel)
+            filas = {f for f, *_ in llenado.filas_indexadas(cel)}
+            out[hoja.strip()] = {(int(f), llenado.col_a_num(c))
+                                 for f in filas for c in cols}
+        return out
+    finally:
+        libro.cierra()
+
+
+def _lados(celda):
+    b = celda.border
+    return {k for k in ("left", "right", "top", "bottom")
+            if getattr(b, k) is not None and getattr(b, k).style}
+
+
+def en_recuadro(hoja, fila, col):
+    """True si la celda esta dentro del recuadro de un cuadro.
+
+    En Workiva cada celda de un cuadro va enmarcada; los calculos auxiliares
+    y las columnas de control que la gente deja al lado no. Basta con borde
+    arriba y abajo, o a la izquierda y a la derecha, contando el de la celda
+    vecina: Excel guarda el borde compartido en una sola de las dos."""
+    lados = _lados(hoja.cell(fila, col))
+    arriba = "top" in lados or (fila > 1 and "bottom" in _lados(hoja.cell(fila - 1, col)))
+    abajo = "bottom" in lados or "top" in _lados(hoja.cell(fila + 1, col))
+    izq = "left" in lados or (col > 1 and "right" in _lados(hoja.cell(fila, col - 1)))
+    der = "right" in lados or "left" in _lados(hoja.cell(fila, col + 1))
+    return (arriba and abajo) or (izq and der)
+
+
 def agrega_ceros(ruta, ruta_vista):
     """Lleva a la planilla los montos como se ven en Workiva, con sus 3 ceros.
 
@@ -280,16 +320,24 @@ def agrega_ceros(ruta, ruta_vista):
     Tasas, cantidades, ganancia por accion, etc. nunca se tocan."""
     completo = load_workbook(ruta, data_only=True)
     vista = load_workbook(ruta_vista, data_only=True)
+    cuadro = celdas_del_cuadro(ruta)
     cambios, sin_miles, en_miles = {}, [], 0
     for hoja in completo.worksheets:
         if hoja.title not in vista.sheetnames:
             continue
         hv = vista[hoja.title]
+        dentro = cuadro.get(hoja.title.strip(), set())
         elementos = {}
         for fila in hoja.iter_rows():
             for c in fila:
                 v = c.value
                 if not isinstance(v, (int, float)) or isinstance(v, bool):
+                    continue
+                # Solo lo que llega a DBNeT: celdas del cuadro (columna y fila
+                # que el llenado copia, y dentro del recuadro).
+                if (c.row, c.column) not in dentro:
+                    continue
+                if not en_recuadro(hoja, c.row, c.column):
                     continue
                 if c.row not in elementos:
                     elementos[c.row] = elemento_de_fila(hoja, c.row)
