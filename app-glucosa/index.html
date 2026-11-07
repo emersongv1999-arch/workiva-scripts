@@ -1,0 +1,1563 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Diario de Glucosa</title>
+<meta name="description" content="Registro personal de glucosa capilar: promedio, HbA1c estimada, tiempo en objetivo y tendencias.">
+<meta name="theme-color" content="#F3F5F9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0D1020" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Glucosa">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,-apple-system,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;600;700&family=Atkinson+Hyperlegible+Next:wght@400;600;700;800&display=swap">
+<style>
+/* Layout: una columna tipo libreta de glucómetro. Lectura grande arriba, resumen debajo y pestañas fijas abajo. */
+:root {
+  --bg: #F3F5F9;
+  --surface: #FFFFFF;
+  --surface-2: #E8ECF4;
+  --line: #D6DCE7;
+  --fg: #131A2C;
+  --muted: #586279;
+  --accent: #2742B8;
+  --accent-fg: #FFFFFF;
+  --accent-soft: #E2E7FA;
+  --scrim: rgba(12, 17, 36, .45);
+  --shadow: 0 6px 20px rgba(19, 26, 44, .16);
+  /* Colores de rango según la convención del informe AGP */
+  --vlow: #8E1B1B;
+  --low: #D7302A;
+  --ok: #1E8A4C;
+  --high: #D29A00;
+  --vhigh: #E2650F;
+  --band: rgba(30, 138, 76, .10);
+  --font-ui: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-num: "Atkinson Hyperlegible Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --r: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0D1020; --surface: #161A2C; --surface-2: #20253B; --line: #2B324D;
+    --fg: #E9ECF6; --muted: #9BA4BD; --accent: #8FA3FF; --accent-fg: #0D1020; --accent-soft: #222A50;
+    --scrim: rgba(0, 0, 0, .6); --shadow: 0 6px 24px rgba(0, 0, 0, .5);
+    --vlow: #E5484D; --low: #FF8270; --ok: #3CCB7F; --high: #F2C14E; --vhigh: #FF9A3D;
+    --band: rgba(60, 203, 127, .10);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0D1020; --surface: #161A2C; --surface-2: #20253B; --line: #2B324D;
+  --fg: #E9ECF6; --muted: #9BA4BD; --accent: #8FA3FF; --accent-fg: #0D1020; --accent-soft: #222A50;
+  --scrim: rgba(0, 0, 0, .6); --shadow: 0 6px 24px rgba(0, 0, 0, .5);
+  --vlow: #E5484D; --low: #FF8270; --ok: #3CCB7F; --high: #F2C14E; --vhigh: #FF9A3D;
+  --band: rgba(60, 203, 127, .10);
+  color-scheme: dark;
+}
+
+html { background: var(--bg); }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-ui); font-size: 16px; line-height: 1.45;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+body.locked { overflow: hidden; }
+body::before {
+  content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px);
+  z-index: 10; background: var(--bg);
+}
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+p { margin: 0; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.vh { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.muted { color: var(--muted); }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+/* Estados (semánticos) */
+.s-vlow { --c: var(--vlow); }
+.s-low { --c: var(--low); }
+.s-ok { --c: var(--ok); }
+.s-high { --c: var(--high); }
+.s-vhigh { --c: var(--vhigh); }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--c, var(--muted)); flex: none; }
+
+.app {
+  max-width: 560px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 calc(152px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Encabezado */
+.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding-block: 14px 10px;
+}
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 1.125rem; letter-spacing: -0.01em; }
+.brand svg { width: 26px; height: 26px; flex: none; }
+.sync { display: flex; align-items: center; gap: 6px; font-size: .8125rem; color: var(--muted); text-align: right; }
+.sync .dot { width: 8px; height: 8px; }
+
+.view { display: grid; gap: 16px; padding-block: 4px 0; }
+.sec-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.sec-head h2 { font-size: 1.125rem; font-weight: 700; }
+h3 { font-size: 1rem; font-weight: 700; }
+.caption { font-size: .8125rem; color: var(--muted); }
+
+/* Lectura principal */
+.hero {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 16px 18px 18px; display: grid; gap: 10px;
+}
+.hero-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.eyebrow { font-size: .75rem; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; font-weight: 700; }
+.when { font-size: .875rem; color: var(--muted); }
+.reading { display: flex; align-items: baseline; gap: 10px; }
+.reading .big { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: clamp(3.25rem, 15vw, 4.5rem); font-weight: 700; line-height: 1; letter-spacing: -0.04em; }
+.reading .unit { color: var(--muted); font-size: 1rem; font-weight: 600; }
+.hero-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-weight: 600; }
+.hero-title { font-size: 1.375rem; font-weight: 800; letter-spacing: -0.01em; }
+.hero-text { color: var(--muted); max-width: 46ch; }
+.hero-foot { font-size: .875rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px 3px 8px; border-radius: 999px;
+  font-size: .8125rem; font-weight: 700; color: var(--fg);
+  background: var(--surface-2);
+  background: color-mix(in srgb, var(--c, var(--muted)) 16%, var(--surface));
+}
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--muted)); }
+
+.gauge { position: relative; padding-bottom: 20px; margin-top: 6px; }
+.g-track { display: flex; gap: 2px; height: 8px; border-radius: 4px; overflow: hidden; }
+.g-track span { background: var(--c); min-width: 0; }
+.g-mark {
+  position: absolute; top: -5px; width: 5px; height: 18px; border-radius: 3px;
+  background: var(--fg); transform: translateX(-50%); box-shadow: 0 0 0 2px var(--surface);
+}
+.g-labels span {
+  position: absolute; top: 14px; transform: translateX(-50%);
+  font-family: var(--font-num); font-size: .75rem; font-weight: 600; color: var(--muted);
+}
+
+.alert {
+  border: 1px solid var(--line);
+  border-color: color-mix(in srgb, var(--c) 45%, var(--surface));
+  background: color-mix(in srgb, var(--c) 10%, var(--surface));
+  border-radius: 12px; padding: 12px 14px; font-size: .9375rem; display: grid; gap: 4px;
+}
+.alert strong { font-weight: 800; }
+
+/* Selector de período */
+.seg { display: inline-flex; background: var(--surface-2); border-radius: 10px; padding: 3px; gap: 2px; }
+.seg button {
+  border: 0; background: transparent; cursor: pointer;
+  font-size: .875rem; font-weight: 700; color: var(--muted);
+  padding: 6px 12px; border-radius: 8px; min-height: 34px;
+}
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px rgba(0, 0, 0, .12); }
+
+/* Indicadores */
+.sum-block { display: grid; gap: 12px; }
+.sum-block.is-example { border: 1.5px dashed var(--line); border-radius: calc(var(--r) + 4px); padding: 12px; }
+.ex-note { display: flex; gap: 10px; align-items: baseline; font-size: .875rem; color: var(--muted); }
+.ex-tag { font-size: .6875rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 6px; flex: none; }
+.stats {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px;
+  background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden;
+}
+.stat { background: var(--surface); padding: 12px 12px 14px; display: grid; gap: 2px; align-content: start; min-width: 0; }
+.stat.wide { grid-column: 1 / -1; }
+.stat .k .nc { text-transform: none; }
+.stat .k { font-size: .6875rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
+.stat .v { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+.stat .v small { font-size: .8125rem; font-weight: 600; color: var(--muted); letter-spacing: 0; margin-left: 2px; }
+.stat .h { font-size: .75rem; color: var(--muted); }
+.stat.warn .v { color: var(--low); }
+
+.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 16px; display: grid; gap: 12px; min-width: 0;
+}
+.card-h { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 12px; flex-wrap: wrap; }
+.card-h .caption { text-align: right; }
+
+.dist { display: flex; gap: 2px; height: 14px; border-radius: 7px; overflow: hidden; background: var(--surface-2); }
+.dist span { background: var(--c); min-width: 3px; }
+.legend { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px 14px; align-items: baseline; font-size: .9375rem; }
+.lg-name { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.lg-name .dot { transform: translateY(1px); }
+.lg-name small { color: var(--muted); font-size: .8125rem; }
+.lg-pct { font-family: var(--font-num); font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.lg-n { font-family: var(--font-num); color: var(--muted); text-align: right; font-size: .8125rem; font-variant-numeric: tabular-nums; }
+
+table.ctx-table { width: 100%; border-collapse: collapse; font-size: .9375rem; }
+.ctx-table th, .ctx-table td { padding: 8px 0; border-top: 1px solid var(--line); text-align: left; }
+.ctx-table thead th { border-top: 0; font-size: .6875rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding-top: 0; }
+.ctx-table th[scope="row"] { font-weight: 600; }
+.ctx-table td { font-family: var(--font-num); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.ctx-table td .dot { margin-right: 8px; }
+.ctx-table thead th:not(:first-child) { text-align: right; }
+
+/* Gráficos */
+.chart { width: 100%; min-width: 0; }
+.chart svg { display: block; max-width: 100%; height: auto; }
+.chart .band { fill: var(--band); }
+.chart .gl { stroke: var(--line); stroke-width: 1; }
+.chart .gl.lim { stroke: var(--muted); stroke-dasharray: 3 4; opacity: .55; }
+.chart .gl.tgt2 { stroke-dasharray: 2 4; }
+.chart .axis, .chart .tick { stroke: var(--line); stroke-width: 1; }
+.chart .ax { fill: var(--muted); font-family: var(--font-num); font-size: 11px; }
+.chart .avg-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; opacity: .75; }
+.chart .pt { fill: var(--c); stroke: var(--surface); stroke-width: 1.5; }
+.chart .pt-ring { fill: none; stroke: var(--c); stroke-width: 2; opacity: .45; }
+.chart-empty { color: var(--muted); font-size: .9375rem; padding: 28px 0; text-align: center; }
+.key { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: .8125rem; color: var(--muted); }
+.key span { display: inline-flex; align-items: center; gap: 6px; }
+.key .ln { width: 16px; height: 2px; background: var(--accent); border-radius: 1px; }
+.key .bd { width: 14px; height: 10px; background: var(--band); border: 1px solid var(--line); border-radius: 2px; }
+
+.extremes { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.ext { display: grid; gap: 2px; }
+.ext .v { font-family: var(--font-num); font-size: 1.375rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+
+/* Historial */
+.fchips { display: flex; flex-wrap: wrap; gap: 8px; }
+.fchip {
+  border: 1px solid var(--line); background: var(--surface); cursor: pointer;
+  font-size: .875rem; font-weight: 600; padding: 6px 12px; border-radius: 999px; min-height: 36px;
+}
+.fchip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.day { display: grid; gap: 6px; }
+.day-h { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 2px 0; }
+.day-h h3 { font-size: .9375rem; }
+.day-h .avg { color: var(--muted); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
+.entries { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.entry {
+  display: grid; grid-template-columns: 3.25rem minmax(0, 1fr) auto; gap: 12px; align-items: center;
+  width: 100%; padding: 12px 14px; text-align: left;
+  background: transparent; border: 0; border-top: 1px solid var(--line); cursor: pointer;
+}
+.entry:first-child { border-top: 0; }
+.entry:hover { background: var(--surface-2); }
+.entry .time { font-family: var(--font-num); color: var(--muted); font-size: .9375rem; font-variant-numeric: tabular-nums; }
+.entry .main { display: grid; gap: 2px; min-width: 0; }
+.entry .ctx { font-weight: 700; }
+.entry .meta, .entry .note { font-size: .8125rem; color: var(--muted); overflow-wrap: anywhere; }
+.entry .note { font-style: italic; }
+.entry .val { font-family: var(--font-num); font-size: 1.375rem; font-weight: 700; display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+.empty {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 24px 18px; display: grid; gap: 8px; justify-items: start;
+}
+.empty p { color: var(--muted); }
+
+/* Botones */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-weight: 700; font-size: 1rem; border-radius: 12px; padding: 11px 16px; min-height: 48px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; text-align: center;
+}
+.btn:hover { background: var(--surface-2); }
+.btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn-primary:hover { background: var(--accent); filter: brightness(1.08); }
+.btn-danger { color: var(--vlow); }
+.btn-danger-solid { background: var(--vlow); border-color: var(--vlow); color: var(--surface); }
+.btn-danger-solid:hover { background: var(--vlow); filter: brightness(1.1); }
+.btn-list { display: grid; gap: 8px; }
+.link-danger { background: none; border: 0; color: var(--vlow); font-weight: 700; padding: 8px 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+
+/* Botón flotante y pestañas */
+.fab {
+  position: fixed; z-index: 21;
+  right: max(calc(16px + env(safe-area-inset-right, 0px)), calc(50% - 280px + 16px));
+  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 999px;
+  padding: 14px 20px 14px 16px; font-size: 1rem; font-weight: 800; cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.fab svg { width: 22px; height: 22px; }
+.tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  background: var(--surface); border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: max(8px, env(safe-area-inset-left, 0px));
+  padding-right: max(8px, env(safe-area-inset-right, 0px));
+}
+.tabs-in { max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tab {
+  display: grid; justify-items: center; gap: 2px; padding: 8px 4px 10px;
+  font-size: .75rem; font-weight: 700; color: var(--muted); text-decoration: none;
+}
+.tab svg { width: 24px; height: 24px; }
+.tab[aria-current="page"] { color: var(--accent); }
+
+/* Hoja para registrar */
+.sheet-bg { position: fixed; inset: 0; z-index: 30; background: var(--scrim); }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 31;
+  max-width: 560px; margin: 0 auto; box-sizing: border-box;
+  max-height: calc(100% - 20px - env(safe-area-inset-top, 0px)); overflow-y: auto; overscroll-behavior: contain;
+  background: var(--surface); border-radius: 20px 20px 0 0; box-shadow: var(--shadow);
+  padding-top: 8px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(18px, env(safe-area-inset-left, 0px));
+  padding-right: max(18px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 16px;
+}
+.sheet:not([hidden]) { animation: rise .22s ease-out; }
+@keyframes rise { from { transform: translateY(28px); opacity: 0; } to { transform: none; opacity: 1; } }
+.grab { width: 40px; height: 4px; border-radius: 2px; background: var(--line); justify-self: center; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sheet-head h2 { font-size: 1.25rem; font-weight: 800; }
+.icon-btn { border: 0; background: var(--surface-2); width: 40px; height: 40px; border-radius: 50%; cursor: pointer; display: grid; place-items: center; }
+.icon-btn svg { width: 20px; height: 20px; }
+.field { display: grid; gap: 8px; min-width: 0; border: 0; margin: 0; padding: 0; }
+.field > label, .field > legend, .lbl {
+  font-size: .75rem; font-weight: 800; color: var(--muted); letter-spacing: .07em; text-transform: uppercase; padding: 0;
+}
+.field > legend { margin-bottom: 8px; }
+input[type="text"], input[type="datetime-local"], textarea, select {
+  font: inherit; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 46px;
+  width: 100%; box-sizing: border-box;
+}
+textarea { min-height: 72px; resize: vertical; }
+.val-wrap { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; border-bottom: 2px solid var(--line); padding-bottom: 4px; }
+.val-wrap:focus-within { border-color: var(--accent); }
+#fVal {
+  font-family: var(--font-num); font-size: 3rem; font-weight: 700; letter-spacing: -0.03em;
+  border: 0; background: transparent; padding: 0; min-height: 0; width: 4.4ch; min-width: 2ch; field-sizing: content; border-radius: 0;
+}
+#fVal:focus { outline: none; }
+.val-wrap .u { color: var(--muted); font-weight: 600; }
+.val-wrap .pill { margin-left: auto; align-self: center; }
+.err { color: var(--low); font-size: .875rem; font-weight: 600; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { position: relative; }
+.chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.chip span {
+  display: inline-flex; align-items: center; min-height: 40px; box-sizing: border-box;
+  padding: 8px 13px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface);
+  font-size: .9375rem; font-weight: 600; cursor: pointer;
+}
+.chip input:checked + span { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 800; }
+.chip input:focus-visible + span { outline: 3px solid var(--accent); outline-offset: 2px; }
+details.more { border-top: 1px solid var(--line); padding-top: 12px; }
+details.more summary { cursor: pointer; font-weight: 700; color: var(--accent); padding: 4px 0; }
+details.more[open] summary { margin-bottom: 12px; }
+.more-in { display: grid; gap: 16px; }
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.sheet-actions { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; }
+.del-zone { display: grid; gap: 10px; justify-items: start; border-top: 1px solid var(--line); padding-top: 8px; }
+.del-confirm { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-weight: 700; }
+
+/* Ajustes */
+.range-row { display: grid; grid-template-columns: minmax(0, 1fr) 8.5rem; gap: 12px; align-items: center; }
+.range-row label { font-size: .9375rem; font-weight: 600; }
+.unit-in { display: flex; align-items: center; gap: 6px; }
+.unit-in input { text-align: right; font-family: var(--font-num); }
+.unit-in .u { color: var(--muted); font-size: .8125rem; width: 3.6rem; flex: none; }
+#exportBox { font-family: var(--font-num); font-size: .8125rem; min-height: 160px; }
+.danger { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 10px; justify-items: start; }
+.disclaimer { font-size: .8125rem; color: var(--muted); max-width: 60ch; }
+
+/* Aviso breve */
+.toast {
+  position: fixed; z-index: 40; left: 0; right: 0; margin: 0 auto;
+  bottom: calc(140px + env(safe-area-inset-bottom, 0px));
+  width: max-content; max-width: min(520px, calc(100% - 32px)); box-sizing: border-box;
+  background: var(--fg); color: var(--bg); border-radius: 12px; padding: 12px 14px;
+  display: flex; gap: 14px; align-items: center; font-weight: 600; font-size: .9375rem; box-shadow: var(--shadow);
+}
+.toast button { background: none; border: 0; color: var(--bg); font-weight: 800; text-decoration: underline; cursor: pointer; padding: 4px; flex: none; }
+
+@media (max-width: 380px) {
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .range-row { grid-template-columns: 1fr; gap: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet:not([hidden]) { animation: none; }
+}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 26 26" aria-hidden="true"><path d="M13 2.5c3.6 4.5 6.6 8.3 6.6 11.6a6.6 6.6 0 0 1-13.2 0C6.4 10.8 9.4 7 13 2.5z" fill="var(--accent)"/><path d="M9.2 15.2h2l1.1-2.3 1.5 4.3 1.2-2h1.8" fill="none" stroke="var(--surface)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <h1 style="font-size:inherit">Diario de Glucosa</h1>
+    </div>
+    <div class="sync" id="sync" aria-live="polite"><span class="dot"></span><span>Cargando…</span></div>
+  </header>
+
+  <main>
+    <!-- RESUMEN -->
+    <section id="v-resumen" class="view" aria-label="Resumen">
+      <div class="hero" id="hero">
+        <span class="eyebrow">Tu diario</span>
+        <p class="hero-title">Cargando tus mediciones…</p>
+        <p class="hero-text">Aquí verás tu última medición, tu promedio y cuántas mediciones quedan dentro de tu objetivo.</p>
+      </div>
+
+      <div class="sec-head">
+        <h2 id="sumTitle">Últimos 14 días</h2>
+        <div class="seg" role="group" aria-label="Período" data-period>
+          <button type="button" data-days="7">7 d</button><button type="button" data-days="14">14 d</button><button type="button" data-days="30">30 d</button><button type="button" data-days="90">90 d</button>
+        </div>
+      </div>
+
+      <div class="sum-block" id="sumBlock">
+        <p class="ex-note" id="sumExample" hidden><span class="ex-tag">Ejemplo</span><span>Así se verá tu resumen. Estos datos son de muestra y desaparecen al registrar tu primera medición.</span></p>
+        <div class="stats" id="statsGrid"></div>
+        <div class="card">
+          <div class="card-h"><h3>Distribución de mediciones</h3></div>
+          <div id="distBox"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Evolución</h3><span class="caption">cada punto es una medición</span></div>
+          <div class="chart" id="miniChart"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Promedio por momento del día</h3></div>
+          <div id="ctxBox"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- HISTORIAL -->
+    <section id="v-historial" class="view" aria-label="Historial" hidden>
+      <div class="sec-head"><h2>Historial</h2><span class="caption" id="histCount"></span></div>
+      <div class="fchips" id="histFilter" role="group" aria-label="Filtrar por momento"></div>
+      <div id="histList" class="view"></div>
+    </section>
+
+    <!-- TENDENCIAS -->
+    <section id="v-tendencias" class="view" aria-label="Tendencias" hidden>
+      <div class="sec-head">
+        <h2>Tendencias</h2>
+        <div class="seg" role="group" aria-label="Período" data-period>
+          <button type="button" data-days="7">7 d</button><button type="button" data-days="14">14 d</button><button type="button" data-days="30">30 d</button><button type="button" data-days="90">90 d</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Evolución</h3></div>
+        <div class="chart" id="trendChart"></div>
+        <div class="key"><span><i class="dot s-ok"></i>medición</span><span><i class="ln"></i>promedio diario</span><span><i class="bd"></i>rango objetivo</span></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Patrón del día</h3><span class="caption">todas las mediciones según la hora</span></div>
+        <div class="chart" id="patternChart"></div>
+        <p class="caption" id="patternNote"></p>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Extremos del período</h3></div>
+        <div class="extremes" id="extremes"></div>
+      </div>
+    </section>
+
+    <!-- AJUSTES -->
+    <section id="v-ajustes" class="view" aria-label="Ajustes" hidden>
+      <div class="sec-head"><h2>Ajustes</h2></div>
+
+      <div class="card">
+        <h3>Unidad</h3>
+        <div class="seg" role="group" aria-label="Unidad" id="unitSeg">
+          <button type="button" data-unit="mgdl">mg/dL</button><button type="button" data-unit="mmol">mmol/L</button>
+        </div>
+        <p class="caption">En Chile y en la mayor parte de Latinoamérica los glucómetros miden en mg/dL.</p>
+      </div>
+
+      <form class="card" id="rangesForm" novalidate>
+        <h3>Objetivos</h3>
+        <div class="field">
+          <label for="preset">Referencia</label>
+          <select id="preset">
+            <option value="ada">Diabetes tipo 1 o 2 (metas ADA)</option>
+            <option value="sin">Sin diabetes o prediabetes</option>
+            <option value="gest">Diabetes gestacional</option>
+            <option value="custom">Personalizado</option>
+          </select>
+        </div>
+        <div class="range-row"><label for="r-vhigh">Muy alta: sobre</label><div class="unit-in"><input type="text" id="r-vhigh" inputmode="decimal" autocomplete="off"><span class="u" data-u>mg/dL</span></div></div>
+        <div class="range-row"><label for="r-postMax">Máximo después de comer (2 h) y otros momentos</label><div class="unit-in"><input type="text" id="r-postMax" inputmode="decimal" autocomplete="off"><span class="u" data-u>mg/dL</span></div></div>
+        <div class="range-row"><label for="r-preMax">Máximo en ayunas y antes de comer</label><div class="unit-in"><input type="text" id="r-preMax" inputmode="decimal" autocomplete="off"><span class="u" data-u>mg/dL</span></div></div>
+        <div class="range-row"><label for="r-low">Baja: menos de</label><div class="unit-in"><input type="text" id="r-low" inputmode="decimal" autocomplete="off"><span class="u" data-u>mg/dL</span></div></div>
+        <div class="range-row"><label for="r-vlow">Muy baja: menos de</label><div class="unit-in"><input type="text" id="r-vlow" inputmode="decimal" autocomplete="off"><span class="u" data-u>mg/dL</span></div></div>
+        <p class="err" id="rangesErr" hidden></p>
+        <button class="btn btn-primary" type="submit">Guardar objetivos</button>
+        <p class="caption">Acuerda tus objetivos con tu equipo de salud. Las referencias son las metas habituales de la Asociación Americana de Diabetes.</p>
+      </form>
+
+      <div class="card">
+        <h3>Tus datos</h3>
+        <p class="caption" id="storageNote"></p>
+        <div class="btn-list">
+          <button class="btn" type="button" id="btnCSV">Exportar planilla (CSV)</button>
+          <button class="btn" type="button" id="btnSummary">Copiar resumen para el médico</button>
+          <button class="btn" type="button" id="btnBackup">Descargar respaldo</button>
+          <button class="btn" type="button" id="btnRestore">Restaurar respaldo</button>
+          <input type="file" id="importFile" accept=".json,application/json" class="vh" tabindex="-1" aria-hidden="true">
+        </div>
+        <div id="exportWrap" class="field" hidden>
+          <label for="exportBox" id="exportMsg">Copia este texto</label>
+          <textarea id="exportBox" readonly></textarea>
+          <button class="btn" type="button" id="exportCopy">Copiar</button>
+        </div>
+        <div class="danger">
+          <button class="link-danger" type="button" id="btnWipe">Borrar todas las mediciones</button>
+          <div class="del-confirm" id="wipeConfirm" hidden>
+            <span id="wipeText">¿Borrar todo?</span>
+            <button type="button" class="btn" id="wipeNo">Cancelar</button>
+            <button type="button" class="btn btn-danger-solid" id="wipeYes">Sí, borrar todo</button>
+          </div>
+        </div>
+      </div>
+
+      <p class="disclaimer">Diario de Glucosa es un registro personal. La HbA1c estimada es una aproximación a partir de tu promedio y no reemplaza el examen de laboratorio. Esta app no reemplaza las indicaciones de tu médico ni de tu equipo de salud.</p>
+    </section>
+  </main>
+</div>
+
+<button class="fab" type="button" id="fab" aria-haspopup="dialog">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+  Registrar
+</button>
+
+<nav class="tabs" aria-label="Secciones">
+  <div class="tabs-in">
+    <a class="tab" href="#resumen" data-view="resumen">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3.5c3.2 4 5.5 7.2 5.5 10a5.5 5.5 0 0 1-11 0c0-2.8 2.3-6 5.5-10z"/></svg>
+      Resumen
+    </a>
+    <a class="tab" href="#historial" data-view="historial">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>
+      Historial
+    </a>
+    <a class="tab" href="#tendencias" data-view="tendencias">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 4v16h17"/><path d="M7 15l3.5-4.5 3 3L19 7"/></svg>
+      Tendencias
+    </a>
+    <a class="tab" href="#ajustes" data-view="ajustes">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h9M19 7h1M4 17h1M11 17h9"/><circle cx="16" cy="7" r="2.6"/><circle cx="8" cy="17" r="2.6"/></svg>
+      Ajustes
+    </a>
+  </div>
+</nav>
+
+<div class="sheet-bg" id="sheetBg" hidden></div>
+<form class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheetTitle" novalidate>
+  <div class="grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetTitle">Nueva medición</h2>
+    <button type="button" class="icon-btn" id="sheetClose" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="field">
+    <label for="fVal">Glucosa</label>
+    <div class="val-wrap">
+      <input type="text" id="fVal" inputmode="decimal" autocomplete="off" placeholder="—" aria-describedby="fValMsg">
+      <span class="u" id="fUnit">mg/dL</span>
+      <span class="pill" id="fPill" hidden></span>
+    </div>
+    <p class="err" id="fValMsg" hidden></p>
+  </div>
+  <fieldset class="field">
+    <legend>Momento</legend>
+    <div class="chips" id="fCtx"></div>
+  </fieldset>
+  <div class="field">
+    <label for="fTime">Fecha y hora</label>
+    <input type="datetime-local" id="fTime">
+  </div>
+  <details class="more" id="fMore">
+    <summary>Insulina, carbohidratos y notas</summary>
+    <div class="more-in">
+      <div class="two">
+        <div class="field"><label for="fIns">Insulina (U)</label><input type="text" id="fIns" inputmode="decimal" autocomplete="off"></div>
+        <div class="field"><label for="fCarbs">Carbohidratos (g)</label><input type="text" id="fCarbs" inputmode="numeric" autocomplete="off"></div>
+      </div>
+      <fieldset class="field">
+        <legend>Etiquetas</legend>
+        <div class="chips" id="fTags"></div>
+      </fieldset>
+      <div class="field">
+        <label for="fNote">Nota</label>
+        <textarea id="fNote" maxlength="500" placeholder="Ej.: almuerzo con arroz, caminata de 30 minutos"></textarea>
+      </div>
+    </div>
+  </details>
+  <p class="err" id="fErr" hidden></p>
+  <div class="sheet-actions">
+    <button type="button" class="btn" id="fCancel">Cancelar</button>
+    <button type="submit" class="btn btn-primary" id="fSave">Guardar</button>
+  </div>
+  <div class="del-zone" id="fDelZone" hidden>
+    <button type="button" class="link-danger" id="fDel">Eliminar esta medición</button>
+    <div class="del-confirm" id="fDelConfirm" hidden>
+      <span>¿Eliminar esta medición?</span>
+      <button type="button" class="btn" id="fDelNo">No</button>
+      <button type="button" class="btn btn-danger-solid" id="fDelYes">Sí, eliminar</button>
+    </div>
+  </div>
+</form>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(() => {
+'use strict';
+document.documentElement.lang = 'es';
+
+/* ---------- Constantes ---------- */
+const DAY = 86400000;
+const MGDL_PER_MMOL = 18.016;
+const CTX = [
+  { id: 'ayunas', label: 'Ayunas', kind: 'pre' },
+  { id: 'antes', label: 'Antes de comer', kind: 'pre' },
+  { id: 'despues', label: 'Después de comer (2 h)', short: 'Después de comer', kind: 'post' },
+  { id: 'dormir', label: 'Antes de dormir', kind: 'gen' },
+  { id: 'madrugada', label: 'Madrugada', kind: 'gen' },
+  { id: 'otro', label: 'Otro momento', short: 'Otro', kind: 'gen' },
+];
+const CTX_BY_ID = Object.fromEntries(CTX.map(c => [c.id, c]));
+const TAGS = [
+  { id: 'ejercicio', label: 'Ejercicio' },
+  { id: 'carbos', label: 'Comida alta en carbohidratos' },
+  { id: 'estres', label: 'Estrés' },
+  { id: 'enfermedad', label: 'Enfermedad' },
+  { id: 'alcohol', label: 'Alcohol' },
+  { id: 'sintomas', label: 'Con síntomas' },
+];
+const TAG_BY_ID = Object.fromEntries(TAGS.map(t => [t.id, t]));
+const PRESETS = {
+  ada:  { vlow: 54, low: 70, preMax: 130, postMax: 180, vhigh: 250 },
+  sin:  { vlow: 54, low: 70, preMax: 99,  postMax: 140, vhigh: 200 },
+  gest: { vlow: 54, low: 70, preMax: 95,  postMax: 120, vhigh: 200 },
+};
+const RANGE_KEYS = ['vlow', 'low', 'preMax', 'postMax', 'vhigh'];
+const STATUS = {
+  vlow:  { label: 'Muy baja', cls: 's-vlow' },
+  low:   { label: 'Baja', cls: 's-low' },
+  ok:    { label: 'En objetivo', cls: 's-ok' },
+  high:  { label: 'Alta', cls: 's-high' },
+  vhigh: { label: 'Muy alta', cls: 's-vhigh' },
+};
+const STATUS_ORDER = ['vlow', 'low', 'ok', 'high', 'vhigh'];
+const VIEWS = ['resumen', 'historial', 'tendencias', 'ajustes'];
+const WD = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+const WD_LONG = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const MO = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'];
+const MO_LONG = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const LS_KEY = 'diario-glucosa-v1';
+const PREF_KEY = 'diario-glucosa-prefs';
+
+/* ---------- Utilidades ---------- */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pad = n => String(n).padStart(2, '0');
+const clone = o => JSON.parse(JSON.stringify(o));
+const nf0 = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 });
+const nf1 = new Intl.NumberFormat('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const nfMax1 = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 1 });
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const newId = () => 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+function parseNum(s) {
+  const x = String(s == null ? '' : s).trim().replace(/\s/g, '').replace(',', '.');
+  if (!x) return null;
+  const n = Number(x);
+  return isFinite(n) ? n : NaN;
+}
+function startOfDay(t) { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); }
+function periodStart(days) { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (days - 1)); return d.getTime(); }
+function dayKey(t) { const d = new Date(t); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function monthKey(t) { const d = new Date(t); return 'm-' + d.getFullYear() + '-' + pad(d.getMonth() + 1); }
+function hhmm(t) { const d = new Date(t); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+function shortDate(t) { const d = new Date(t); return d.getDate() + ' ' + MO[d.getMonth()]; }
+function wdDate(t) { const d = new Date(t); return WD[d.getDay()] + ' ' + d.getDate(); }
+function longDate(t) { const d = new Date(t); return WD_LONG[d.getDay()] + ' ' + d.getDate() + ' de ' + MO_LONG[d.getMonth()]; }
+function calDays(t) { return Math.round((startOfDay(Date.now()) - startOfDay(t)) / DAY); }
+function dayLabel(t) {
+  const n = calDays(t);
+  if (n === 0) return 'Hoy · ' + longDate(t);
+  if (n === 1) return 'Ayer · ' + longDate(t);
+  const s = longDate(t);
+  const y = new Date(t).getFullYear();
+  return s.charAt(0).toUpperCase() + s.slice(1) + (y !== new Date().getFullYear() ? ' de ' + y : '');
+}
+function whenText(t) {
+  const n = calDays(t), s = (Date.now() - t) / 1000;
+  if (n === 0) {
+    if (s < 60) return 'recién · ' + hhmm(t);
+    if (s < 3600) return 'hace ' + Math.round(s / 60) + ' min · ' + hhmm(t);
+    if (s > 0) return 'hace ' + Math.floor(s / 3600) + ' h · ' + hhmm(t);
+    return 'hoy · ' + hhmm(t);
+  }
+  if (n === 1) return 'ayer · ' + hhmm(t);
+  return shortDate(t) + ' · ' + hhmm(t);
+}
+function toLocalInput(t) { const d = new Date(t); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+const ctxLabel = id => (CTX_BY_ID[id] || CTX_BY_ID.otro).label;
+const ctxShort = id => { const c = CTX_BY_ID[id] || CTX_BY_ID.otro; return c.short || c.label; };
+
+/* ---------- Estado ---------- */
+function loadPrefs() { try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch (e) { return {}; } }
+function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify({ period: app.period, histFilter: app.histFilter })); } catch (e) {} }
+function defaultSettings() { return { unit: 'mgdl', preset: 'ada', ranges: Object.assign({}, PRESETS.ada) }; }
+
+const prefs = loadPrefs();
+const app = {
+  mode: 'init', loaded: false, confirmed: false, stale: false, error: null, lsOk: true,
+  settings: defaultSettings(), months: {},
+  period: [7, 14, 30, 90].includes(prefs.period) ? prefs.period : 14,
+  histFilter: (prefs.histFilter === 'all' || CTX_BY_ID[prefs.histFilter]) ? prefs.histFilter : 'all',
+  histLimit: 80, view: 'resumen',
+};
+const cache = { all: [], byId: {} };
+const caps = { downloads: null };
+const cloud = { col: null };
+const queue = {};
+const early = {};
+
+/* ---------- Unidades y clasificación ---------- */
+const isMmol = () => app.settings.unit === 'mmol';
+const unitLabel = () => isMmol() ? 'mmol/L' : 'mg/dL';
+function fmtG(v) { if (v == null || !isFinite(v)) return '—'; return isMmol() ? nf1.format(v / MGDL_PER_MMOL) : nf0.format(Math.round(v)); }
+function toDisplay(v) { return isMmol() ? Math.round(v / MGDL_PER_MMOL * 10) / 10 : Math.round(v); }
+function toMg(x) { return isMmol() ? x * MGDL_PER_MMOL : x; }
+function maxFor(ctx, R) { const k = (CTX_BY_ID[ctx] || CTX_BY_ID.otro).kind; return k === 'pre' ? R.preMax : R.postMax; }
+function classify(v, ctx, R = app.settings.ranges) {
+  if (v < R.vlow) return 'vlow';
+  if (v < R.low) return 'low';
+  if (v > R.vhigh) return 'vhigh';
+  if (v > maxFor(ctx, R)) return 'high';
+  return 'ok';
+}
+function validRanges(R) {
+  return RANGE_KEYS.every(k => isFinite(R[k]) && R[k] >= 20 && R[k] <= 600) &&
+    R.vlow < R.low && R.low < R.preMax && R.low < R.postMax && R.preMax < R.vhigh && R.postMax < R.vhigh;
+}
+function mergeSettings(s) {
+  const d = defaultSettings();
+  if (!s || typeof s !== 'object') return d;
+  const unit = s.unit === 'mmol' ? 'mmol' : 'mgdl';
+  const R = Object.assign({}, d.ranges);
+  if (s.ranges && typeof s.ranges === 'object') RANGE_KEYS.forEach(k => { const x = Number(s.ranges[k]); if (isFinite(x)) R[k] = x; });
+  if (!validRanges(R)) return { unit, preset: 'ada', ranges: d.ranges };
+  const preset = (PRESETS[s.preset] || s.preset === 'custom') ? s.preset : 'custom';
+  return { unit, preset, ranges: R };
+}
+
+/* ---------- Datos ---------- */
+function sanitizeReading(r, fallbackId) {
+  if (!r || typeof r !== 'object') return null;
+  const v = Number(r.v), t = Number(r.t);
+  if (!isFinite(v) || !isFinite(t) || v < 10 || v > 1000 || t < 946684800000) return null;
+  const okId = x => typeof x === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(x);
+  const id = okId(r.id) ? r.id : okId(fallbackId) ? fallbackId : newId();
+  const num = x => (x === null || x === undefined || x === '' || !isFinite(Number(x))) ? null : Number(x);
+  return {
+    id, t: Math.round(t), v: Math.round(v * 10) / 10,
+    ctx: CTX_BY_ID[r.ctx] ? r.ctx : 'otro',
+    ins: num(r.ins), carbs: num(r.carbs),
+    tags: Array.isArray(r.tags) ? r.tags.filter(x => TAG_BY_ID[x]) : [],
+    note: typeof r.note === 'string' ? r.note.slice(0, 500) : '',
+  };
+}
+function normalizeMonth(body) {
+  const out = { readings: {} };
+  const rs = body && body.readings && typeof body.readings === 'object' ? body.readings : {};
+  for (const k in rs) { const r = sanitizeReading(rs[k], k); if (r) out.readings[r.id] = r; }
+  return out;
+}
+function rebuildCache() {
+  const all = [];
+  for (const k in app.months) { const rs = app.months[k].readings; for (const id in rs) all.push(rs[id]); }
+  all.sort((a, b) => b.t - a.t);
+  cache.all = all;
+  cache.byId = Object.fromEntries(all.map(r => [r.id, r]));
+}
+function inPeriod(list, days) { const s = periodStart(days); return list.filter(r => r.t >= s); }
+
+/* ---------- Almacenamiento ---------- */
+function lsRead() { try { const raw = localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
+function lsWrite() { try { localStorage.setItem(LS_KEY, JSON.stringify({ settings: app.settings, months: app.months })); return true; } catch (e) { return false; } }
+function lsProbe() { try { localStorage.setItem(LS_KEY + '-t', '1'); localStorage.removeItem(LS_KEY + '-t'); return true; } catch (e) { return false; } }
+
+async function initStore() {
+  const C = window.claude;
+  if (!C || typeof C.use !== 'function') { startLocal(); return; }
+  C.use('downloads').then(d => { caps.downloads = d; }, () => {});
+  let db = null, user = null, uid = null;
+  try { [db, user] = await Promise.all([C.use('db'), C.use('user')]); } catch (e) {}
+  if (db && user) { try { uid = await user.id(); } catch (e) {} }
+  if (db && uid) startCloud(db, uid); else startLocal();
+}
+
+function startLocal() {
+  app.mode = 'local';
+  const saved = lsRead();
+  if (saved && typeof saved === 'object') {
+    app.settings = mergeSettings(saved.settings);
+    const months = {};
+    for (const k in (saved.months || {})) if (/^m-\d{4}-\d{2}$/.test(k)) { const m = normalizeMonth(saved.months[k]); if (Object.keys(m.readings).length) months[k] = m; }
+    app.months = months;
+  }
+  app.loaded = true;
+  try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
+  app.lsOk = lsProbe();
+  flushEarly();
+  renderAll(true);
+}
+
+function startCloud(db, uid) {
+  app.mode = 'cloud';
+  cloud.col = db.collection('data/users/' + uid);
+  const timer = setTimeout(() => { if (!app.confirmed) { app.stale = true; renderSync(); } }, 10000);
+  let first = true;
+  cloud.col.onSnapshot(snap => {
+    const months = {}; let settings = null;
+    snap.docs.forEach(d => {
+      if (!d.exists) return;
+      const body = d.data();
+      if (d.id === 'settings') settings = body;
+      else if (/^m-\d{4}-\d{2}$/.test(d.id)) months[d.id] = normalizeMonth(body);
+    });
+    for (const k in queue) {
+      const b = queue[k].body;
+      if (k === 'settings') { if (b) settings = b; continue; }
+      if (b === null) delete months[k]; else months[k] = normalizeMonth(b);
+    }
+    for (const k in months) if (!Object.keys(months[k].readings).length) delete months[k];
+    app.months = months;
+    app.settings = mergeSettings(settings);
+    app.loaded = true;
+    if (!snap.metadata.fromCache) { app.confirmed = true; app.stale = false; clearTimeout(timer); }
+    if (first) { first = false; flushEarly(); }
+    renderAll(true);
+  }, err => {
+    clearTimeout(timer);
+    app.error = (err && err.code) || 'unavailable';
+    app.loaded = true;
+    renderAll();
+  });
+}
+
+function flushEarly() {
+  const list = Object.values(early);
+  for (const k in early) delete early[k];
+  list.forEach(r => putReading(r));
+  if (list.length) list.forEach(r => persistMonth(monthKey(r.t)));
+}
+
+function persist(key, body) {
+  if (app.mode !== 'cloud') { app.lsOk = lsWrite(); renderSync(); return; }
+  const q = queue[key] || (queue[key] = { body: undefined, dirty: false, running: false });
+  q.body = body; q.dirty = true;
+  if (!q.running) drain(key);
+  renderSync();
+}
+async function drain(key) {
+  const q = queue[key];
+  q.running = true;
+  while (q.dirty) {
+    q.dirty = false;
+    const body = q.body;
+    const ref = cloud.col.doc(key);
+    const run = () => body === null ? ref.delete() : ref.set(body);
+    try { await run(); }
+    catch (e) {
+      if (e && e.code === 'unavailable') {
+        await sleep(700 + Math.random() * 900);
+        try { await run(); } catch (e2) { writeFailed(e2); }
+      } else writeFailed(e);
+    }
+  }
+  q.running = false;
+  delete queue[key];
+  renderSync();
+}
+function writeFailed(e) {
+  const code = e && e.code;
+  if (code === 'quota_exceeded') toast('Se llenó el espacio de almacenamiento. Descarga un respaldo y borra mediciones antiguas.', { ms: 8000 });
+  else if (code === 'invalid_argument') toast('No tienes permiso para guardar en este enlace.', { ms: 6000 });
+  else toast('No se pudo guardar. Revisa tu conexión e inténtalo de nuevo.', { ms: 6000 });
+}
+
+function putReading(r) { (app.months[monthKey(r.t)] ||= { readings: {} }).readings[r.id] = r; }
+function persistMonth(k) {
+  const m = app.months[k];
+  const empty = !m || !Object.keys(m.readings).length;
+  if (empty) delete app.months[k];
+  persist(k, empty ? null : { readings: clone(m.readings) });
+}
+function upsertReading(r, prevT) {
+  if (app.mode === 'init') { early[r.id] = r; }
+  if (prevT != null) {
+    const pk = monthKey(prevT);
+    if (pk !== monthKey(r.t) && app.months[pk]) { delete app.months[pk].readings[r.id]; if (app.mode !== 'init') persistMonth(pk); }
+  }
+  putReading(r);
+  if (app.mode !== 'init') persistMonth(monthKey(r.t));
+  renderAll();
+}
+function removeReading(r) {
+  delete early[r.id];
+  const k = monthKey(r.t);
+  if (app.months[k]) { delete app.months[k].readings[r.id]; if (app.mode !== 'init') persistMonth(k); else if (!Object.keys(app.months[k].readings).length) delete app.months[k]; }
+  renderAll();
+}
+function saveSettings() { if (app.mode !== 'init') persist('settings', clone(app.settings)); }
+
+/* ---------- Estadísticas ---------- */
+function stats(list) {
+  const n = list.length;
+  const counts = { vlow: 0, low: 0, ok: 0, high: 0, vhigh: 0 };
+  if (!n) return { n: 0, counts };
+  let sum = 0, min = Infinity, max = -Infinity;
+  for (const r of list) { sum += r.v; if (r.v < min) min = r.v; if (r.v > max) max = r.v; counts[classify(r.v, r.ctx)]++; }
+  const mean = sum / n;
+  let sq = 0; for (const r of list) sq += (r.v - mean) * (r.v - mean);
+  const sd = n > 1 ? Math.sqrt(sq / (n - 1)) : 0;
+  return { n, mean, sd, cv: n >= 3 ? sd / mean * 100 : null, min, max, counts, a1c: n >= 10 ? (mean + 46.7) / 28.7 : null };
+}
+const pct = (a, n) => n ? Math.round(a / n * 100) : 0;
+
+/* ---------- Datos de ejemplo (solo para el estado vacío) ---------- */
+let sampleCache = null;
+function sample() {
+  if (sampleCache) return sampleCache;
+  let s = 11;
+  const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const out = [], today = startOfDay(Date.now());
+  const slots = [[7.4, 'ayunas', 116, 16], [13.2, 'antes', 124, 18], [15.3, 'despues', 168, 32], [22.6, 'dormir', 141, 24]];
+  for (let d = 89; d >= 0; d--) {
+    const base = today - d * DAY;
+    for (const [h, ctx, mu, sd] of slots) {
+      if (rnd() < 0.18) continue;
+      const t = base + h * 3600000 + Math.round((rnd() - 0.5) * 50) * 60000;
+      if (t > Date.now()) continue;
+      const v = Math.round(mu + (rnd() + rnd() + rnd() - 1.5) * sd * 1.5);
+      out.push({ id: 'ej' + out.length, t, v: Math.max(52, v), ctx, ins: null, carbs: null, tags: [], note: '' });
+    }
+  }
+  out.sort((a, b) => b.t - a.t);
+  return (sampleCache = out);
+}
+
+/* ---------- Render: estado de sincronización ---------- */
+function renderSync() {
+  const el = $('#sync');
+  let cls = '', text = '';
+  if (app.mode === 'init') { text = 'Cargando…'; }
+  else if (app.mode === 'local') { cls = app.lsOk ? 's-high' : 's-low'; text = app.lsOk ? 'Solo en este dispositivo' : 'No se puede guardar aquí'; }
+  else if (app.error) { cls = 's-low'; text = 'Sin conexión con tus datos'; }
+  else if (Object.keys(queue).length) { cls = 's-high'; text = 'Guardando…'; }
+  else if (app.stale) { cls = 's-high'; text = 'Sin conexión: puede no estar al día'; }
+  else if (app.confirmed) { cls = 's-ok'; text = 'Guardado en tu cuenta'; }
+  else { text = 'Sincronizando…'; }
+  el.innerHTML = `<span class="dot ${cls}"></span><span>${esc(text)}</span>`;
+  const note = $('#storageNote');
+  if (note) {
+    note.textContent = app.mode === 'cloud'
+      ? 'Tus mediciones se guardan en tu cuenta de Claude, en un espacio privado: solo tú puedes verlas. Si compartes este enlace, cada persona lleva su propio diario por separado.'
+      : app.mode === 'local'
+        ? 'Tus mediciones se guardan solo en este teléfono o navegador. Descarga un respaldo de vez en cuando para no perderlas.'
+        : 'Conectando con tu almacenamiento…';
+  }
+}
+
+/* ---------- Render: resumen ---------- */
+function gaugeHTML(v, ctx) {
+  const R = app.settings.ranges, lo = 40, hi = Math.max(300, R.vhigh + 40);
+  const pos = x => (Math.min(hi, Math.max(lo, x)) - lo) / (hi - lo) * 100;
+  const mx = maxFor(ctx, R);
+  const segs = [['vlow', lo, R.vlow], ['low', R.vlow, R.low], ['ok', R.low, mx], ['high', mx, R.vhigh], ['vhigh', R.vhigh, hi]];
+  const track = segs.map(([s, a, b]) => `<span class="${STATUS[s].cls}" style="flex:0 1 ${(pos(b) - pos(a)).toFixed(2)}%"></span>`).join('');
+  const labels = [R.low, mx, R.vhigh].map(x => `<span style="left:${pos(x).toFixed(2)}%">${fmtG(x)}</span>`).join('');
+  return `<div class="gauge" aria-hidden="true"><div class="g-track">${track}</div><div class="g-mark" style="left:${pos(v).toFixed(2)}%"></div><div class="g-labels">${labels}</div></div>`;
+}
+function heroHTML(all) {
+  const addBtn = (txt) => `<div><button type="button" class="btn btn-primary" data-action="add">${txt}</button></div>`;
+  if (!all.length && !app.loaded) {
+    return `<span class="eyebrow">Tu diario</span><p class="hero-title">Cargando tus mediciones…</p><p class="hero-text">Aquí verás tu última medición, tu promedio y cuántas mediciones quedan dentro de tu objetivo.</p>`;
+  }
+  if (!all.length) {
+    return `<span class="eyebrow">Tu diario</span><p class="hero-title">Aún no hay mediciones</p><p class="hero-text">Anota cada control con el momento del día en que lo hiciste. Con unos días de registro verás tu promedio, la HbA1c estimada y tus horas más altas y más bajas.</p>${addBtn('Registrar primera medición')}`;
+  }
+  const r = all[0], st = classify(r.v, r.ctx), R = app.settings.ranges;
+  const recent = Date.now() - r.t < 3 * 3600000;
+  let alert = '';
+  if (recent && (st === 'low' || st === 'vlow')) {
+    alert = `<div class="alert ${STATUS[st].cls}" role="note"><strong>Glucosa ${st === 'vlow' ? 'muy baja' : 'baja'}.</strong><span>Regla 15-15: consume 15 g de azúcar de absorción rápida (medio vaso de jugo o 3 a 4 tabletas de glucosa) y vuelve a medir en 15 minutos.${st === 'vlow' ? ' Si no mejora o te sientes mal, pide ayuda de inmediato.' : ''}</span></div>`;
+  } else if (recent && st === 'vhigh') {
+    alert = `<div class="alert s-vhigh" role="note"><strong>Glucosa muy alta.</strong><span>Sigue el plan que te indicó tu equipo de salud. Si tienes diabetes tipo 1 o te sientes mal, mide cetonas si tu médico te lo indicó.</span></div>`;
+  }
+  const today = all.filter(x => calDays(x.t) === 0);
+  const foot = today.length
+    ? `Hoy: ${today.length} ${today.length === 1 ? 'medición' : 'mediciones'} · promedio ${fmtG(today.reduce((a, x) => a + x.v, 0) / today.length)} ${unitLabel()}`
+    : 'Hoy todavía no registras mediciones.';
+  return `<div class="hero-top"><span class="eyebrow">Última medición</span><span class="when">${esc(whenText(r.t))}</span></div>
+    <div class="reading"><span class="big">${fmtG(r.v)}</span><span class="unit">${unitLabel()}</span></div>
+    <div class="hero-meta"><span class="pill ${STATUS[st].cls}">${STATUS[st].label}</span><span>${esc(ctxLabel(r.ctx))}</span></div>
+    ${gaugeHTML(r.v, r.ctx)}
+    ${alert}
+    <p class="hero-foot">${foot}</p>`;
+}
+function statsHTML(S, days) {
+  if (!S.n) return `<div class="stat wide"><span class="h">Sin mediciones en los últimos ${days} días.</span></div>`;
+  const R = app.settings.ranges, lows = S.counts.low + S.counts.vlow;
+  const cell = (k, v, h, extra = '') => `<div class="stat ${extra}"><span class="k">${k}</span><span class="v">${v}</span><span class="h">${h}</span></div>`;
+  return [
+    cell('Promedio', `${fmtG(S.mean)}<small>${unitLabel()}</small>`, `desv. ${fmtG(S.sd)}`),
+    cell('<span class="nc">HbA1c</span> estimada', S.a1c ? `${nf1.format(S.a1c)}<small>%</small>` : '—', S.a1c ? 'aproximada' : 'faltan datos (mín. 10)'),
+    cell('En objetivo', `${pct(S.counts.ok, S.n)}<small>%</small>`, `${S.counts.ok} de ${S.n}`),
+    cell('Mediciones', nf0.format(S.n), `${nfMax1.format(S.n / days)} por día`),
+    cell('Bajas', nf0.format(lows), `menos de ${fmtG(R.low)}`, lows ? 'warn' : ''),
+    cell('Variabilidad', S.cv != null ? `${nf0.format(S.cv)}<small>%</small>` : '—', 'CV, meta\u00a0≤\u00a036\u00a0%'),
+  ].join('');
+}
+function distHTML(S) {
+  if (!S.n) return `<p class="chart-empty">Sin mediciones en este período.</p>`;
+  const R = app.settings.ranges;
+  const bar = STATUS_ORDER.map(s => S.counts[s] ? `<span class="${STATUS[s].cls}" style="flex:${S.counts[s]} 1 0"></span>` : '').join('');
+  const lowTop = isMmol() ? fmtG(R.low - 1.8) : fmtG(R.low - 1);
+  const sub = {
+    vhigh: `más de ${fmtG(R.vhigh)}`,
+    high: 'sobre el máximo',
+    ok: `de ${fmtG(R.low)} al máximo`,
+    low: `de ${fmtG(R.vlow)} a ${lowTop}`,
+    vlow: `menos de ${fmtG(R.vlow)}`,
+  };
+  const rows = STATUS_ORDER.slice().reverse().map(s => `<div class="lg-name ${STATUS[s].cls}"><i class="dot"></i><span>${STATUS[s].label}</span><small>${sub[s]}</small></div><span class="lg-pct">${pct(S.counts[s], S.n)} %</span><span class="lg-n">${S.counts[s]}</span>`).join('');
+  return `<div class="dist" role="img" aria-label="Distribución por rango">${bar}</div>
+    <div class="legend" style="margin-top:12px">${rows}</div>
+    <p class="caption" style="margin-top:10px">Máximo: ${fmtG(R.preMax)} ${unitLabel()} en ayunas y antes de comer; ${fmtG(R.postMax)} después de comer y en otros momentos.</p>`;
+}
+function ctxHTML(list) {
+  const rows = CTX.map(c => {
+    const l = list.filter(r => r.ctx === c.id);
+    if (!l.length) return '';
+    const m = l.reduce((a, r) => a + r.v, 0) / l.length;
+    const st = classify(m, c.id);
+    return `<tr><th scope="row">${esc(c.short || c.label)}</th><td class="${STATUS[st].cls}"><i class="dot"></i>${fmtG(m)}<span class="vh"> ${STATUS[st].label}</span></td><td>${l.length}</td></tr>`;
+  }).join('');
+  if (!rows) return `<p class="chart-empty">Sin mediciones en este período.</p>`;
+  return `<table class="ctx-table"><thead><tr><th scope="col">Momento</th><th scope="col">Promedio</th><th scope="col">N.º</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function renderResumen() {
+  const all = cache.all, real = all.length > 0;
+  $('#hero').innerHTML = heroHTML(all);
+  const src = real ? all : sample();
+  const list = inPeriod(src, app.period);
+  const S = stats(list);
+  $('#sumTitle').textContent = `Últimos ${app.period} días`;
+  $('#sumExample').hidden = real;
+  $('#sumBlock').classList.toggle('is-example', !real);
+  $('#statsGrid').innerHTML = statsHTML(S, app.period);
+  $('#distBox').innerHTML = distHTML(S);
+  $('#ctxBox').innerHTML = ctxHTML(list);
+  drawTrend($('#miniChart'), list, app.period, 170);
+}
+
+/* ---------- Gráficos ---------- */
+function drawChart(el, o) {
+  const pts = o.pts;
+  if (!pts.length) { el.innerHTML = `<p class="chart-empty">${esc(o.empty || 'Sin mediciones en este período.')}</p>`; return; }
+  const R = app.settings.ranges;
+  const w = Math.max(260, Math.floor(el.clientWidth || 320));
+  const h = o.height || 220;
+  const pl = 40, pr = 12, pt = 12, pb = 28;
+  const iw = w - pl - pr, ih = h - pt - pb;
+  let vmax = R.vhigh + 30, vmin = 40;
+  for (const p of pts) { if (p.v > vmax) vmax = p.v; if (p.v < vmin) vmin = p.v; }
+  const yMax = Math.ceil(vmax / 50) * 50, yMin = Math.floor(vmin / 10) * 10;
+  const X = x => pl + (x - o.xa) / (o.xb - o.xa) * iw;
+  const Y = v => pt + (1 - (v - yMin) / (yMax - yMin)) * ih;
+  const f = n => Math.round(n * 10) / 10;
+  let s = `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(o.label)}">`;
+  s += `<rect class="band" x="${pl}" y="${f(Y(R.postMax))}" width="${iw}" height="${f(Y(R.low) - Y(R.postMax))}"/>`;
+  const lines = [
+    { v: R.low, cls: 'tgt', pr: 1 }, { v: R.postMax, cls: 'tgt', pr: 2 }, { v: R.vhigh, cls: 'lim', pr: 3 },
+    { v: R.vlow, cls: 'lim', pr: 4 },
+  ];
+  if (R.preMax !== R.postMax) lines.push({ v: R.preMax, cls: 'tgt2', pr: 5 });
+  const placed = [];
+  lines.slice().sort((a, b) => a.pr - b.pr).forEach(L => {
+    L.y = Y(L.v);
+    if (placed.every(y => Math.abs(y - L.y) >= 13)) { placed.push(L.y); L.show = true; }
+  });
+  for (const L of lines) {
+    if (L.v <= yMin || L.v >= yMax) continue;
+    s += `<line class="gl ${L.cls}" x1="${pl}" x2="${w - pr}" y1="${f(L.y)}" y2="${f(L.y)}"/>`;
+    if (L.show) s += `<text class="ax" x="${pl - 6}" y="${f(L.y + 4)}" text-anchor="end">${fmtG(L.v)}</text>`;
+  }
+  s += `<line class="axis" x1="${pl}" x2="${w - pr}" y1="${pt + ih}" y2="${pt + ih}"/>`;
+  let leftEdge = Infinity;
+  o.xTicks.map(tk => {
+    const x = X(tk.x), half = tk.label.length * 3.4;
+    const cx = Math.min(w - pr - half, Math.max(pl + half, x));
+    return { x, cx, half, label: tk.label };
+  }).sort((a, b) => b.x - a.x).forEach(tk => {
+    if (tk.cx + tk.half > leftEdge - 8) return;
+    leftEdge = tk.cx - tk.half;
+    s += `<line class="tick" x1="${f(tk.x)}" x2="${f(tk.x)}" y1="${pt + ih}" y2="${pt + ih + 4}"/><text class="ax" x="${f(tk.cx)}" y="${h - 8}" text-anchor="middle">${esc(tk.label)}</text>`;
+  });
+  if (o.line && o.line.length > 1) s += `<polyline class="avg-line" points="${o.line.map(p => f(X(p.x)) + ',' + f(Y(p.v))).join(' ')}"/>`;
+  const r = pts.length > 200 ? 3 : 4;
+  for (const p of pts) s += `<circle class="pt ${STATUS[p.st].cls}" cx="${f(X(p.x))}" cy="${f(Y(p.v))}" r="${r}"/>`;
+  if (o.emph) {
+    const p = o.emph, c = STATUS[p.st].cls;
+    s += `<circle class="pt-ring ${c}" cx="${f(X(p.x))}" cy="${f(Y(p.v))}" r="9"/><circle class="pt ${c}" cx="${f(X(p.x))}" cy="${f(Y(p.v))}" r="5.5"/>`;
+  }
+  el.innerHTML = s + '</svg>';
+}
+function drawTrend(el, list, days, height) {
+  const xa = periodStart(days), xb = startOfDay(Date.now()) + DAY;
+  const pts = list.map(r => ({ x: r.t, v: r.v, st: classify(r.v, r.ctx) }));
+  const byDay = {};
+  for (const r of list) { const k = startOfDay(r.t); (byDay[k] ||= []).push(r.v); }
+  const line = Object.keys(byDay).map(Number).sort((a, b) => a - b).map(k => ({ x: k + DAY / 2, v: byDay[k].reduce((a, b) => a + b, 0) / byDay[k].length }));
+  const w = Math.max(260, Math.floor(el.clientWidth || 320));
+  const maxLabels = Math.max(2, Math.floor((w - 52) / 46));
+  const step = Math.max(1, Math.ceil(days / maxLabels));
+  const xTicks = [];
+  for (let i = 0; i < days; i += step) {
+    const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - i);
+    xTicks.push({ x: d.getTime(), label: days <= 14 ? wdDate(d) : shortDate(d) });
+  }
+  const emph = pts.length ? pts.reduce((a, b) => (b.x > a.x ? b : a)) : null;
+  drawChart(el, { pts, xa, xb, xTicks, line, height, emph, label: `Mediciones de glucosa de los últimos ${days} días` });
+}
+function drawPattern(el, list) {
+  const pts = list.map(r => { const d = new Date(r.t); return { x: d.getHours() + d.getMinutes() / 60, v: r.v, st: classify(r.v, r.ctx) }; });
+  const buckets = Array.from({ length: 12 }, () => []);
+  for (const p of pts) buckets[Math.min(11, Math.floor(p.x / 2))].push(p.v);
+  const line = buckets.map((b, i) => b.length ? { x: i * 2 + 1, v: b.reduce((a, c) => a + c, 0) / b.length, n: b.length, i } : null).filter(Boolean);
+  const xTicks = [0, 6, 12, 18, 24].map(hh => ({ x: hh, label: pad(hh) + ':00' }));
+  drawChart(el, { pts, xa: 0, xb: 24, xTicks, line: line.length >= 3 ? line : null, height: 220, label: 'Mediciones según la hora del día' });
+  const elig = line.filter(b => b.n >= 2);
+  const note = $('#patternNote');
+  if (elig.length >= 2) {
+    const hi = elig.reduce((a, b) => (b.v > a.v ? b : a)), lo = elig.reduce((a, b) => (b.v < a.v ? b : a));
+    const span = b => `entre las ${pad(b.i * 2)}:00 y las ${pad(b.i * 2 + 2)}:00`;
+    note.textContent = `Tus valores más altos suelen darse ${span(hi)} (promedio ${fmtG(hi.v)} ${unitLabel()}) y los más bajos ${span(lo)} (promedio ${fmtG(lo.v)}). La línea muestra el promedio cada dos horas.`;
+  } else note.textContent = 'Con más mediciones a distintas horas verás en qué momentos del día tiendes a subir o bajar.';
+}
+function renderTendencias() {
+  const list = inPeriod(cache.all, app.period);
+  const emptyMsg = cache.all.length ? 'Sin mediciones en este período.' : 'Registra algunas mediciones para ver tus tendencias.';
+  if (!list.length) {
+    $('#trendChart').innerHTML = `<p class="chart-empty">${emptyMsg}</p>`;
+    $('#patternChart').innerHTML = `<p class="chart-empty">${emptyMsg}</p>`;
+    $('#patternNote').textContent = '';
+    $('#extremes').innerHTML = `<p class="chart-empty">${emptyMsg}</p>`;
+    return;
+  }
+  drawTrend($('#trendChart'), list, app.period, 230);
+  drawPattern($('#patternChart'), list);
+  const mn = list.reduce((a, b) => (b.v < a.v ? b : a)), mx = list.reduce((a, b) => (b.v > a.v ? b : a));
+  const lowDays = new Set(list.filter(r => r.v < app.settings.ranges.low).map(r => dayKey(r.t))).size;
+  const ext = (k, r) => { const st = classify(r.v, r.ctx); return `<div class="ext"><span class="eyebrow">${k}</span><span class="v ${STATUS[st].cls}"><i class="dot"></i>${fmtG(r.v)}</span><span class="caption">${esc(shortDate(r.t) + ' · ' + hhmm(r.t) + ' · ' + ctxShort(r.ctx))}</span></div>`; };
+  $('#extremes').innerHTML = ext('Más baja', mn) + ext('Más alta', mx) +
+    `<div class="ext"><span class="eyebrow">Días con alguna baja</span><span class="v">${lowDays}</span><span class="caption">de ${app.period} días</span></div>`;
+}
+
+/* ---------- Render: historial ---------- */
+function entryHTML(r) {
+  const st = classify(r.v, r.ctx);
+  const meta = [];
+  if (r.ins != null) meta.push(`${nfMax1.format(r.ins)} U de insulina`);
+  if (r.carbs != null) meta.push(`${nf0.format(r.carbs)} g de carbohidratos`);
+  (r.tags || []).forEach(t => TAG_BY_ID[t] && meta.push(TAG_BY_ID[t].label));
+  return `<button type="button" class="entry" data-id="${esc(r.id)}">
+    <span class="time">${hhmm(r.t)}</span>
+    <span class="main"><span class="ctx">${esc(ctxShort(r.ctx))}</span>${meta.length ? `<span class="meta">${esc(meta.join(' · '))}</span>` : ''}${r.note ? `<span class="note">${esc(r.note)}</span>` : ''}</span>
+    <span class="val ${STATUS[st].cls}"><i class="dot"></i>${fmtG(r.v)}<span class="vh"> ${unitLabel()}, ${STATUS[st].label}</span></span>
+  </button>`;
+}
+function renderHistorial() {
+  const all = cache.all;
+  const hf = $('#histFilter');
+  if (!hf.children.length) hf.innerHTML = [{ id: 'all', label: 'Todas' }].concat(CTX).map(c => `<button type="button" class="fchip" data-f="${c.id}">${esc(c.short || c.label)}</button>`).join('');
+  $$('.fchip', hf).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.f === app.histFilter)));
+  const list = app.histFilter === 'all' ? all : all.filter(r => r.ctx === app.histFilter);
+  $('#histCount').textContent = all.length ? `${list.length} ${list.length === 1 ? 'medición' : 'mediciones'}` : '';
+  const box = $('#histList');
+  if (!all.length) {
+    box.innerHTML = `<div class="empty"><h3>Tu historial está vacío</h3><p>Aquí aparecerán tus mediciones agrupadas por día. Toca una para corregirla o eliminarla.</p><button type="button" class="btn btn-primary" data-action="add">Registrar medición</button></div>`;
+    return;
+  }
+  if (!list.length) { box.innerHTML = `<div class="empty"><p>No hay mediciones de este momento del día.</p></div>`; return; }
+  const shown = list.slice(0, app.histLimit);
+  const groups = [];
+  for (const r of shown) {
+    const k = dayKey(r.t);
+    if (!groups.length || groups[groups.length - 1].k !== k) groups.push({ k, t: r.t, items: [] });
+    groups[groups.length - 1].items.push(r);
+  }
+  let html = groups.map(g => {
+    const avg = g.items.reduce((a, r) => a + r.v, 0) / g.items.length;
+    return `<div class="day"><div class="day-h"><h3>${esc(dayLabel(g.t))}</h3><span class="avg">${g.items.length > 1 ? `promedio ${fmtG(avg)}` : ''}</span></div><div class="entries">${g.items.map(entryHTML).join('')}</div></div>`;
+  }).join('');
+  if (list.length > shown.length) html += `<div><button type="button" class="btn" id="histMore">Mostrar más (${list.length - shown.length} restantes)</button></div>`;
+  box.innerHTML = html;
+}
+
+/* ---------- Render: ajustes ---------- */
+let rangesDirty = false;
+function fillRanges(R, preset) {
+  const fmtIn = v => isMmol() ? nf1.format(v / MGDL_PER_MMOL) : String(Math.round(v));
+  RANGE_KEYS.forEach(k => { $('#r-' + k).value = fmtIn(R[k]); });
+  $('#preset').value = preset;
+  $$('[data-u]').forEach(el => { el.textContent = unitLabel(); });
+  $('#rangesErr').hidden = true;
+}
+function renderAjustes() {
+  $$('#unitSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.unit === app.settings.unit)));
+  if (!rangesDirty) fillRanges(app.settings.ranges, app.settings.preset);
+  renderSync();
+}
+
+/* ---------- Render general ---------- */
+function renderView() {
+  if (app.view === 'resumen') renderResumen();
+  else if (app.view === 'historial') renderHistorial();
+  else if (app.view === 'tendencias') renderTendencias();
+  else renderAjustes();
+}
+function renderAll(fromStore) {
+  rebuildCache();
+  $$('[data-period] button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.days) === app.period)));
+  renderSync();
+  renderView();
+  if (fromStore && app.view !== 'ajustes' && !rangesDirty) fillRanges(app.settings.ranges, app.settings.preset);
+}
+function route() {
+  const h = location.hash.replace('#', '');
+  app.view = VIEWS.includes(h) ? h : 'resumen';
+  VIEWS.forEach(v => { $('#v-' + v).hidden = v !== app.view; });
+  $$('.tab').forEach(a => { if (a.dataset.view === app.view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  renderView();
+  window.scrollTo(0, 0);
+}
+
+/* ---------- Aviso breve ---------- */
+let toastTimer = null;
+function toast(msg, opt = {}) {
+  const el = $('#toast');
+  el.textContent = '';
+  const span = document.createElement('span'); span.textContent = msg; el.appendChild(span);
+  if (opt.action) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = opt.action.label;
+    b.addEventListener('click', () => { hideToast(); opt.action.fn(); });
+    el.appendChild(b);
+  }
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, opt.ms || 3500);
+}
+function hideToast() { $('#toast').hidden = true; }
+
+/* ---------- Hoja de registro ---------- */
+const sheet = $('#sheet'), sheetBg = $('#sheetBg');
+let editing = null, lastFocus = null;
+$('#fCtx').innerHTML = CTX.map(c => `<label class="chip"><input type="radio" name="ctx" id="ctx-${c.id}" value="${c.id}"><span>${esc(c.label)}</span></label>`).join('');
+$('#fTags').innerHTML = TAGS.map(t => `<label class="chip"><input type="checkbox" name="tag" id="tag-${t.id}" value="${t.id}"><span>${esc(t.label)}</span></label>`).join('');
+
+function suggestCtx(t) {
+  const h = new Date(t).getHours();
+  const prev = cache.all.find(r => r.t <= t && t - r.t < 4 * 3600000);
+  if (prev && (prev.ctx === 'antes' || (prev.ctx === 'ayunas' && h >= 7))) return 'despues';
+  if (h >= 5 && h < 10) return 'ayunas';
+  if (h >= 21 || h < 1) return 'dormir';
+  if (h >= 1 && h < 5) return 'madrugada';
+  return 'antes';
+}
+function selectedCtx() { const i = $('input[name="ctx"]:checked', sheet); return i ? i.value : 'otro'; }
+function updatePill() {
+  const x = parseNum($('#fVal').value), pill = $('#fPill');
+  if (x == null || !isFinite(x)) { pill.hidden = true; return; }
+  const mg = toMg(x);
+  if (mg < 20 || mg > 600) { pill.hidden = true; return; }
+  const st = classify(mg, selectedCtx());
+  pill.className = 'pill ' + STATUS[st].cls;
+  pill.textContent = STATUS[st].label;
+  pill.hidden = false;
+}
+function openSheet(r) {
+  lastFocus = document.activeElement;
+  editing = r || null;
+  $('#sheetTitle').textContent = r ? 'Editar medición' : 'Nueva medición';
+  $('#fUnit').textContent = unitLabel();
+  $('#fVal').value = r ? (isMmol() ? nf1.format(r.v / MGDL_PER_MMOL) : String(Math.round(r.v))) : '';
+  const t = r ? r.t : Date.now();
+  $('#fTime').value = toLocalInput(t);
+  const ctx = r ? r.ctx : suggestCtx(t);
+  $$('input[name="ctx"]', sheet).forEach(i => { i.checked = i.value === ctx; });
+  $('#fIns').value = r && r.ins != null ? nfMax1.format(r.ins) : '';
+  $('#fCarbs').value = r && r.carbs != null ? String(r.carbs) : '';
+  $$('input[name="tag"]', sheet).forEach(i => { i.checked = !!(r && r.tags && r.tags.includes(i.value)); });
+  $('#fNote').value = r ? r.note || '' : '';
+  $('#fMore').open = !!(r && (r.ins != null || r.carbs != null || (r.tags && r.tags.length) || r.note));
+  $('#fValMsg').hidden = true; $('#fErr').hidden = true;
+  $('#fDelZone').hidden = !r; $('#fDelConfirm').hidden = true; $('#fDel').hidden = false;
+  updatePill();
+  sheet.hidden = false; sheetBg.hidden = false;
+  document.body.classList.add('locked');
+  sheet.scrollTop = 0;
+  setTimeout(() => $('#fVal').focus(), 40);
+}
+function closeSheet() {
+  sheet.hidden = true; sheetBg.hidden = true; editing = null;
+  document.body.classList.remove('locked');
+  if (lastFocus && document.contains(lastFocus)) { try { lastFocus.focus(); } catch (e) {} }
+}
+function fieldErr(el, msg) { el.textContent = msg; el.hidden = false; }
+
+sheet.addEventListener('submit', e => {
+  e.preventDefault();
+  $('#fValMsg').hidden = true; $('#fErr').hidden = true;
+  const x = parseNum($('#fVal').value);
+  const mg = x == null || !isFinite(x) ? NaN : toMg(x);
+  if (!(mg >= 20 && mg <= 600)) {
+    fieldErr($('#fValMsg'), x == null ? 'Escribe el valor que marcó tu glucómetro.' : (isMmol() ? 'Ingresa un valor entre 1,1 y 33,3 mmol/L.' : 'Ingresa un valor entre 20 y 600 mg/dL.'));
+    $('#fVal').focus(); return;
+  }
+  const t = $('#fTime').value ? new Date($('#fTime').value).getTime() : Date.now();
+  if (!isFinite(t)) { fieldErr($('#fErr'), 'Revisa la fecha y la hora.'); return; }
+  if (t > Date.now() + 10 * 60000) { fieldErr($('#fErr'), 'La fecha y hora no pueden estar en el futuro.'); return; }
+  const ins = parseNum($('#fIns').value), carbs = parseNum($('#fCarbs').value);
+  if (ins != null && !(ins >= 0 && ins <= 300)) { $('#fMore').open = true; fieldErr($('#fErr'), 'La insulina debe ser un número entre 0 y 300 unidades.'); return; }
+  if (carbs != null && !(carbs >= 0 && carbs <= 1000)) { $('#fMore').open = true; fieldErr($('#fErr'), 'Los carbohidratos deben ser un número entre 0 y 1000 g.'); return; }
+  const prev = editing;
+  const r = {
+    id: prev ? prev.id : newId(), t, v: Math.round(mg * 10) / 10, ctx: selectedCtx(),
+    ins, carbs, tags: $$('input[name="tag"]:checked', sheet).map(i => i.value),
+    note: $('#fNote').value.trim().slice(0, 500),
+  };
+  closeSheet();
+  upsertReading(r, prev ? prev.t : null);
+  const st = classify(r.v, r.ctx);
+  if (!prev && (st === 'low' || st === 'vlow') && Date.now() - r.t < 3 * 3600000) {
+    if (app.view !== 'resumen') location.hash = '#resumen';
+    toast('Medición guardada. Tu glucosa está baja: revisa el aviso.', { ms: 6000 });
+  } else toast(prev ? 'Cambios guardados' : 'Medición guardada');
+});
+$('#fVal').addEventListener('input', updatePill);
+$('#fCtx').addEventListener('change', updatePill);
+$('#fCancel').addEventListener('click', closeSheet);
+$('#sheetClose').addEventListener('click', closeSheet);
+sheetBg.addEventListener('click', closeSheet);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !sheet.hidden) closeSheet(); });
+$('#fDel').addEventListener('click', () => { $('#fDel').hidden = true; $('#fDelConfirm').hidden = false; $('#fDelNo').focus(); });
+$('#fDelNo').addEventListener('click', () => { $('#fDelConfirm').hidden = true; $('#fDel').hidden = false; });
+$('#fDelYes').addEventListener('click', () => {
+  const r = editing; if (!r) return;
+  closeSheet();
+  removeReading(r);
+  toast('Medición eliminada', { ms: 6000, action: { label: 'Deshacer', fn: () => upsertReading(r, null) } });
+});
+
+/* ---------- Exportar e importar ---------- */
+function csvCell(x) {
+  let s = String(x == null ? '' : x);
+  if (/^[=+\-@]/.test(s)) s = "'" + s;
+  return /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function toCSV(list) {
+  const head = ['fecha', 'hora', 'glucosa_mg_dl', 'glucosa_mmol_l', 'momento', 'estado', 'insulina_u', 'carbohidratos_g', 'etiquetas', 'nota'];
+  const rows = list.slice().sort((a, b) => a.t - b.t).map(r => [
+    dayKey(r.t), hhmm(r.t), Math.round(r.v), nf1.format(r.v / MGDL_PER_MMOL), ctxLabel(r.ctx),
+    STATUS[classify(r.v, r.ctx)].label,
+    r.ins != null ? nfMax1.format(r.ins) : '', r.carbs != null ? nf0.format(r.carbs) : '',
+    (r.tags || []).map(t => TAG_BY_ID[t] ? TAG_BY_ID[t].label : t).join(', '), r.note || '',
+  ]);
+  return '﻿' + [head].concat(rows).map(row => row.map(csvCell).join(';')).join('\r\n');
+}
+function doctorSummary(days) {
+  const list = inPeriod(cache.all, days), S = stats(list), R = app.settings.ranges, u = unitLabel();
+  const from = periodStart(days);
+  const lines = [
+    `Resumen de glucosa capilar · últimos ${days} días (${shortDate(from)} al ${shortDate(Date.now())} ${new Date().getFullYear()})`,
+    `Mediciones: ${S.n} (${nfMax1.format(S.n / days)} por día)`,
+  ];
+  if (S.n) {
+    lines.push(`Promedio: ${fmtG(S.mean)} ${u} · desviación estándar ${fmtG(S.sd)} ${u}${S.cv != null ? ` · CV ${nf0.format(S.cv)} %` : ''}`);
+    if (S.a1c) lines.push(`HbA1c estimada a partir del promedio: ${nf1.format(S.a1c)} %`);
+    lines.push(`En objetivo: ${pct(S.counts.ok, S.n)} % · Altas: ${pct(S.counts.high, S.n)} % · Muy altas (> ${fmtG(R.vhigh)}): ${pct(S.counts.vhigh, S.n)} %`);
+    lines.push(`Bajas (< ${fmtG(R.low)}): ${S.counts.low + S.counts.vlow} · de ellas muy bajas (< ${fmtG(R.vlow)}): ${S.counts.vlow}`);
+    lines.push(`Rango: mínima ${fmtG(S.min)} · máxima ${fmtG(S.max)} ${u}`);
+    const per = CTX.map(c => { const l = list.filter(r => r.ctx === c.id); return l.length ? `${c.short || c.label} ${fmtG(l.reduce((a, r) => a + r.v, 0) / l.length)} (n=${l.length})` : null; }).filter(Boolean);
+    if (per.length) lines.push(`Promedio por momento: ${per.join(' · ')}`);
+    lines.push(`Objetivos usados: ${fmtG(R.low)} a ${fmtG(R.preMax)} ${u} en ayunas y antes de comer; hasta ${fmtG(R.postMax)} ${u} después de comer.`);
+  }
+  return lines.join('\n');
+}
+function showTextBox(text, msg) {
+  $('#exportMsg').textContent = msg || 'Copia este texto';
+  $('#exportBox').value = text;
+  $('#exportWrap').hidden = false;
+  if (app.view !== 'ajustes') location.hash = '#ajustes';
+  setTimeout(() => { const b = $('#exportBox'); b.focus(); b.select(); }, 60);
+}
+function copyText(text, okMsg) {
+  try {
+    navigator.clipboard.writeText(text).then(() => toast(okMsg || 'Copiado al portapapeles'), () => showTextBox(text, 'Selecciona el texto y cópialo'));
+  } catch (e) { showTextBox(text, 'Selecciona el texto y cópialo'); }
+}
+function saveFile(name, text, mime) {
+  if (caps.downloads) {
+    caps.downloads.save({ filename: name, data: text }).then(
+      () => toast('Archivo listo'),
+      e => {
+        const c = e && e.code;
+        if (c === 'declined') return;
+        if (c === 'rate_limited') { toast('Espera un momento e inténtalo otra vez.'); return; }
+        showTextBox(text, 'No se pudo descargar el archivo. Copia su contenido:');
+      });
+    return;
+  }
+  if (!window.claude) {
+    try {
+      const url = URL.createObjectURL(new Blob([text], { type: mime }));
+      const a = document.createElement('a'); a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      return;
+    } catch (e) {}
+  }
+  showTextBox(text, 'La descarga no está disponible aquí. Copia el contenido:');
+}
+$('#btnCSV').addEventListener('click', () => {
+  if (!cache.all.length) { toast('Aún no hay mediciones para exportar.'); return; }
+  saveFile(`glucosa-${dayKey(Date.now())}.csv`, toCSV(cache.all), 'text/csv');
+});
+$('#btnSummary').addEventListener('click', () => {
+  if (!cache.all.length) { toast('Aún no hay mediciones para resumir.'); return; }
+  copyText(doctorSummary(30), 'Resumen de 30 días copiado');
+});
+$('#btnBackup').addEventListener('click', () => {
+  const data = { app: 'diario-glucosa', version: 1, exported: new Date().toISOString(), settings: app.settings, readings: cache.all.slice().reverse() };
+  saveFile(`respaldo-glucosa-${dayKey(Date.now())}.json`, JSON.stringify(data, null, 1), 'application/json');
+});
+$('#btnRestore').addEventListener('click', () => $('#importFile').click());
+$('#importFile').addEventListener('change', e => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const fr = new FileReader();
+  fr.onload = () => {
+    try {
+      const data = JSON.parse(fr.result);
+      if (!data || data.app !== 'diario-glucosa' || !Array.isArray(data.readings)) throw new Error('formato');
+      const touched = new Set(); let n = 0;
+      for (const r0 of data.readings) { const r = sanitizeReading(r0); if (!r) continue; putReading(r); touched.add(monthKey(r.t)); n++; }
+      if (app.mode !== 'init') touched.forEach(persistMonth);
+      renderAll();
+      toast(n ? `Se restauraron ${n} mediciones` : 'El respaldo no tenía mediciones.');
+    } catch (err) { toast('El archivo no es un respaldo de Diario de Glucosa.'); }
+    e.target.value = '';
+  };
+  fr.onerror = () => toast('No se pudo leer el archivo.');
+  fr.readAsText(file);
+});
+$('#exportCopy').addEventListener('click', () => copyText($('#exportBox').value));
+$('#btnWipe').addEventListener('click', () => {
+  if (!cache.all.length) { toast('No hay mediciones que borrar.'); return; }
+  $('#wipeText').textContent = `¿Borrar las ${cache.all.length} mediciones? No se puede deshacer.`;
+  $('#wipeConfirm').hidden = false; $('#btnWipe').hidden = true; $('#wipeNo').focus();
+});
+$('#wipeNo').addEventListener('click', () => { $('#wipeConfirm').hidden = true; $('#btnWipe').hidden = false; });
+$('#wipeYes').addEventListener('click', () => {
+  const keys = Object.keys(app.months);
+  app.months = {};
+  for (const k in early) delete early[k];
+  if (app.mode !== 'init') keys.forEach(k => persist(k, null));
+  $('#wipeConfirm').hidden = true; $('#btnWipe').hidden = false;
+  renderAll();
+  toast('Se borraron todas las mediciones');
+});
+
+/* ---------- Ajustes: unidad y objetivos ---------- */
+$('#unitSeg').addEventListener('click', e => {
+  const b = e.target.closest('button[data-unit]'); if (!b || b.dataset.unit === app.settings.unit) return;
+  app.settings.unit = b.dataset.unit;
+  saveSettings();
+  rangesDirty = false;
+  renderAll();
+});
+$('#preset').addEventListener('change', () => {
+  const p = $('#preset').value;
+  if (PRESETS[p]) { fillRanges(PRESETS[p], p); }
+  rangesDirty = true;
+});
+RANGE_KEYS.forEach(k => $('#r-' + k).addEventListener('input', () => { rangesDirty = true; $('#preset').value = 'custom'; }));
+$('#rangesForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const R = {};
+  for (const k of RANGE_KEYS) { const x = parseNum($('#r-' + k).value); R[k] = x == null || !isFinite(x) ? NaN : Math.round(toMg(x)); }
+  if (!validRanges(R)) {
+    fieldErr($('#rangesErr'), 'Revisa los valores: cada límite debe ser mayor que el anterior (muy baja < baja < máximos < muy alta).');
+    return;
+  }
+  const preset = Object.keys(PRESETS).find(p => RANGE_KEYS.every(k => PRESETS[p][k] === R[k])) || 'custom';
+  app.settings.ranges = R; app.settings.preset = preset;
+  rangesDirty = false;
+  saveSettings();
+  renderAll();
+  fillRanges(R, preset);
+  toast('Objetivos guardados');
+});
+
+/* ---------- Navegación y eventos generales ---------- */
+document.addEventListener('click', e => {
+  const add = e.target.closest('[data-action="add"]');
+  if (add) { openSheet(null); return; }
+  const seg = e.target.closest('[data-period] button[data-days]');
+  if (seg) { app.period = Number(seg.dataset.days); savePrefs(); renderAll(); return; }
+  const entry = e.target.closest('.entry[data-id]');
+  if (entry) { const r = cache.byId[entry.dataset.id]; if (r) openSheet(r); return; }
+  const fc = e.target.closest('.fchip[data-f]');
+  if (fc) { app.histFilter = fc.dataset.f; app.histLimit = 80; savePrefs(); renderHistorial(); return; }
+  if (e.target.closest('#histMore')) { app.histLimit += 120; renderHistorial(); }
+});
+$('#fab').addEventListener('click', () => openSheet(null));
+addEventListener('hashchange', route);
+let rz = null, lastW = innerWidth;
+addEventListener('resize', () => {
+  if (innerWidth === lastW) return;
+  lastW = innerWidth;
+  clearTimeout(rz); rz = setTimeout(() => { if (app.view === 'resumen' || app.view === 'tendencias') renderView(); }, 150);
+});
+setInterval(() => { if (sheet.hidden && app.view === 'resumen' && cache.all.length) $('#hero').innerHTML = heroHTML(cache.all); }, 60000);
+
+route();
+renderAll();
+initStore();
+})();
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+</script>
+</body>
+</html>
