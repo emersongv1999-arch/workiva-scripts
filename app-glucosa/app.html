@@ -713,6 +713,7 @@ const app = {
   histFilter: (prefs.histFilter === 'all' || CTX_BY_ID[prefs.histFilter]) ? prefs.histFilter : 'all',
   histLimit: 80, view: 'resumen',
 };
+const NATIVE = !!(window.AndroidBridge && typeof window.AndroidBridge.saveFile === 'function');
 const cache = { all: [], byId: {} };
 const caps = { downloads: null };
 const cloud = { col: null };
@@ -780,9 +781,19 @@ function rebuildCache() {
 function inPeriod(list, days) { const s = periodStart(days); return list.filter(r => r.t >= s); }
 
 /* ---------- Almacenamiento ---------- */
-function lsRead() { try { const raw = localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
-function lsWrite() { try { localStorage.setItem(LS_KEY, JSON.stringify({ settings: app.settings, months: app.months })); return true; } catch (e) { return false; } }
-function lsProbe() { try { localStorage.setItem(LS_KEY + '-t', '1'); localStorage.removeItem(LS_KEY + '-t'); return true; } catch (e) { return false; } }
+const hasNativeState = () => NATIVE && typeof window.AndroidBridge.saveState === 'function';
+function lsRead() {
+  if (hasNativeState()) { try { const raw = window.AndroidBridge.loadState(); if (raw) return JSON.parse(raw); } catch (e) {} }
+  try { const raw = localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+}
+function lsWrite() {
+  const json = JSON.stringify({ settings: app.settings, months: app.months });
+  let ok = false;
+  if (hasNativeState()) { try { ok = window.AndroidBridge.saveState(json) === true; } catch (e) {} }
+  try { localStorage.setItem(LS_KEY, json); ok = true; } catch (e) {}
+  return ok;
+}
+function lsProbe() { if (hasNativeState()) return true; try { localStorage.setItem(LS_KEY + '-t', '1'); localStorage.removeItem(LS_KEY + '-t'); return true; } catch (e) { return false; } }
 
 async function initStore() {
   const C = window.claude;
@@ -950,6 +961,7 @@ function renderSync() {
   const el = $('#sync');
   let cls = '', text = '';
   if (app.mode === 'init') { text = 'Cargando…'; }
+  else if (app.mode === 'local' && NATIVE) { cls = app.lsOk ? 's-ok' : 's-low'; text = app.lsOk ? 'Guardado en el teléfono' : 'No se puede guardar aquí'; }
   else if (app.mode === 'local') { cls = app.lsOk ? 's-high' : 's-low'; text = app.lsOk ? 'Solo en este dispositivo' : 'No se puede guardar aquí'; }
   else if (app.error) { cls = 's-low'; text = 'Sin conexión con tus datos'; }
   else if (Object.keys(queue).length) { cls = 's-high'; text = 'Guardando…'; }
@@ -961,6 +973,8 @@ function renderSync() {
   if (note) {
     note.textContent = app.mode === 'cloud'
       ? 'Tus mediciones se guardan en tu cuenta de Claude, en un espacio privado: solo tú puedes verlas. Si compartes este enlace, cada persona lleva su propio diario por separado.'
+      : app.mode === 'local' && NATIVE
+        ? 'Tus mediciones se guardan en este teléfono. Si desinstalas la app se borran, así que descarga un respaldo de vez en cuando y guárdalo en tu Drive o correo.'
       : app.mode === 'local'
         ? 'Tus mediciones se guardan solo en este teléfono o navegador. Descarga un respaldo de vez en cuando para no perderlas.'
         : 'Conectando con tu almacenamiento…';
@@ -1402,11 +1416,16 @@ function showTextBox(text, msg) {
   setTimeout(() => { const b = $('#exportBox'); b.focus(); b.select(); }, 60);
 }
 function copyText(text, okMsg) {
+  if (NATIVE) { try { window.AndroidBridge.copyText(text); toast(okMsg || 'Copiado al portapapeles'); return; } catch (e) {} }
   try {
     navigator.clipboard.writeText(text).then(() => toast(okMsg || 'Copiado al portapapeles'), () => showTextBox(text, 'Selecciona el texto y cópialo'));
   } catch (e) { showTextBox(text, 'Selecciona el texto y cópialo'); }
 }
 function saveFile(name, text, mime) {
+  if (NATIVE) {
+    try { window.AndroidBridge.saveFile(name, mime, text); } catch (e) { showTextBox(text, 'No se pudo guardar el archivo. Copia su contenido:'); }
+    return;
+  }
   if (caps.downloads) {
     caps.downloads.save({ filename: name, data: text }).then(
       () => toast('Archivo listo'),
@@ -1530,6 +1549,14 @@ addEventListener('resize', () => {
   clearTimeout(rz); rz = setTimeout(() => { if (app.view === 'resumen' || app.view === 'tendencias') renderView(); }, 150);
 });
 setInterval(() => { if (sheet.hidden && app.view === 'resumen' && cache.all.length) $('#hero').innerHTML = heroHTML(cache.all); }, 60000);
+
+window.__appToast = msg => toast(String(msg));
+window.__appBack = () => {
+  if (!sheet.hidden) { closeSheet(); return true; }
+  if (!$('#wipeConfirm').hidden) { $('#wipeNo').click(); return true; }
+  if (app.view !== 'resumen') { location.hash = '#resumen'; return true; }
+  return false;
+};
 
 route();
 renderAll();

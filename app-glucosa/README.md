@@ -14,21 +14,52 @@ App para el teléfono para llevar el auto monitoreo de la glucosa (azúcar en la
 
 Los colores de los rangos siguen la convención del informe AGP (rojo oscuro, rojo, verde, amarillo, naranjo). La tipografía es Atkinson Hyperlegible, diseñada para personas con baja visión.
 
+## Instalar en Android (APK)
+
+1. Descarga [`apk/DiarioGlucosa.apk`](apk/DiarioGlucosa.apk) en el teléfono.
+2. Ábrelo desde la notificación de descarga o desde *Archivos › Descargas*.
+3. Si Android avisa que no permite instalar apps de esa fuente, toca *Configuración*, activa *Permitir de esta fuente* y vuelve atrás.
+4. Toca *Instalar*. Si aparece Play Protect diciendo que no reconoce la app, elige *Instalar de todas formas* (es normal en apps que no vienen de Play Store).
+5. Busca el ícono **Glucosa** en tu pantalla de inicio.
+
+Requiere Android 7 o superior. Funciona sin internet. Las mediciones quedan guardadas en el teléfono; desde *Ajustes › Descargar respaldo* puedes guardar una copia en Drive o enviártela por correo.
+
+Para actualizar, instala el APK nuevo encima del anterior. Android solo lo acepta si está firmado con la misma clave que la versión instalada; si no, hay que desinstalar (y se pierden los datos), así que antes descarga un respaldo.
+
 ## Archivos
 
 | Archivo | Para qué |
 |---|---|
 | `app.html` | Fuente única de la app (HTML + CSS + JS, sin dependencias). Se publica tal cual como Artifact en claude.ai. |
-| `build.py` | Genera `index.html` (PWA instalable) a partir de `app.html`. |
-| `index.html` | Versión instalable, generada. No editar a mano. |
+| `build.py` | Genera `index.html` (PWA) y `android/app/src/main/assets/www/` (APK) a partir de `app.html`. |
+| `apk/DiarioGlucosa.apk` | Instalador para Android, listo para descargar. |
+| `android/` | Proyecto Android: un WebView a pantalla completa que carga la app desde sus recursos, con un puente para guardar los datos en un archivo interno, exportar archivos y copiar texto. |
+| `fonts/` | Fuentes Atkinson Hyperlegible para usar sin conexión (licencia OFL). |
+| `index.html` | Versión PWA, generada. No editar a mano. |
 | `manifest.webmanifest`, `sw.js`, `icon*` | Manifest, service worker (funciona sin conexión) e íconos de la PWA. |
 
 ## Dónde se guardan los datos
 
+- **App Android (APK)**: en el teléfono, en un archivo interno de la app. Se borra si desinstalas la app, así que conviene descargar un respaldo de vez en cuando.
 - **Abierta en claude.ai** (como Artifact): en tu cuenta, en un espacio privado que solo tú puedes ver. Se sincroniza entre el teléfono y el computador.
 - **Instalada como PWA**: solo en ese teléfono/navegador (`localStorage`). Conviene descargar un respaldo de vez en cuando desde Ajustes.
 
-## Instalar en el teléfono (PWA)
+## Compilar el APK
+
+Requiere JDK 17+ y el SDK de Android (plataforma 35, build-tools 35).
+
+```
+python build.py
+cd android
+ANDROID_HOME=/ruta/al/android-sdk ./gradlew assembleRelease
+cp app/build/outputs/apk/release/app-release.apk ../apk/DiarioGlucosa.apk
+```
+
+Antes de publicar una versión nueva, sube `versionCode` y `versionName` en `android/app/build.gradle`.
+
+**Firma:** la clave no está en el repo. Para firmar con tu propia clave, crea `android/keystore/` con el archivo `.jks` y un `keystore.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`); esa carpeta está en `.gitignore`. Sin ella, el APK se firma con la clave de depuración de la máquina que compila. Usa siempre la misma clave para que las actualizaciones se instalen encima sin perder datos.
+
+## Instalar en el teléfono como PWA (iPhone o Android)
 
 1. Publicar la carpeta `app-glucosa/` en un hosting estático con HTTPS (por ejemplo GitHub Pages).
 2. Abrir la URL en el teléfono:
@@ -38,7 +69,8 @@ Los colores de los rangos siguen la convención del informe AGP (rojo oscuro, ro
 ## Modificar la app
 
 1. Editar `app.html`.
-2. Ejecutar `python build.py` para regenerar `index.html`.
+2. Ejecutar `python build.py` para regenerar la PWA y los recursos del APK.
 3. Si cambian archivos de la PWA, subir la versión en `CACHE` dentro de `sw.js` para que los teléfonos descarguen la nueva versión.
+4. Para el APK, compilar de nuevo (ver *Compilar el APK*).
 
 > Registro personal. La HbA1c estimada es una aproximación a partir del promedio (fórmula ADAG) y no reemplaza el examen de laboratorio. La app no reemplaza las indicaciones del médico ni del equipo de salud.

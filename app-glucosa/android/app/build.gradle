@@ -1,0 +1,53 @@
+plugins {
+    id 'com.android.application'
+}
+
+// La clave de firma NO se guarda en el repo. Si existe android/keystore/keystore.properties
+// (storeFile, storePassword, keyAlias, keyPassword) se usa; si no, se firma con la clave de depuración.
+def keystorePropsFile = file('../keystore/keystore.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) keystorePropsFile.withInputStream { keystoreProps.load(it) }
+
+android {
+    namespace 'com.diarioglucosa.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.diarioglucosa.app'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+
+    signingConfigs {
+        if (keystorePropsFile.exists()) {
+            release {
+                storeFile file('../keystore/' + keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig keystorePropsFile.exists() ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+}
