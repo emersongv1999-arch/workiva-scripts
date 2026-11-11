@@ -19,6 +19,18 @@ Aplicación GUI en tkinter para automatizar tareas de auditoría en Workiva para
 | mod5 | (reservado) |
 | mod6 | Validar Comparativos |
 
+## Integración XBRL (módulo `xbrl`, solo en `verificar_workiva_GUI.py` por ahora)
+Llena las plantillas .xlsm de DBNeT desde la planilla `E___ XBRL MM-AAAA` de Workiva.
+- NO va embebido en base64: son archivos aparte que se importan normal y deben estar
+  junto al GUI al compilar: `xbrl_app.py`, `xbrl_workiva.py`, `miles_workiva.py`,
+  `llenar_dbnet_desde_workiva.py`, `fusionar_cuadros.py`.
+- El llenado y la fusión corren como procesos aparte: el mismo .exe llamado con
+  `--tarea llenar|fusionar`. El bloque `--tarea` del `__main__` debe ir ANTES de `App()`.
+- `_arma_xbrl` le pasa a `xbrl_workiva` el `CLIENT_ID`/`CLIENT_SECRET` del GUI, para que
+  cada compilación use solo las credenciales de su auditor.
+- Compilar con `COMPILAR_AUDITOR.bat` (incluye los `--hidden-import` de XBRL y pywin32,
+  y los `--exclude-module` que dejan el .exe en ~19 MB).
+
 ## Scripts embebidos (base64 en el GUI)
 - `_MCP_V2_SRC` → `workiva_mcp_v2.py` — cliente async MCP v2 (httpx + FastMCP)
 - `_LLENAR_V2_SRC` → `llenado_comparativosV2_espejo.py` — llenado de comparativos
