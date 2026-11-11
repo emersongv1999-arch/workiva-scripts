@@ -17,6 +17,7 @@ Aplicación GUI en tkinter para automatizar tareas de auditoría en Workiva para
 | mod4 | (reservado) |
 | mod5 | (reservado) |
 | mod6 | Validar Comparativos |
+| xbrl | Integración XBRL (la vista vive en `xbrl_app.py`, clase `VistaXBRL`) |
 
 ## Scripts embebidos (base64 en el GUI)
 - `_MCP_V2_SRC` → `workiva_mcp_v2.py` — cliente async MCP v2 (httpx + FastMCP)
@@ -31,6 +32,7 @@ Aplicación GUI en tkinter para automatizar tareas de auditoría en Workiva para
 4. Recompilar con PyInstaller
 
 ## Compilación
+`COMPILAR_AUDITOR.bat` (incluye el módulo XBRL). A mano:
 ```
 pyinstaller --onefile --windowed --name Auditor ^
   --hidden-import pyodbc ^
@@ -41,8 +43,13 @@ pyinstaller --onefile --windowed --name Auditor ^
   --hidden-import pydantic ^
   --hidden-import dotenv ^
   --hidden-import openpyxl ^
+  --hidden-import xbrl_app --hidden-import xbrl_workiva --hidden-import miles_workiva ^
+  --hidden-import llenar_dbnet_desde_workiva --hidden-import fusionar_cuadros ^
+  --hidden-import win32com.client --hidden-import pythoncom --hidden-import pywintypes ^
   verificar_workiva_GUI.py
 ```
+El módulo XBRL corre el llenado y la fusión como procesos aparte: `Auditor.exe --tarea llenar|fusionar ...`
+(lo atiende el `if __name__ == "__main__"` del GUI antes de abrir la ventana).
 
 ## Reglas de negocio — Llenar Comparativos
 - Archivos **target**: sin prefijo `(CHN)` ni `(LC)` en el nombre
@@ -54,7 +61,10 @@ pyinstaller --onefile --windowed --name Auditor ^
 ## Branch de desarrollo
 `claude/serene-heisenberg-lhy1mh`
 
-# Integración XBRL — app aparte (`Integracion XBRL.exe`, antes Enlace XBRL y XBRL_DBNeT)
+# Integración XBRL — módulo del Auditor (`xbrl`) y también app aparte (`Integracion XBRL.exe`, antes Enlace XBRL y XBRL_DBNeT)
+
+La vista (`VistaXBRL`, un `tk.Frame`) es la misma en los dos: colores y distribución del Auditor (parámetros a la
+izquierda, resultado a la derecha). `Aplicacion` (el .exe aparte) solo le pone la franja azul arriba.
 
 Llena las plantillas .xlsm de DBNeT directo desde Workiva, sin export manual.
 

@@ -124,8 +124,11 @@ ICONO_64 = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAM30lEQVR4nNWbe3Bc1X3H
 ICONO_32 = "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"
 SIN_CONSOLA = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 
-AZUL, AZUL_OSC, FONDO, BLANCO = "#0B5394", "#083D6E", "#F4F6F8", "#FFFFFF"
-VERDE, ROJO, GRIS, TENUE = "#1E7B34", "#B3261E", "#5A5A5A", "#8A94A0"
+# Los colores del Auditor (CGE): la vista es un modulo mas de el, y el .exe
+# propio de Integracion XBRL se ve igual.
+AZUL, AZUL_OSC, FONDO, BLANCO = "#011689", "#010e5a", "#f0f3fc", "#ffffff"
+AZUL2, BORDE, TEXTO, FILA_ALT = "#0a2abf", "#c8d0e8", "#0d1a4a", "#eef1fb"
+VERDE, ROJO, GRIS, TENUE = "#0a8f5c", "#c0001a", "#3d4a78", "#6b7aab"
 AMBAR, AMBAR_FONDO = "#8A5A00", "#FFF4DC"
 FUENTE = "Segoe UI"
 
@@ -338,19 +341,18 @@ def muestra_en_carpeta(ruta):
 
 
 # ═══════════════════════════════════════════════════════════ ventana ══
-class Aplicacion(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title("Integración XBRL")
-        self._pon_icono()
-        self.configure(bg=FONDO)
-        # Los notebooks de CGE van con la pantalla al 125-150%: el tamano se
-        # escala con eso y se limita a la pantalla, o la ventana no cabe.
-        self.escala = escala = max(1.0, self.winfo_fpixels("1i") / 96)
-        ancho = min(int(1000 * escala), int(self.winfo_screenwidth() * 0.95))
-        alto = min(int(720 * escala), int(self.winfo_screenheight() * 0.88))
-        self.geometry(f"{ancho}x{alto}")
-        self.minsize(min(ancho, int(820 * escala)), min(alto, int(580 * escala)))
+class VistaXBRL(tk.Frame):
+    """Todo el modulo: va dentro del Auditor (un modulo mas del menu) o
+    dentro de la ventana propia de Integracion XBRL. Mismo aspecto que los
+    demas modulos del Auditor: parametros a la izquierda, resultado a la
+    derecha."""
+
+    ANCHO_IZQ = 250
+
+    def __init__(self, padre):
+        super().__init__(padre, bg=FONDO)
+        # Los notebooks de CGE van con la pantalla al 125-150%.
+        self.escala = max(1.0, self.winfo_fpixels("1i") / 96)
 
         self.empresa = tk.StringVar()
         self.periodo = tk.StringVar()
@@ -375,122 +377,120 @@ class Aplicacion(tk.Tk):
         self.after(80, self._drena)
 
     # ------------------------------------------------------------ aspecto
-    def _pon_icono(self):
-        """El eslabon en la barra de titulo y de tareas, en vez de la pluma
-        de tkinter (que es tambien la del Auditor)."""
-        try:
-            self._iconos = [tk.PhotoImage(data=d) for d in (ICONO_64, ICONO_32)]
-            self.iconphoto(True, *self._iconos)
-        except tk.TclError:
-            pass
-
     def _estilos(self):
+        # Sin theme_use: dentro del Auditor cambiaria el tema de todos los
+        # modulos. Solo estilos propios, con nombre aparte.
         s = ttk.Style(self)
-        try:
-            s.theme_use("vista" if os.name == "nt" else "clam")
-        except tk.TclError:
-            pass
-        s.configure("TCombobox", padding=5)
-        s.configure("Treeview", rowheight=int(24 * self.escala), font=(FUENTE, 9))
-        s.configure("Treeview.Heading", font=(FUENTE, 9, "bold"))
-        s.configure("Horizontal.TProgressbar", thickness=8)
+        s.configure("XBRL.TCombobox", padding=4, arrowsize=14)
+        s.map("XBRL.TCombobox",
+              fieldbackground=[("readonly", FILA_ALT), ("disabled", FONDO)],
+              foreground=[("readonly", TEXTO), ("disabled", TENUE)],
+              selectbackground=[("readonly", FILA_ALT)],
+              selectforeground=[("readonly", TEXTO)],
+              background=[("readonly", BORDE)])
+        s.configure("XBRL.Horizontal.TProgressbar", troughcolor=FILA_ALT,
+                    background=AZUL, thickness=6)
+
+    def _seccion(self, padre, texto):
+        tk.Label(padre, text=texto, font=(FUENTE, 8, "bold"),
+                 bg=FONDO, fg=TENUE).pack(anchor="w", pady=(6, 2))
+
+    def _tarjeta_izq(self, padre):
+        marco = tk.Frame(padre, bg=BLANCO, highlightbackground=BORDE,
+                         highlightthickness=1)
+        marco.pack(fill="x", pady=(0, 10))
+        dentro = tk.Frame(marco, bg=BLANCO, padx=12, pady=10)
+        dentro.pack(fill="x")
+        return dentro
+
+    def _boton_gris(self, padre, texto, accion):
+        return tk.Button(padre, text=texto, command=accion, font=(FUENTE, 9),
+                         bg=BORDE, fg=TEXTO, activebackground=FILA_ALT,
+                         activeforeground=TEXTO, relief="flat", bd=0,
+                         padx=8, pady=3, cursor="hand2")
+
+    def _info(self, padre, var):
+        return tk.Label(padre, textvariable=var, bg=BLANCO, fg=GRIS,
+                        font=(FUENTE, 9), anchor="w", justify="left",
+                        wraplength=self.ANCHO_IZQ - 34)
 
     def _construye(self):
-        cab = tk.Frame(self, bg=AZUL, padx=24, pady=10)
-        cab.pack(fill="x")
-        izq = tk.Frame(cab, bg=AZUL)
-        izq.pack(side="left", fill="x", expand=True)
-        tk.Label(izq, text="Integración XBRL", bg=AZUL, fg=BLANCO,
-                 font=(FUENTE, 18, "bold")).pack(anchor="w")
-        tk.Label(izq, text="Llena las plantillas de DBNeT directo desde Workiva",
-                 bg=AZUL, fg="#CFE0F0", font=(FUENTE, 10)).pack(anchor="w")
-        der = tk.Frame(cab, bg=AZUL)
-        der.pack(side="right", anchor="s")
-        tk.Label(der, text="Carpeta de trabajo", bg=AZUL, fg="#CFE0F0",
-                 font=(FUENTE, 8)).pack(anchor="e")
-        fila = tk.Frame(der, bg=AZUL)
-        fila.pack(anchor="e")
-        tk.Label(fila, textvariable=self.info_carpeta, bg=AZUL, fg=BLANCO,
-                 font=(FUENTE, 9)).pack(side="left")
-        self.b_cambia_carpeta = self._enlace(fila, "Cambiar", self._cambia_carpeta,
-                                             bg=AZUL, fg="#CFE0F0")
-        self.b_cambia_carpeta.pack(side="left", padx=(8, 0))
+        izq = tk.Frame(self, bg=FONDO, width=self.ANCHO_IZQ)
+        izq.pack(side="left", fill="y", padx=(0, 14))
+        izq.pack_propagate(False)
 
-        pie = tk.Frame(self, bg=FONDO, padx=24)
-        pie.pack(side="bottom", fill="x")
-        self.b_log = self._enlace(pie, "detalle técnico", self._muestra_log,
-                                  bg=FONDO, fg=TENUE)
-        self.b_log.config(font=(FUENTE, 8, "underline"))
-        self.b_log.pack(side="right", pady=(0, 4))
-        cuerpo = tk.Frame(self, bg=FONDO, padx=24, pady=14)
-        cuerpo.pack(fill="both", expand=True)
-        cuerpo.columnconfigure(0, weight=1)
-        cuerpo.rowconfigure(1, weight=1)
+        # ---- empresa y periodo
+        self._seccion(izq, "EMPRESA Y PERÍODO")
+        t = self._tarjeta_izq(izq)
+        for i, (texto, var) in enumerate((("Empresa", self.empresa),
+                                          ("Período", self.periodo))):
+            tk.Label(t, text=texto, font=(FUENTE, 9), bg=BLANCO,
+                     fg=TENUE).grid(row=i, column=0, sticky="w", pady=4)
+            c = ttk.Combobox(t, textvariable=var, width=11, state="readonly",
+                             font=(FUENTE, 10), style="XBRL.TCombobox")
+            c.grid(row=i, column=1, sticky="ew", padx=(8, 0), pady=4)
+            c.bind("<<ComboboxSelected>>", lambda e: self._cambia_eleccion())
+            if i == 0:
+                self.c_empresa = c
+            else:
+                self.c_periodo = c
+        t.columnconfigure(1, weight=1)
+        self.l_workiva = self._info(t, self.info_workiva)
+        self.l_workiva.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 4))
+        self.b_buscar = self._boton_gris(t, "↻  Buscar en Workiva", self._busca_planillas)
+        self.b_buscar.grid(row=3, column=0, columnspan=2, sticky="ew")
 
-        # ---- que llenar, el boton y el avance, en un solo bloque: separados
-        # le quitaban al resultado el espacio para mostrar los avisos.
-        tarjeta = self._tarjeta(cuerpo, 0)
-        fila = tk.Frame(tarjeta, bg=BLANCO)
-        fila.pack(fill="x")
-        self.b_llenar = tk.Button(fila, text="Llenar", command=self.llenar,
-                                  bg=VERDE, fg=BLANCO, activebackground=VERDE,
-                                  activeforeground=BLANCO, relief="flat", bd=0,
-                                  padx=34, pady=7, cursor="hand2",
-                                  font=(FUENTE, 11, "bold"))
-        self.b_llenar.pack(side="right")
-        self._etiqueta(fila, "Empresa").pack(side="left")
-        self.c_empresa = ttk.Combobox(fila, textvariable=self.empresa, width=10,
-                                      state="readonly", font=(FUENTE, 11))
-        self.c_empresa.pack(side="left", padx=(8, 24))
-        self.c_empresa.bind("<<ComboboxSelected>>", lambda e: self._cambia_eleccion())
-        self._etiqueta(fila, "Período").pack(side="left")
-        self.c_periodo = ttk.Combobox(fila, textvariable=self.periodo, width=10,
-                                      state="readonly", font=(FUENTE, 11))
-        self.c_periodo.pack(side="left", padx=(8, 20))
-        self.c_periodo.bind("<<ComboboxSelected>>", lambda e: self._cambia_eleccion())
-        self.b_buscar = self._enlace(fila, "↻  Buscar en Workiva", self._busca_planillas)
-        self.b_buscar.pack(side="left")
+        # ---- plantillas de DBNeT de la empresa
+        self._seccion(izq, "PLANTILLAS DE DBNeT")
+        t = self._tarjeta_izq(izq)
+        self.l_plantillas = self._info(t, self.info_plantillas)
+        self.l_plantillas.pack(fill="x", pady=(0, 6))
+        self.b_cargar = self._boton_gris(t, "Cargar plantillas de DBNeT…",
+                                         self._carga_plantillas)
+        self.b_ver_plantillas = self._boton_gris(t, "Ver plantillas",
+                                                 self._abre_plantillas)
 
-        self.l_workiva = tk.Label(tarjeta, textvariable=self.info_workiva,
-                                  bg=BLANCO, fg=GRIS, font=(FUENTE, 9), anchor="w")
-        self.l_workiva.pack(fill="x", pady=(10, 0))
-        fila_pl = tk.Frame(tarjeta, bg=BLANCO)
-        fila_pl.pack(fill="x", pady=(2, 0))
-        self.l_plantillas = tk.Label(fila_pl, textvariable=self.info_plantillas,
-                                     bg=BLANCO, fg=GRIS, font=(FUENTE, 9), anchor="w")
-        self.l_plantillas.pack(side="left")
-        self.b_cargar = self._enlace(fila_pl, "Cargar plantillas de DBNeT…",
-                                     self._carga_plantillas)
-        self.b_ver_plantillas = self._enlace(fila_pl, "Ver plantillas",
-                                             self._abre_plantillas)
+        # ---- carpeta de trabajo
+        self._seccion(izq, "CARPETA DE TRABAJO")
+        t = self._tarjeta_izq(izq)
+        tk.Label(t, textvariable=self.info_carpeta, bg=BLANCO, fg=TEXTO,
+                 font=(FUENTE, 9), anchor="w", justify="left",
+                 wraplength=self.ANCHO_IZQ - 34).pack(fill="x")
+        self.b_cambia_carpeta = self._boton_gris(t, "Cambiar…", self._cambia_carpeta)
+        self.b_cambia_carpeta.pack(fill="x", pady=(6, 0))
 
+        self.b_llenar = tk.Button(izq, text="Llenar", command=self.llenar,
+                                  font=(FUENTE, 10, "bold"), bg=AZUL, fg=BLANCO,
+                                  activebackground=AZUL2, activeforeground=BLANCO,
+                                  relief="flat", bd=0, padx=12, pady=8,
+                                  cursor="hand2")
+        self.b_llenar.pack(fill="x", pady=(4, 0))
+
+        # ---- derecha: avance y resultado
+        der = tk.Frame(self, bg=FONDO)
+        der.pack(side="left", fill="both", expand=True)
+        cab = tk.Frame(der, bg=FONDO)
+        cab.pack(fill="x", pady=(6, 2))
+        tk.Label(cab, text="RESULTADO", font=(FUENTE, 8, "bold"),
+                 bg=FONDO, fg=TENUE).pack(side="left")
+        self.b_log = self._boton_gris(cab, "Detalle técnico", self._muestra_log)
+        self.b_log.pack(side="right")
+
+        self.t_resultado = tk.Frame(der, bg=BLANCO, padx=16, pady=12,
+                                    highlightbackground=BORDE, highlightthickness=1)
+        self.t_resultado.pack(fill="both", expand=True)
         # El avance solo aparece mientras trabaja: quieto no dice nada.
-        self.avance = tk.Frame(tarjeta, bg=BLANCO)
-        tk.Frame(self.avance, bg="#E6EAF0", height=1).pack(fill="x", pady=(12, 10))
-        tk.Label(self.avance, textvariable=self.estado, bg=BLANCO, fg="#222",
+        self.avance = tk.Frame(self.t_resultado, bg=BLANCO)
+        tk.Label(self.avance, textvariable=self.estado, bg=BLANCO, fg=TEXTO,
                  font=(FUENTE, 10), anchor="w").pack(fill="x")
-        self.barra = ttk.Progressbar(self.avance, mode="determinate", maximum=100)
+        self.barra = ttk.Progressbar(self.avance, mode="determinate", maximum=100,
+                                     style="XBRL.Horizontal.TProgressbar")
         self.barra.pack(fill="x", pady=(6, 0))
-
+        tk.Frame(self.avance, bg=FILA_ALT, height=1).pack(fill="x", pady=(10, 8))
         # ---- resultado: se arma de nuevo cada vez que cambia
-        self.t_resultado = self._tarjeta(cuerpo, 1, "Resultado", estira=True)
         self.resultado = tk.Frame(self.t_resultado, bg=BLANCO)
         self.resultado.pack(fill="both", expand=True)
         self.resultado.bind("<Configure>", self._ajusta_textos)
-
-    def _tarjeta(self, padre, fila, titulo=None, estira=False):
-        marco = tk.Frame(padre, bg=BLANCO, padx=18, pady=12,
-                         highlightbackground="#DDE3EA", highlightthickness=1)
-        marco.grid(row=fila, column=0, sticky="nsew" if estira else "ew",
-                   pady=(0, 12))
-        if titulo:
-            tk.Label(marco, text=titulo.upper(), bg=BLANCO, fg=TENUE,
-                     font=(FUENTE, 8, "bold")).pack(anchor="w", pady=(0, 6))
-        return marco
-
-    def _etiqueta(self, padre, texto):
-        return tk.Label(padre, text=texto, bg=BLANCO, fg="#222",
-                        font=(FUENTE, 10, "bold"))
 
     def _enlace(self, padre, texto, accion, bg=BLANCO, fg=AZUL):
         return tk.Button(padre, text=texto, command=accion, bg=bg, fg=fg,
@@ -501,9 +501,9 @@ class Aplicacion(tk.Tk):
     def _boton(self, padre, texto, accion, principal=False):
         color = AZUL if principal else BLANCO
         b = tk.Button(padre, text=texto, command=accion,
-                      bg=color, fg=BLANCO if principal else AZUL_OSC,
-                      activebackground=AZUL_OSC if principal else "#E8EEF5",
-                      activeforeground=BLANCO if principal else AZUL_OSC,
+                      bg=color, fg=BLANCO if principal else AZUL,
+                      activebackground=AZUL2 if principal else FILA_ALT,
+                      activeforeground=BLANCO if principal else AZUL,
                       relief="flat" if principal else "solid", bd=0 if principal else 1,
                       padx=16, pady=6, cursor="hand2",
                       font=(FUENTE, 9, "bold" if principal else "normal"))
@@ -512,8 +512,8 @@ class Aplicacion(tk.Tk):
     # ----------------------------------------------------- carpeta de trabajo
     def _refresca_carpeta(self):
         texto = str(BASE)
-        if len(texto) > 60:
-            texto = "…" + texto[-58:]
+        if len(texto) > 70:
+            texto = "…" + texto[-68:]
         self.info_carpeta.set(texto)
 
     def _cambia_carpeta(self):
@@ -622,9 +622,9 @@ class Aplicacion(tk.Tk):
             self.info_plantillas.set(f"Plantillas de DBNeT de {emp}: todavía no se cargan")
             self.l_plantillas.config(fg=ROJO)
             self.b_cargar.config(text="Cargar plantillas de DBNeT…")
-        self.b_cargar.pack(side="left", padx=(10, 0))
+        self.b_cargar.pack(fill="x")
         if n:
-            self.b_ver_plantillas.pack(side="left", padx=(10, 0))
+            self.b_ver_plantillas.pack(fill="x", pady=(4, 0))
 
     def _carga_plantillas(self):
         emp = self.empresa.get()
@@ -636,12 +636,12 @@ class Aplicacion(tk.Tk):
                   "(.xlsm sueltos o el .zip de DBNeT)")
         if not origen:
             return
-        self.config(cursor="watch")
+        self.winfo_toplevel().config(cursor="watch")
         self.update_idletasks()
         try:
             nuevas, descartes, repetidas, propias = reune_plantillas(origen)
         finally:
-            self.config(cursor="")
+            self.winfo_toplevel().config(cursor="")
         if repetidas:
             lista = "\n".join(f"  • {n}\n      en: " + "\n      y en: ".join(r[:3])
                               for n, r in list(repetidas.items())[:5])
@@ -725,12 +725,32 @@ class Aplicacion(tk.Tk):
             if isinstance(w, tk.Label):
                 w.config(wraplength=ancho)
 
-    def _texto(self, texto, color="#222", peso="normal", tam=10, **pack):
+    def _texto(self, texto, color=TEXTO, peso="normal", tam=10, **pack):
         l = tk.Label(self.resultado, text=texto, bg=BLANCO, fg=color, justify="left",
                      anchor="w", font=(FUENTE, tam, peso),
                      wraplength=max(200, self.resultado.winfo_width() - 10))
         l.pack(fill="x", **({"pady": (0, 4)} | pack))
         return l
+
+    def _caja_archivo(self, archivo):
+        """El archivo que sirve para DBNeT: su nombre entero arriba (el panel
+        del Auditor es angosto y antes se cortaba) y los botones abajo."""
+        caja = tk.Frame(self.resultado, bg=FILA_ALT, padx=14, pady=10,
+                        highlightbackground=BORDE, highlightthickness=1)
+        caja.pack(fill="x", pady=(6, 10))
+        nombre = tk.Label(caja, text=f"Archivo para DBNeT:  {archivo.name}",
+                          bg=FILA_ALT, fg=TEXTO, font=(FUENTE, 10, "bold"),
+                          anchor="w", justify="left")
+        nombre.pack(fill="x")
+        caja.bind("<Configure>", lambda e: nombre.config(
+            wraplength=max(200, e.width - 40)), add="+")
+        linea = tk.Frame(caja, bg=FILA_ALT)
+        linea.pack(fill="x", pady=(8, 0))
+        self._boton(linea, "Abrir archivo", lambda: abre(archivo),
+                    principal=True).pack(side="left")
+        self._enlace(linea, "Mostrarlo en su carpeta", lambda: muestra_en_carpeta(archivo),
+                     bg=FILA_ALT).pack(side="left", padx=(12, 0))
+        return caja
 
     def _muestra_guardado(self):
         """Lo que quedo en disco del ultimo llenado de esta empresa."""
@@ -756,17 +776,7 @@ class Aplicacion(tk.Tk):
             self._texto(f"✔  El archivo para DBNeT de «{nombre}» sigue en la "
                         f"carpeta (armado el {cuando}) y se puede usar.",
                         VERDE, "bold", 11)
-            caja = tk.Frame(self.resultado, bg="#F2F7FC", padx=14, pady=10,
-                            highlightbackground="#D5E3F1", highlightthickness=1)
-            caja.pack(fill="x", pady=(6, 10))
-            self._enlace(caja, "Mostrarlo en su carpeta",
-                         lambda: muestra_en_carpeta(archivo), bg="#F2F7FC").pack(
-                             side="right", padx=(10, 0))
-            self._boton(caja, "Abrir archivo", lambda: abre(archivo),
-                        principal=True).pack(side="right")
-            tk.Label(caja, text=f"Archivo para DBNeT:  {archivo.name}", bg="#F2F7FC",
-                     fg="#222", font=(FUENTE, 10, "bold"), anchor="w").pack(
-                         side="left", fill="x")
+            self._caja_archivo(archivo)
             if ultimo:
                 self._texto(f"Las plantillas de {emp} tienen hoy los datos de "
                             f"«{ultimo.get('planilla')}». Si vuelves a llenar "
@@ -794,20 +804,7 @@ class Aplicacion(tk.Tk):
         self._texto(titulo, VERDE, "bold", 11)
 
         # El archivo que sirve para DBNeT, con lo que hay que hacer con el
-        caja = tk.Frame(self.resultado, bg="#F2F7FC", padx=14, pady=10,
-                        highlightbackground="#D5E3F1", highlightthickness=1)
-        caja.pack(fill="x", pady=(6, 10))
-        linea = tk.Frame(caja, bg="#F2F7FC")
-        linea.pack(fill="x")
-        # Los botones se empacan antes que el nombre: si la ventana es angosta
-        # se recorta el nombre, no los botones.
-        self._enlace(linea, "Mostrarlo en su carpeta", lambda: muestra_en_carpeta(archivo),
-                     bg="#F2F7FC").pack(side="right", padx=(10, 0))
-        self._boton(linea, "Abrir archivo", lambda: abre(archivo),
-                    principal=True).pack(side="right")
-        tk.Label(linea, text=f"Archivo para DBNeT:  {archivo.name}", bg="#F2F7FC",
-                 fg="#222", font=(FUENTE, 10, "bold"), anchor="w").pack(
-                     side="left", fill="x")
+        caja = self._caja_archivo(archivo)
         if archivo.suffix.lower() == ".xlsm":
             ayuda = ("Ábrelo y usa su botón para generar los CSV que se suben a "
                      "DBNeT. Trae todos los cuadros juntos.")
@@ -815,11 +812,11 @@ class Aplicacion(tk.Tk):
             ayuda = ("Sin macros: en este computador no se pudo usar Excel para "
                      f"armarlo. Los CSV se pueden generar desde cada plantilla de "
                      f"{emp}, que sí quedaron llenas y con sus botones.")
-        ayuda_l = tk.Label(caja, text=ayuda, bg="#F2F7FC", fg=GRIS, font=(FUENTE, 9),
+        ayuda_l = tk.Label(caja, text=ayuda, bg=FILA_ALT, fg=GRIS, font=(FUENTE, 9),
                            anchor="w", justify="left")
         ayuda_l.pack(fill="x", pady=(4, 0))
         caja.bind("<Configure>", lambda e: ayuda_l.config(
-            wraplength=max(200, e.width - 40)))
+            wraplength=max(200, e.width - 40)), add="+")
 
         if "en_miles" in ultimo:
             self._muestra_miles(ultimo["en_miles"], ultimo.get("sin_miles") or [])
@@ -868,7 +865,7 @@ class Aplicacion(tk.Tk):
                     AMBAR, "bold", 10)
         marco = tk.Frame(self.resultado, bg=BLANCO)
         marco.pack(fill="x", pady=(0, 8))
-        texto = tk.Text(marco, bg=AMBAR_FONDO, fg="#222", bd=0, wrap="none",
+        texto = tk.Text(marco, bg=AMBAR_FONDO, fg=TEXTO, bd=0, wrap="none",
                         padx=14, pady=8, font=(FUENTE, 9), height=6, cursor="arrow")
         barra = ttk.Scrollbar(marco, orient="vertical", command=texto.yview)
         texto.configure(yscrollcommand=barra.set)
@@ -907,7 +904,7 @@ class Aplicacion(tk.Tk):
         tabla los textos quedaban cortados y habia que elegir fila por fila."""
         marco = tk.Frame(self.resultado, bg=BLANCO)
         marco.pack(fill="both", expand=True)
-        texto = tk.Text(marco, bg=AMBAR_FONDO, fg="#222", bd=0, wrap="word",
+        texto = tk.Text(marco, bg=AMBAR_FONDO, fg=TEXTO, bd=0, wrap="word",
                         padx=14, pady=10, font=(FUENTE, 9), height=4,
                         spacing1=1, spacing3=1, cursor="arrow")
         barra = ttk.Scrollbar(marco, orient="vertical", command=texto.yview)
@@ -943,7 +940,7 @@ class Aplicacion(tk.Tk):
     def _muestra_error(self, paso, texto):
         self._limpia_resultado()
         self._texto(f"✖  No se pudo {FALLO[paso]}", ROJO, "bold", 11)
-        self._texto(texto, "#222", tam=9)
+        self._texto(texto, TEXTO, tam=9)
         if "a medias" not in texto:
             self._texto("Nada quedó a medias: al volver a llenar se parte otra "
                         "vez de las plantillas originales de DBNeT.", TENUE, tam=9)
@@ -1278,15 +1275,15 @@ class Aplicacion(tk.Tk):
         v = self.ventana_log = tk.Toplevel(self)
         v.title("Integración XBRL — detalle técnico")
         v.geometry(f"{int(900 * self.escala)}x{int(500 * self.escala)}")
-        self.log = tk.Text(v, bg="#1E1E1E", fg="#D4D4D4", bd=0,
+        self.log = tk.Text(v, bg=BLANCO, fg=TEXTO, bd=0,
                            font=("Consolas", 9), wrap="none", padx=10, pady=8)
         barra = ttk.Scrollbar(v, orient="vertical", command=self.log.yview)
         self.log.configure(yscrollcommand=barra.set)
         self.log.pack(side="left", fill="both", expand=True)
         barra.pack(side="right", fill="y")
-        self.log.tag_config("err", foreground="#F48771")
-        self.log.tag_config("ok", foreground="#7BD88F")
-        self.log.tag_config("paso", foreground="#9CDCFE")
+        self.log.tag_config("err", foreground=ROJO)
+        self.log.tag_config("ok", foreground=VERDE)
+        self.log.tag_config("paso", foreground=AZUL)
         if not self.registro:
             self._escribe_log("Todavía no se ha llenado nada en esta sesión.", None)
         for texto, tag in self.registro:
@@ -1296,6 +1293,44 @@ class Aplicacion(tk.Tk):
             self.ventana_log.destroy()
             self.ventana_log = None
         v.protocol("WM_DELETE_WINDOW", cierra)
+
+
+class Aplicacion(tk.Tk):
+    """La ventana propia (Integracion XBRL.exe): la misma vista del modulo
+    del Auditor, con la franja azul del Auditor arriba."""
+
+    def __init__(self):
+        super().__init__()
+        self.title("Integración XBRL")
+        self._pon_icono()
+        self.configure(bg=FONDO)
+        try:
+            ttk.Style(self).theme_use("default")      # el mismo tema del Auditor
+        except tk.TclError:
+            pass
+        escala = max(1.0, self.winfo_fpixels("1i") / 96)
+        ancho = min(int(1000 * escala), int(self.winfo_screenwidth() * 0.95))
+        alto = min(int(680 * escala), int(self.winfo_screenheight() * 0.88))
+        self.geometry(f"{ancho}x{alto}")
+        self.minsize(min(ancho, int(820 * escala)), min(alto, int(540 * escala)))
+
+        cab = tk.Frame(self, bg=AZUL, padx=18, pady=12)
+        cab.pack(fill="x")
+        tk.Label(cab, text="Integración XBRL", bg=AZUL, fg=BLANCO,
+                 font=(FUENTE, 15, "bold")).pack(anchor="w")
+        tk.Label(cab, text="Llena las plantillas de DBNeT directo desde Workiva",
+                 bg=AZUL, fg="#8aaaf5", font=(FUENTE, 9)).pack(anchor="w")
+        tk.Frame(self, bg=AZUL, height=6).pack(side="bottom", fill="x")
+        VistaXBRL(self).pack(fill="both", expand=True, padx=18, pady=14)
+
+    def _pon_icono(self):
+        """El eslabon en la barra de titulo y de tareas, en vez de la pluma
+        de tkinter."""
+        try:
+            self._iconos = [tk.PhotoImage(data=d) for d in (ICONO_64, ICONO_32)]
+            self.iconphoto(True, *self._iconos)
+        except tk.TclError:
+            pass
 
 
 def main():

@@ -3,7 +3,7 @@ verificar_workiva_GUI.py
 Verificador de Sumas - EE.FF. Workiva
 Interfaz grafica con tkinter — colores corporativos CGE
 """
-import base64, io, json, re, shutil, ssl, sys, time, urllib.request, urllib.error, zipfile
+import base64, io, json, os, re, shutil, ssl, sys, time, urllib.request, urllib.error, zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from collections import defaultdict
@@ -1806,6 +1806,7 @@ NAV_ITEMS = [
     ("Extraer EEFF",           "mod4"),
     ("Flujo de Efectivo",      "mod5"),
     ("Validar Comparativos",   "mod6"),
+    ("Integración XBRL",       "xbrl"),
 ]
 
 class App(tk.Tk):
@@ -1870,6 +1871,7 @@ class App(tk.Tk):
         self._build_view_extraer_eeff()
         self._build_view_flujo_efectivo()
         self._build_view_validar_comparativos()
+        self._build_view_xbrl()
 
         # Mostrar primera vista
         self._show_view("verif")
@@ -1908,6 +1910,11 @@ class App(tk.Tk):
         # Resaltar botón activo
         for k, btn in self._nav_btns.items():
             btn.configure(bg=CGE_BLUE if k == key else CGE_SIDEBAR)
+
+        # La vista de XBRL se arma al abrirla por primera vez: al armarse
+        # busca las planillas en Workiva, y no hace falta si no se usa.
+        if key == "xbrl":
+            self._arma_xbrl()
 
         # Ocultar todas las vistas y mostrar la seleccionada
         for k, frame in self._views.items():
@@ -3759,6 +3766,42 @@ class App(tk.Tk):
             self.after(0, lambda: self._val_btn_run.configure(state="normal"))
 
 
+    # ── INTEGRACIÓN XBRL (xbrl) ──────────────────────────────────────────────
+    # El modulo vive en xbrl_app.py (el mismo de Integracion XBRL.exe). Aqui
+    # solo se pone su vista; el llenado y la fusion corren como procesos
+    # aparte: este mismo .exe llamado con --tarea (ver el final del archivo).
+
+    def _build_view_xbrl(self):
+        self._views["xbrl"] = tk.Frame(self._content, bg=CGE_LIGHT)
+        self._xbrl_armada = False
+
+    def _arma_xbrl(self):
+        if self._xbrl_armada:
+            return
+        self._xbrl_armada = True
+        frame = self._views["xbrl"]
+        try:
+            import xbrl_app
+            xbrl_app.VistaXBRL(frame).pack(fill="both", expand=True)
+        except Exception as e:
+            import traceback
+            tk.Label(frame, text="No se pudo abrir Integración XBRL",
+                     font=FONT_BOLD, bg=CGE_LIGHT, fg=CGE_RED).pack(anchor="w")
+            tk.Label(frame, text=f"{type(e).__name__}: {e}", font=FONT_SMALL,
+                     bg=CGE_LIGHT, fg=CGE_TEXT, justify="left",
+                     wraplength=700).pack(anchor="w", pady=(4, 8))
+            log = scrolledtext.ScrolledText(frame, font=FONT_MONO, height=12,
+                                            bg=CGE_CARD, fg=CGE_MUTED, relief="flat")
+            log.insert("end", traceback.format_exc())
+            log.configure(state="disabled")
+            log.pack(fill="both", expand=True)
+
+
 if __name__ == "__main__":
+    # Integración XBRL corre el llenado y la fusion como procesos aparte:
+    # este mismo programa llamado con --tarea, sin abrir la ventana.
+    if len(sys.argv) > 2 and sys.argv[1] == "--tarea":
+        import xbrl_app
+        sys.exit(xbrl_app.corre_tarea(sys.argv[2], sys.argv[3:]))
     app = App()
     app.mainloop()
