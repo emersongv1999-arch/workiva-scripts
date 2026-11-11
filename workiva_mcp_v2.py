@@ -30,7 +30,22 @@ from typing import Any, Optional
 
 import httpx
 from dotenv import load_dotenv
-from mcp.server.fastmcp import FastMCP
+try:
+    from mcp.server.fastmcp import FastMCP
+except ImportError:
+    # Dentro del Auditor (.exe) no se levanta ningun servidor MCP: el GUI
+    # llama a estas funciones directo. Sin la libreria 'mcp' (que se deja
+    # fuera del .exe para que pese menos), este reemplazo deja cada
+    # @mcp.tool(...) como la funcion normal que ya era.
+    class FastMCP:  # type: ignore[no-redef]
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def tool(self, *args, **kwargs):
+            return lambda fn: fn
+
+        def run(self, *args, **kwargs):
+            raise RuntimeError("Para usarlo como servidor MCP hay que instalar la libreria 'mcp'.")
 from pydantic import BaseModel, ConfigDict, Field
 
 # ── Credenciales ─────────────────────────────────────────────────────────────
