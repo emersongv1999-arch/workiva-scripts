@@ -200,9 +200,10 @@ def plantillas_de(carpeta):
 # Lo que la app necesita para trabajar (las plantillas cargadas, su copia
 # virgen, las notas del ultimo llenado) vive aqui, fuera de la vista. En la
 # carpeta de trabajo queda solo lo que se entrega: el archivo para DBNeT y
-# REVISAR.xlsx, y la carpeta de la empresa aparece recien al llenar.
+# REVISAR.xlsx, mas una carpeta csv vacia para elegirla al generar los CSV
+# desde el archivo. La carpeta de la empresa aparece recien al llenar.
 INTERNO = DATOS / "empresas"
-_PIEZAS_INTERNAS = ("xls", "plantillas_anteriores", "csv")
+_PIEZAS_INTERNAS = ("xls", "plantillas_anteriores")
 
 
 def casa(emp):
@@ -1103,6 +1104,17 @@ class VistaXBRL(tk.Frame):
             # llenado deja de ser cierto hasta que este termine.
             nota_ultimo(interna).unlink(missing_ok=True)
             carpeta.mkdir(parents=True, exist_ok=True)
+            # La carpeta donde despues se dejan los CSV (se elige desde el
+            # boton del archivo). Si una version anterior se la llevo a la
+            # carpeta interna con algo adentro, vuelve a su lugar.
+            csv_vista, csv_interna = carpeta / "csv", interna / "csv"
+            try:
+                if (not csv_vista.exists() and csv_interna.is_dir()
+                        and any(csv_interna.iterdir())):
+                    shutil.move(str(csv_interna), str(csv_vista))
+                csv_vista.mkdir(exist_ok=True)
+            except OSError:
+                pass
             codigo, lineas = self._corre("llenar", comun)
             if codigo:
                 return self._falla(paso, lineas)
@@ -1289,8 +1301,8 @@ class VistaXBRL(tk.Frame):
         if avisos:
             texto += (f"\n\nHay {plural(avisos, 'cosa', 'cosas')} para revisar: "
                       "las vas a ver en «Resultado» al terminar.")
-        texto += ("\n\nLas plantillas se sobrescriben; las originales de DBNeT "
-                  "quedan respaldadas y se reponen en cada llenado.\n\n¿Continuar?")
+        texto += (f"\n\nEl archivo para DBNeT va a quedar en:\n{BASE / emp}"
+                  "\n\nSi ya hay uno de este período, se reemplaza.\n\n¿Continuar?")
         self.barra.stop()
         self.confirmacion.put(messagebox.askyesno("Confirmar llenado", texto,
                                                   parent=self))
