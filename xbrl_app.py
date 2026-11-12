@@ -5,12 +5,15 @@ Se elige empresa y periodo; la aplicacion descarga la planilla
 "E___ XBRL MM-AAAA" desde Workiva, revisa, llena los .xlsm de DBNeT de esa
 empresa en su lugar y arma el archivo unico con los botones funcionando.
 
-Cada empresa es una carpeta dentro de la carpeta de trabajo (la que se
-elige arriba a la derecha y la app recuerda), con sus plantillas en xls\\:
+En la carpeta de trabajo (la que se elige en la app, y la app recuerda)
+queda solo lo que se entrega, en una carpeta por empresa que aparece recien
+al llenar:
 
     <carpeta de trabajo>\\
-        E211\\xls\\   las plantillas .xlsm de DBNeT de E211
-        E205\\xls\\   ...
+        E211\\   E211 XBRL 06-2026_LLENADO.xlsm  y  REVISAR.xlsx
+
+Las plantillas cargadas, su copia virgen y las notas de la app van aparte,
+fuera de la vista: %LOCALAPPDATA%\\XBRL_DBNeT\\empresas\\E211\\xls.
 
 Las plantillas se cargan desde la app. Una empresa aparece sola en cuanto
 existe su planilla XBRL en Workiva.
@@ -26,6 +29,7 @@ import json
 import os
 import queue
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -193,11 +197,50 @@ def plantillas_de(carpeta):
             if RESPALDO not in p.parts and not p.name.startswith("~$")]
 
 
+# Lo que la app necesita para trabajar (las plantillas cargadas, su copia
+# virgen, las notas del ultimo llenado) vive aqui, fuera de la vista. En la
+# carpeta de trabajo queda solo lo que se entrega: el archivo para DBNeT y
+# REVISAR.xlsx, y la carpeta de la empresa aparece recien al llenar.
+INTERNO = DATOS / "empresas"
+_PIEZAS_INTERNAS = ("xls", "plantillas_anteriores", "csv")
+
+
+def casa(emp):
+    """La carpeta interna de una empresa (con sus plantillas en xls).
+
+    Versiones anteriores dejaban todo eso dentro de la carpeta de trabajo
+    (<trabajo>\\E211\\xls, con _original_dbnet adentro): si todavia esta
+    ahi, se trae para aca tal cual, una sola vez. Si Windows no deja moverlo
+    (algo abierto en Excel, OneDrive sincronizando) se sigue usando donde
+    esta, y se vuelve a intentar la proxima vez."""
+    nueva, vieja = INTERNO / emp, BASE / emp
+    if not (nueva / "xls").is_dir() and (vieja / "xls").is_dir():
+        try:
+            nueva.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(vieja / "xls"), str(nueva / "xls"))
+        except OSError:
+            return vieja
+        for pieza in _PIEZAS_INTERNAS[1:]:
+            try:
+                if (vieja / pieza).is_dir() and not (nueva / pieza).exists():
+                    shutil.move(str(vieja / pieza), str(nueva / pieza))
+            except OSError:
+                pass
+        try:
+            vieja.rmdir()               # solo si quedo vacia
+        except OSError:
+            pass
+    return nueva
+
+
 def empresas_locales():
-    if not BASE.is_dir():
-        return []
-    return sorted(d.name.upper() for d in BASE.iterdir()
-                  if d.is_dir() and EMPRESA.fullmatch(d.name))
+    """Empresas con plantillas cargadas o con archivos en la carpeta de trabajo."""
+    nombres = set()
+    for raiz in (INTERNO, BASE):
+        if raiz.is_dir():
+            nombres |= {d.name.upper() for d in raiz.iterdir()
+                        if d.is_dir() and EMPRESA.fullmatch(d.name)}
+    return sorted(nombres)
 
 
 # ═══════════════════════════════════════════════════ plantillas de DBNeT ══
@@ -215,7 +258,7 @@ def reune_plantillas(origen):
     donde = {}                  # nombre -> [rutas], para explicar repetidas
     repetidas = set()
     origen = Path(origen)
-    empresas = [BASE / e for e in empresas_locales()]
+    empresas = [raiz / e for e in empresas_locales() for raiz in (BASE, INTERNO)]
 
     def de_la_app(ruta):
         r = ruta.resolve()
@@ -551,7 +594,7 @@ class VistaXBRL(tk.Frame):
         if self.empresa.get() not in todas:
             # Por omision la ultima que se uso, o la primera con plantillas.
             ultima = lee_config().get("empresa")
-            con_plantillas = [e for e in todas if plantillas_de(BASE / e)]
+            con_plantillas = [e for e in todas if plantillas_de(casa(e))]
             self.empresa.set(ultima if ultima in todas
                              else (con_plantillas or todas or [""])[0])
         self._cambia_eleccion()
@@ -627,7 +670,7 @@ class VistaXBRL(tk.Frame):
         if not emp:
             self.info_plantillas.set("")
             return
-        n = len(plantillas_de(BASE / emp))
+        n = len(plantillas_de(casa(emp)))
         if n:
             self.info_plantillas.set(f"Plantillas de DBNeT de {emp}: {n} cargadas")
             self.l_plantillas.config(fg=GRIS)
@@ -683,13 +726,12 @@ class VistaXBRL(tk.Frame):
             messagebox.showerror("No hay plantillas", texto, parent=self)
             return
 
-        carpeta = BASE / emp
+        carpeta = casa(emp)
         actuales = len(plantillas_de(carpeta))
         texto = f"Se encontraron {len(nuevas)} plantillas de DBNeT para {emp}."
         if actuales:
             texto += (f"\n\nReemplazan a las {actuales} que tiene ahora. Esas no se "
-                      "borran: quedan guardadas aparte, en la carpeta "
-                      f"{emp}\\plantillas_anteriores.")
+                      "borran: la app las guarda aparte.")
         if descartes:
             texto += f"\n\nNo se van a cargar:\n{motivos}"
         if not messagebox.askyesno("Cargar plantillas", texto + "\n\n¿Cargarlas?",
@@ -707,8 +749,8 @@ class VistaXBRL(tk.Frame):
 
     def _abre_plantillas(self):
         emp = self.empresa.get()
-        if emp and (BASE / emp / "xls").is_dir():
-            abre(BASE / emp / "xls")
+        if emp and (casa(emp) / "xls").is_dir():
+            abre(casa(emp) / "xls")
 
     def _busca_planillas(self):
         if self.buscando:
@@ -772,7 +814,7 @@ class VistaXBRL(tk.Frame):
         emp, p = self.empresa.get(), self._planilla()
         if not emp:
             return
-        ultimo = lee_ultimo(BASE / emp)
+        ultimo = lee_ultimo(casa(emp))
         if ultimo and p and ultimo.get("planilla") == p.nombre:
             archivo = BASE / emp / ultimo.get("archivo", "")
             if archivo.is_file():
@@ -825,7 +867,8 @@ class VistaXBRL(tk.Frame):
         else:
             ayuda = ("Sin macros: en este computador no se pudo usar Excel para "
                      f"armarlo. Los CSV se pueden generar desde cada plantilla de "
-                     f"{emp}, que sí quedaron llenas y con sus botones.")
+                     f"{emp}, que sí quedaron llenas y con sus botones "
+                     "(«Ver plantillas»).")
         ayuda_l = tk.Label(caja, text=ayuda, bg=FILA_ALT, fg=GRIS, font=(FUENTE, 9),
                            anchor="w", justify="left")
         ayuda_l.pack(fill="x", pady=(4, 0))
@@ -969,7 +1012,7 @@ class VistaXBRL(tk.Frame):
                                    "Elige una empresa y un período que existan en Workiva.",
                                    parent=self)
             return
-        if not plantillas_de(BASE / emp):
+        if not plantillas_de(casa(emp)):
             messagebox.showwarning(
                 "Faltan las plantillas",
                 f"{emp} todavía no tiene sus plantillas de DBNeT.\n\n"
@@ -997,8 +1040,9 @@ class VistaXBRL(tk.Frame):
 
     def _trabaja(self, emp, planilla):
         """En un hilo aparte; habla con la ventana solo por la cola."""
-        carpeta = BASE / emp
-        xls = carpeta / "xls"
+        carpeta = BASE / emp            # lo que se entrega: aparece al llenar
+        interna = casa(emp)             # las plantillas y sus notas
+        xls = interna / "xls"
         revisar = carpeta / "REVISAR.xlsx"
         temporal = TEMPORAL / emp
         # Lo que baja de Workiva es solo material de trabajo: va a la carpeta
@@ -1008,8 +1052,12 @@ class VistaXBRL(tk.Frame):
         temporal.mkdir(parents=True, exist_ok=True)
         base = carpeta / f"{planilla.nombre}_LLENADO"
         comun = ["--plantillas", str(xls), "--workiva", str(export),
-                 "--sobre-plantillas", "--revisar", str(revisar),
+                 "--sobre-plantillas",
                  "--reporte", str(temporal / "reporte_llenado.csv")]
+        # La simulacion deja su REVISAR.xlsx en la carpeta temporal: en la
+        # carpeta de trabajo no se escribe nada hasta que se confirma.
+        simula = comun + ["--revisar", str(temporal / "REVISAR.xlsx")]
+        comun = comun + ["--revisar", str(revisar)]
         paso = 0
         try:
             # 1. Workiva
@@ -1039,11 +1087,11 @@ class VistaXBRL(tk.Frame):
             # 2. Simulacion
             paso = 1
             self.cola.put(("paso", paso))
-            codigo, lineas = self._corre("llenar", comun + ["--dry-run"])
+            codigo, lineas = self._corre("llenar", simula + ["--dry-run"])
             if codigo:
                 return self._falla(paso, lineas)
             celdas, avisos = self._resumen(lineas)
-            n = len(plantillas_de(carpeta))
+            n = len(plantillas_de(interna))
             self.cola.put(("confirma", (emp, planilla.nombre, celdas, avisos, n)))
             if not self.confirmacion.get():
                 return self.cola.put(("fin", ("cancelado", paso, None)))
@@ -1053,7 +1101,8 @@ class VistaXBRL(tk.Frame):
             self.cola.put(("paso", paso))
             # Desde aqui las plantillas cambian: lo que decia el ultimo
             # llenado deja de ser cierto hasta que este termine.
-            nota_ultimo(carpeta).unlink(missing_ok=True)
+            nota_ultimo(interna).unlink(missing_ok=True)
+            carpeta.mkdir(parents=True, exist_ok=True)
             codigo, lineas = self._corre("llenar", comun)
             if codigo:
                 return self._falla(paso, lineas)
@@ -1091,8 +1140,8 @@ class VistaXBRL(tk.Frame):
                       "control_bancos": ajuste["control_bancos"] if ajuste else [],
                       "en_miles": ajuste["en_miles"] if ajuste else None,
                       "sin_miles": ajuste["sin_miles"] if ajuste else []}
-            nota_ultimo(carpeta).parent.mkdir(parents=True, exist_ok=True)
-            nota_ultimo(carpeta).write_text(json.dumps(ultimo, indent=1), "utf-8")
+            nota_ultimo(interna).parent.mkdir(parents=True, exist_ok=True)
+            nota_ultimo(interna).write_text(json.dumps(ultimo, indent=1), "utf-8")
             self.cola.put(("fin", ("ok", paso, (emp, ultimo, final))))
         except ErrorWorkiva as e:
             self.cola.put(("linea", (str(e), "err")))
