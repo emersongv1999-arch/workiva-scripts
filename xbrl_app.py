@@ -206,6 +206,17 @@ INTERNO = DATOS / "empresas"
 _PIEZAS_INTERNAS = ("xls", "plantillas_anteriores")
 
 
+def entrega(emp):
+    """Donde queda lo que se entrega de una empresa.
+
+    Normalmente <carpeta de trabajo>\\E211. Pero si la carpeta de trabajo
+    elegida ya es la de esa empresa (se llama E211), es esa misma: no se
+    crea un E211 dentro de E211."""
+    if BASE.name.upper() == emp.upper():
+        return BASE
+    return BASE / emp
+
+
 def casa(emp):
     """La carpeta interna de una empresa (con sus plantillas en xls).
 
@@ -817,15 +828,15 @@ class VistaXBRL(tk.Frame):
             return
         ultimo = lee_ultimo(casa(emp))
         if ultimo and p and ultimo.get("planilla") == p.nombre:
-            archivo = BASE / emp / ultimo.get("archivo", "")
+            archivo = entrega(emp) / ultimo.get("archivo", "")
             if archivo.is_file():
                 return self._muestra_listo(emp, ultimo, archivo, guardado=True)
         nombre = p.nombre if p else f"{emp} {self.periodo.get()}".strip()
         # Se lleno antes, y despues se lleno otro periodo encima: las
         # plantillas ya no son de este periodo, pero su archivo para DBNeT
         # sigue siendo valido, porque trae sus propias copias de las hojas.
-        archivo = next((a for a in (BASE / emp / f"{nombre}_LLENADO.xlsm",
-                                    BASE / emp / f"{nombre}_LLENADO.xlsx")
+        archivo = next((a for a in (entrega(emp) / f"{nombre}_LLENADO.xlsm",
+                                    entrega(emp) / f"{nombre}_LLENADO.xlsx")
                         if a.is_file()), None)
         if archivo:
             cuando = time.strftime("%d-%m-%Y a las %H:%M",
@@ -890,7 +901,7 @@ class VistaXBRL(tk.Frame):
         self._recordatorio_bancos(ultimo.get("control_bancos") or [])
 
         # Lo que hay que revisar antes de entregar
-        revisar = BASE / emp / "REVISAR.xlsx"
+        revisar = entrega(emp) / "REVISAR.xlsx"
         if not avisos or not revisar.exists():
             if ultimo.get("control_bancos") or ultimo.get("sin_miles"):
                 self._texto("Fuera de eso, el llenado no tuvo nada que revisar.", VERDE)
@@ -1041,7 +1052,7 @@ class VistaXBRL(tk.Frame):
 
     def _trabaja(self, emp, planilla):
         """En un hilo aparte; habla con la ventana solo por la cola."""
-        carpeta = BASE / emp            # lo que se entrega: aparece al llenar
+        carpeta = entrega(emp)            # lo que se entrega: aparece al llenar
         interna = casa(emp)             # las plantillas y sus notas
         xls = interna / "xls"
         revisar = carpeta / "REVISAR.xlsx"
@@ -1301,7 +1312,7 @@ class VistaXBRL(tk.Frame):
         if avisos:
             texto += (f"\n\nHay {plural(avisos, 'cosa', 'cosas')} para revisar: "
                       "las vas a ver en «Resultado» al terminar.")
-        texto += (f"\n\nEl archivo para DBNeT va a quedar en:\n{BASE / emp}"
+        texto += (f"\n\nEl archivo para DBNeT va a quedar en:\n{entrega(emp)}"
                   "\n\nSi ya hay uno de este período, se reemplaza.\n\n¿Continuar?")
         self.barra.stop()
         self.confirmacion.put(messagebox.askyesno("Confirmar llenado", texto,
