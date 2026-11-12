@@ -28,8 +28,9 @@ Llena las plantillas .xlsm de DBNeT desde la planilla `E___ XBRL MM-AAAA` de Wor
   `--tarea llenar|fusionar`. El bloque `--tarea` del `__main__` debe ir ANTES de `App()`.
 - `_arma_xbrl` le pasa a `xbrl_workiva` el `CLIENT_ID`/`CLIENT_SECRET` del GUI, para que
   cada compilación use solo las credenciales de su auditor.
-- Compilar con `COMPILAR_AUDITOR.bat` (incluye los `--hidden-import` de XBRL y pywin32,
-  y los `--exclude-module` que dejan el .exe en ~19 MB).
+- Compilar con `COMPILAR_AUDITOR_LIVIANO.bat` (NO con el `COMPILAR_AUDITOR.bat` que trae
+  el zip del módulo: ese compila la versión pesada de ~33 MB). Incluye los `--hidden-import` de XBRL y
+  pywin32, y los `--exclude-module` que dejan el .exe en ~20 MB.
 
 ## Scripts embebidos (base64 en el GUI)
 - `_MCP_V2_SRC` → `workiva_mcp_v2.py` — cliente async MCP v2 (httpx + FastMCP)

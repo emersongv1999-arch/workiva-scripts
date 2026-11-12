@@ -1,5 +1,8 @@
 @echo off
-rem Arma "Auditor.exe" con todos sus modulos, incluido Integracion XBRL.
+rem Arma "Auditor.exe" LIVIANO (~20 MB) con todos sus modulos, incluido
+rem Integracion XBRL. OJO: el zip del modulo XBRL trae un COMPILAR_AUDITOR.bat
+rem que compila la version pesada (~33 MB, con mcp y Pillow adentro): usar
+rem ESTE y no ese.
 rem Hacen falta, juntos en la misma carpeta que este .bat:
 rem     verificar_workiva_GUI.py
 rem     xbrl_app.py  xbrl_workiva.py  miles_workiva.py
@@ -21,7 +24,7 @@ for %%f in (verificar_workiva_GUI.py xbrl_app.py xbrl_workiva.py miles_workiva.p
 echo   Instalando lo necesario para compilar...
 py -m pip install pyinstaller openpyxl pywin32 pyodbc httpx pydantic python-dotenv requests --quiet --trusted-host pypi.org --trusted-host files.pythonhosted.org
 
-echo   Compilando Auditor.exe (toma unos minutos)...
+echo   Compilando Auditor.exe LIVIANO (toma unos minutos)...
 rem --workpath fuera de OneDrive: dentro, OneDrive bloquea la carpeta build.
 rem Los modulos de XBRL van explicitos: el Auditor los importa recien al
 rem abrir el modulo, y el llenado y la fusion se cargan dentro de una
@@ -57,8 +60,14 @@ py -m PyInstaller --noconfirm --onefile --windowed --name Auditor ^
   verificar_workiva_GUI.py
 if errorlevel 1 goto error
 
+for %%A in ("dist\Auditor.exe") do set /a PESO_MB=%%~zA/1048576
 echo.
-echo   Listo: %~dp0dist\Auditor.exe
+echo   Listo: %~dp0dist\Auditor.exe   (%PESO_MB% MB)
+if %PESO_MB% GTR 25 (
+    echo.
+    echo   OJO: pesa mas de lo esperado ^(~20 MB^). Avisar para revisar que
+    echo   libreria se esta colando.
+)
 echo.
 echo   Integracion XBRL queda como un modulo mas del menu de la izquierda.
 echo   Usa la misma carpeta de trabajo y las mismas plantillas que

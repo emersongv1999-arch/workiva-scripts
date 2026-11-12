@@ -436,9 +436,9 @@ class VistaXBRL(tk.Frame):
                 self.c_periodo = c
         t.columnconfigure(1, weight=1)
         self.l_workiva = self._info(t, self.info_workiva)
-        self.l_workiva.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 4))
+        self.l_workiva.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0))
         self.b_buscar = self._boton_gris(t, "↻  Buscar en Workiva", self._busca_planillas)
-        self.b_buscar.grid(row=3, column=0, columnspan=2, sticky="ew")
+        self.b_buscar.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(6, 0))
 
         # ---- plantillas de DBNeT de la empresa
         self._seccion(izq, "PLANTILLAS DE DBNeT")
@@ -587,26 +587,40 @@ class VistaXBRL(tk.Frame):
         return next((p for p in self.planillas if p.empresa == self.empresa.get()
                      and p.periodo == self.periodo.get()), None)
 
+    def _pon_info_workiva(self, texto, color=GRIS):
+        """El aviso bajo empresa y periodo. Solo ocupa lugar cuando hay algo
+        que decir: sin texto, la linea desaparece."""
+        self.info_workiva.set(texto)
+        self.l_workiva.config(fg=color)
+        if texto:
+            self.l_workiva.grid()
+        else:
+            self.l_workiva.grid_remove()
+
     def _refresca_info(self):
         emp = self.empresa.get()
         p = self._planilla()
         if p:
-            f = p.modificada_local()
-            cuando = f" · modificada el {f:%d-%m-%Y a las %H:%M}" if f else ""
+            # Que la planilla existe ya lo dice la lista de periodos, que sale
+            # de Workiva. Solo se avisa lo que hay que saber: si hay mas de
+            # una con el mismo nombre, cual se va a usar.
             iguales = sum(1 for q in self.planillas
                           if q.empresa == p.empresa and q.periodo == p.periodo)
-            extra = (f"   (hay {iguales} planillas con este nombre; se usa la "
-                     "modificada más recientemente)" if iguales > 1 else "")
-            self.info_workiva.set(f"En Workiva: «{p.nombre}»{cuando}{extra}")
-            self.l_workiva.config(fg=AMBAR if iguales > 1 else GRIS)
+            if iguales > 1:
+                f = p.modificada_local()
+                cual = f" (la del {f:%d-%m-%Y a las %H:%M})" if f else ""
+                self._pon_info_workiva(
+                    f"En Workiva hay {iguales} planillas «{p.nombre}»; se usa la "
+                    f"modificada más recientemente{cual}.", AMBAR)
+            else:
+                self._pon_info_workiva("")
         elif self.buscando:
-            self.info_workiva.set("Buscando las planillas XBRL en Workiva…")
-            self.l_workiva.config(fg=GRIS)
+            self._pon_info_workiva("Buscando las planillas XBRL en Workiva…")
         elif emp:
-            self.info_workiva.set(f"En Workiva no hay ninguna planilla «{emp} XBRL MM-AAAA».")
-            self.l_workiva.config(fg=ROJO)
+            self._pon_info_workiva(
+                f"En Workiva no hay ninguna planilla «{emp} XBRL MM-AAAA».", ROJO)
         else:
-            self.info_workiva.set("")
+            self._pon_info_workiva("")
 
         self.b_cargar.pack_forget()
         self.b_ver_plantillas.pack_forget()
@@ -1189,9 +1203,11 @@ class VistaXBRL(tk.Frame):
         if not self.planillas:
             messagebox.showerror("Workiva", texto, parent=self)
         else:
-            self.info_workiva.set(self.info_workiva.get() + "   (no se pudo "
-                                  "actualizar la lista de Workiva; es la última "
-                                  "que se encontró)")
+            previo = self.info_workiva.get()
+            self._pon_info_workiva(
+                (previo + "   " if previo else "") + "No se pudo actualizar la "
+                "lista de Workiva; se muestra la última que se encontró.",
+                self.l_workiva.cget("fg") if previo else AMBAR)
 
     def _en_linea(self, dato):
         texto, tag = dato
