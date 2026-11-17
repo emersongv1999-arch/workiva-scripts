@@ -19,7 +19,7 @@ Aplicación GUI en tkinter para automatizar tareas de auditoría en Workiva para
 | mod5 | (reservado) |
 | mod6 | Validar Comparativos |
 
-## Integración XBRL (módulo `xbrl`, solo en `verificar_workiva_GUI.py` por ahora)
+## Integración XBRL (módulo `xbrl`, en los 5 GUI)
 Llena las plantillas .xlsm de DBNeT desde la planilla `E___ XBRL MM-AAAA` de Workiva.
 - NO va embebido en base64: son archivos aparte que se importan normal y deben estar
   junto al GUI al compilar: `xbrl_app.py`, `xbrl_workiva.py`, `miles_workiva.py`,
@@ -28,7 +28,8 @@ Llena las plantillas .xlsm de DBNeT desde la planilla `E___ XBRL MM-AAAA` de Wor
   `--tarea llenar|fusionar`. El bloque `--tarea` del `__main__` debe ir ANTES de `App()`.
 - `_arma_xbrl` le pasa a `xbrl_workiva` el `CLIENT_ID`/`CLIENT_SECRET` del GUI, para que
   cada compilación use solo las credenciales de su auditor.
-- Compilar con `COMPILAR_AUDITOR_LIVIANO.bat` (NO con el `COMPILAR_AUDITOR.bat` que trae
+- Compilar los 5 builds (Emerson, Violeta, Rodrigo, Olympia, EEFF) con `COMPILAR_TODOS.bat`,
+  o solo el de Emerson con `COMPILAR_AUDITOR_LIVIANO.bat` (NO con el `COMPILAR_AUDITOR.bat` que trae
   el zip del módulo: ese compila la versión pesada de ~33 MB). Incluye los `--hidden-import` de XBRL y
   pywin32, y los `--exclude-module` que dejan el .exe en ~20 MB.
 
