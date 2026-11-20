@@ -895,6 +895,42 @@ def fila_de_codigos(cel):
     return min(uris) if uris else None
 
 
+def grupos_de_codigos(cel):
+    """La fila de codigos de cada bloque de la hoja: la ultima de cada tramo
+    seguido de filas marcadas DIMENUE/DIMEAVA/DIMEPERS en la columna A. Sin
+    marcas, la unica fila de codigos que se encuentre."""
+    marcas = sorted(f for (f, c), (v, _, _) in cel.items()
+                    if c == "A" and v and v.upper().startswith("DIME"))
+    if not marcas:
+        f = fila_de_codigos(cel)
+        return [f] if f else []
+    grupos = []
+    for f in marcas:
+        if grupos and f == grupos[-1] + 1:
+            grupos[-1] = f
+        else:
+            grupos.append(f)
+    return grupos
+
+
+def fila_de_etiqueta(cel, fila_cod, col):
+    """La fila con el nombre visible de una columna agregada por el usuario.
+
+    Casi siempre esta justo encima de la fila de codigos. Pero en las hojas
+    con dos ejes (IFRS7-NumeMontOper: periodo y tipo de operacion) entre el
+    nombre y los codigos hay otra fila de codigos, la del otro eje, con su URI
+    (".xsd#"): se sube saltandola. Sin esto el nombre que se le puso en
+    Workiva no llegaba a la plantilla, la columna quedaba como "Agregar
+    columna opcional" y DBNeT rechazaba el codigo de miembro."""
+    f = fila_cod - 1
+    while f > 1 and f > fila_cod - 4:
+        v = (cel.get((f, col)) or ("",))[0] or ""
+        if ".xsd#" not in str(v):
+            break
+        f -= 1
+    return f
+
+
 def _canon_anclas(cols_d, cols_w):
     """Devuelve como comparar los nombres de ancla de los dos lados.
 
@@ -1040,10 +1076,22 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
     if fila_cod_d and fila_cod_w:
         for col_d, col_w in empareja_opcionales(cols_d, cols_w):
             pares_col[col_d] = col_w
-            etq_w = (cw.get((fila_cod_w - 1, col_w)) or ("", False, None))
-            etq_d = (cd.get((fila_cod_d - 1, col_d)) or ("", False, None))
-            if etq_w[0] and etq_w[0] != etq_d[0] and not etq_d[1]:
-                xml, _ = escribe(xml, f"{col_d}{fila_cod_d - 1}", etq_w[0], etq_w[2])
+            # Una hoja puede repetir el cuadro en varios bloques (ultimo
+            # trimestre, acumulado...), cada uno con su fila de codigos. El
+            # nombre se escribe en cada bloque donde la plantilla lo tiene como
+            # texto; donde es formula (=IF(G5=...)) ya lo trae del primero.
+            for fc_d, fc_w in zip(grupos_de_codigos(cd), grupos_de_codigos(cw)):
+                fila_etq_w = fila_de_etiqueta(cw, fc_w, col_w)
+                fila_etq_d = fila_de_etiqueta(cd, fc_d, col_d)
+                etq_w = (cw.get((fila_etq_w, col_w)) or ("", False, None))
+                etq_d = (cd.get((fila_etq_d, col_d)) or ("", False, None))
+                # Nunca un codigo (".xsd#") como nombre: en IFRS7-NumeMontOper
+                # se copiaba asi el URI de 2014 de Workiva sobre el de la
+                # plantilla y DBNeT rechazaba el codigo del eje.
+                if (etq_w[0] and etq_w[0] != etq_d[0] and not etq_d[1]
+                        and ".xsd#" not in str(etq_w[0])
+                        and ".xsd#" not in str(etq_d[0] or "")):
+                    xml, _ = escribe(xml, f"{col_d}{fila_etq_d}", etq_w[0], etq_w[2])
 
     for c, k in cols_d.items():
         if c not in pares_col:
