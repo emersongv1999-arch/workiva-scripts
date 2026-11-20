@@ -2195,9 +2195,9 @@ class App(tk.Tk):
             self._mcp_tmpdir = d
         return self._mcp_tmpdir
 
-    _MON_COLS = [("Fecha", 120), ("Auditor", 130), ("UsuarioWindows", 110),
-                 ("Computador", 110), ("Modulo", 150), ("Detalle", 170),
-                 ("Resultado", 90), ("Duracion", 80), ("Version", 70)]
+    _MON_COLS = [("Fecha", 110), ("Auditor", 115), ("UsuarioWindows", 90),
+                 ("Computador", 95), ("Modulo", 135), ("Detalle", 150),
+                 ("Resultado", 80), ("Duracion", 60)]
 
     def _build_view_monitoreo(self):
         frame = tk.Frame(self._content, bg=CGE_LIGHT)
@@ -2264,6 +2264,15 @@ class App(tk.Tk):
         self._mon_tree.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
         vs.pack(side="right", fill="y"); hs.pack(side="bottom", fill="x")
         self._mon_tree.pack(side="left", fill="both", expand=True)
+        # Shift + rueda mueve la tabla al lado en pasos grandes (con el touchpad
+        # la barra sola va muy lenta).
+        def _mon_rueda_h(ev):
+            paso = -3 if getattr(ev, "delta", 0) > 0 else 3
+            self._mon_tree.xview_scroll(paso, "units")
+            return "break"
+        self._mon_tree.bind("<Shift-MouseWheel>", _mon_rueda_h)
+        self._mon_tree.bind("<Shift-Button-4>", lambda e: (self._mon_tree.xview_scroll(-3, "units"), "break")[1])
+        self._mon_tree.bind("<Shift-Button-5>", lambda e: (self._mon_tree.xview_scroll(3, "units"), "break")[1])
         self._mon_tree.tag_configure("err", foreground=CGE_RED)
         self._mon_tree.tag_configure("alt", background=CGE_LIGHT)
         self._mon_filas = []
