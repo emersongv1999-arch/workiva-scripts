@@ -30,6 +30,24 @@ CLIENT_SECRET = "wk_secret:oa2c:ScJsGbbpKHcKcpmSzhft"
 WORKSPACE_ID  = "w_34913aadaa38420eabd7e4d341b78a1a"
 AUDITOR_NAME  = "Violeta Rangel"
 
+# ── Registro de uso (telemetria interna) ──────────────────────────────────────
+# Cada vez que se usa un modulo, el Auditor manda una fila a un flujo de Power
+# Automate que la escribe en un Excel (Registro_Auditor.xlsx en el OneDrive de
+# Emerson). Es SOLO estadistica de uso: quien uso que modulo, cuando y si
+# termino bien. Va en segundo plano y a prueba de fallos: si no hay internet o
+# la red lo bloquea, no pasa nada y el Auditor sigue igual. La URL es la "llave"
+# del flujo; va en base64 para no dejarla en texto plano a la vista (no es
+# seguridad real). El registro de uso debe estar informado a las personas.
+AUDITOR_VERSION = "2026.11"
+_REG_URL_B64 = (
+    "aHR0cHM6Ly9kZWZhdWx0MGE1MjA0ODY2MjExNGMzNGJmNDg4NWE1NjNlYzc3LjlhLmVudmlyb25t"
+    "ZW50LmFwaS5wb3dlcnBsYXRmb3JtLmNvbTo0NDMvcG93ZXJhdXRvbWF0ZS9hdXRvbWF0aW9ucy9k"
+    "aXJlY3QvY3UvMzAvd29ya2Zsb3dzL2U1ZTY5ODBkNDQ4MDQ0MmI4ZTRmMWQwZWRjZjZhNTYzL3Ry"
+    "aWdnZXJzL21hbnVhbC9wYXRocy9pbnZva2U/YXBpLXZlcnNpb249MSZzcD0lMkZ0cmlnZ2VycyUy"
+    "Rm1hbnVhbCUyRnJ1biZzdj0xLjAmc2lnPUVaY3FraHphUlJzZmJZSDBESTdVTzVxVnJWWjRVanJR"
+    "ZUl3TXZNaTNNUlE="
+)
+
 TOKEN_URL  = "https://api.app.wdesk.com/iam/v1/oauth2/token"
 WDESK_BASE = "https://api.app.wdesk.com"
 UMBRAL     = 1000
@@ -1057,6 +1075,11 @@ NAV_ITEMS = [
     ("Integración XBRL",       "xbrl"),
 ]
 
+# El modulo de Monitoreo (ver el registro de uso de todos) existe solo en el
+# build de Emerson. En los demas builds este mismo archivo no lo muestra.
+if AUDITOR_NAME == "Emerson Garrido":
+    NAV_ITEMS.append(("Monitoreo", "mon"))
+
 
 def dir_datos_app():
     """Carpeta de trabajo del Auditor, garantizada escribible.
@@ -1234,6 +1257,48 @@ def exportar_cambios_estructura(res, carpeta, log=None):
         wb, os.path.join(carpeta, f"cambios_estructura_{mm}-{aa}.xlsx"), log=log)
 
 
+def _fmt_duracion(seg):
+    seg = int(round(seg))
+    if seg < 60:
+        return f"{seg} s"
+    return f"{seg // 60} min {seg % 60} s" if seg % 60 else f"{seg // 60} min"
+
+
+def _registrar_uso(modulo, detalle, resultado, duracion):
+    """Manda una fila al registro de uso, en segundo plano y sin romper nada.
+
+    Ante cualquier problema (sin internet, red que bloquea, flujo caido) no
+    hace nada: el Auditor no se entera y sigue igual."""
+    def _enviar():
+        try:
+            import urllib.request, ssl, json, socket, getpass, datetime, base64, os
+            url = base64.b64decode(_REG_URL_B64).decode()
+            fila = {
+                "Fecha":          datetime.datetime.now().strftime("%d-%m-%Y %H:%M"),
+                "Auditor":        AUDITOR_NAME,
+                "UsuarioWindows": (os.environ.get("USERNAME") or getpass.getuser() or "")[:80],
+                "Computador":     (os.environ.get("COMPUTERNAME") or socket.gethostname() or "")[:80],
+                "Modulo":         str(modulo)[:80],
+                "Detalle":        (str(detalle) if detalle else "")[:200],
+                "Resultado":      str(resultado)[:40],
+                "Duracion":       str(duracion)[:40],
+                "Version":        AUDITOR_VERSION,
+            }
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            req = urllib.request.Request(
+                url, data=json.dumps(fila).encode("utf-8"),
+                headers={"Content-Type": "application/json"}, method="POST")
+            urllib.request.urlopen(req, context=ctx, timeout=15).read()
+        except Exception:
+            pass
+    try:
+        threading.Thread(target=_enviar, daemon=True).start()
+    except Exception:
+        pass
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -1297,6 +1362,8 @@ class App(tk.Tk):
         self._build_view_copiar_periodo()
         self._build_view_publicar_linking()
         self._build_view_xbrl()
+        if any(k == "mon" for _, k in NAV_ITEMS):
+            self._build_view_monitoreo()
 
         # Mostrar primera vista
         self._show_view("verif")
@@ -1951,8 +2018,11 @@ class App(tk.Tk):
         self._progress.configure(mode="indeterminate")
         self._progress.start(10)
         self._cmp_log_write(f"\nProcesando {len(seleccionados)} archivo(s)...", "blue")
-        threading.Thread(target=self._cmp_thread_procesar,
-                         args=(seleccionados,), daemon=True).start()
+        threading.Thread(target=self._registrar, daemon=True, args=(
+            "Llenar Comparativos",
+            f"{self._cmp_mes.get().strip().zfill(2)}-{self._cmp_anio.get().strip()} "
+            f"({len(seleccionados)} archivo(s))",
+            self._cmp_thread_procesar, seleccionados)).start()
 
     def _cmp_set_label(self, label):
         # Solo actualiza el texto del subtitulo — la barra de progreso queda
@@ -2043,6 +2113,7 @@ class App(tk.Tk):
             finally:
                 builtins.print = _orig_print
         except Exception as e:
+            self._reg_estado = "Con error"
             self._cmp_log_write(f"ERROR inesperado: {e}", "err")
         finally:
             self.after(0, self._progress.stop)
@@ -2066,6 +2137,194 @@ class App(tk.Tk):
             )
             self._mcp_tmpdir = d
         return self._mcp_tmpdir
+
+    _MON_COLS = [("Fecha", 120), ("Auditor", 130), ("UsuarioWindows", 110),
+                 ("Computador", 110), ("Modulo", 150), ("Detalle", 170),
+                 ("Resultado", 90), ("Duracion", 80), ("Version", 70)]
+
+    def _build_view_monitoreo(self):
+        frame = tk.Frame(self._content, bg=CGE_LIGHT)
+        self._views["mon"] = frame
+        body = tk.Frame(frame, bg=CGE_LIGHT); body.pack(fill="both", expand=True)
+
+        left = tk.Frame(body, bg=CGE_LIGHT, width=230); left.pack(side="left", fill="y", padx=(0, 14))
+        left.pack_propagate(False)
+
+        tk.Label(left, text="ARCHIVO DE REGISTRO", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(6, 2))
+        cf = tk.Frame(left, bg=CGE_CARD, highlightbackground=CGE_BORDER, highlightthickness=1)
+        cf.pack(fill="x", pady=(0, 10))
+        ci = tk.Frame(cf, bg=CGE_CARD, padx=8, pady=8); ci.pack(fill="x")
+        # Por omision el Registro_Auditor.xlsx del OneDrive de Emerson; si la
+        # ruta no existe (otro equipo), el boton Examinar la cambia.
+        _def = os.path.join(os.environ.get("USERPROFILE", str(Path.home())),
+                            "OneDrive - Grupo CGE", "Escritorio", "Documentos",
+                            "Registro_Auditor.xlsx")
+        self._mon_ruta = tk.StringVar(value=_def)
+        tk.Entry(ci, textvariable=self._mon_ruta, font=FONT_SMALL, bg=CGE_LIGHT, fg=CGE_TEXT,
+                 relief="flat", bd=2, highlightbackground=CGE_BORDER, highlightthickness=1).pack(fill="x")
+        tk.Button(ci, text="Examinar…", font=FONT_SMALL, bg=CGE_BORDER, fg=CGE_TEXT, relief="flat",
+                  bd=0, padx=8, pady=3, cursor="hand2", command=self._mon_elegir).pack(fill="x", pady=(4, 0))
+
+        tk.Label(left, text="FILTROS", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(6, 2))
+        ff = tk.Frame(left, bg=CGE_CARD, highlightbackground=CGE_BORDER, highlightthickness=1)
+        ff.pack(fill="x", pady=(0, 10))
+        fi = tk.Frame(ff, bg=CGE_CARD, padx=10, pady=8); fi.pack(fill="x")
+        self._mon_f_auditor = tk.StringVar(value="(todos)")
+        self._mon_f_modulo = tk.StringVar(value="(todos)")
+        for txt, var, attr in (("Auditor", self._mon_f_auditor, "_mon_cb_auditor"),
+                               ("Módulo", self._mon_f_modulo, "_mon_cb_modulo")):
+            tk.Label(fi, text=txt, font=FONT_SMALL, bg=CGE_CARD, fg=CGE_MUTED).pack(anchor="w", pady=(2, 0))
+            cb = ttk.Combobox(fi, textvariable=var, state="readonly", font=FONT_SMALL, values=["(todos)"])
+            cb.pack(fill="x", pady=(0, 4)); cb.bind("<<ComboboxSelected>>", lambda e: self._mon_pintar())
+            setattr(self, attr, cb)
+        self._mon_f_texto = tk.StringVar()
+        tk.Label(fi, text="Buscar", font=FONT_SMALL, bg=CGE_CARD, fg=CGE_MUTED).pack(anchor="w", pady=(2, 0))
+        e = tk.Entry(fi, textvariable=self._mon_f_texto, font=FONT_SMALL, bg=CGE_LIGHT, fg=CGE_TEXT,
+                     relief="flat", bd=2, highlightbackground=CGE_BORDER, highlightthickness=1)
+        e.pack(fill="x"); e.bind("<KeyRelease>", lambda ev: self._mon_pintar())
+
+        tk.Button(left, text="↻  Actualizar", font=("Segoe UI", 10, "bold"), bg=CGE_BLUE, fg=CGE_WHITE,
+                  relief="flat", bd=0, padx=12, pady=8, cursor="hand2",
+                  command=self._mon_cargar).pack(fill="x", pady=(4, 0))
+        self._mon_resumen = tk.Label(left, text="", font=FONT_SMALL, bg=CGE_LIGHT, fg=CGE_TEXT,
+                                     justify="left", wraplength=210)
+        self._mon_resumen.pack(anchor="w", pady=(10, 0))
+
+        right = tk.Frame(body, bg=CGE_LIGHT); right.pack(side="left", fill="both", expand=True)
+        tk.Label(right, text="USO DEL AUDITOR", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(0, 4))
+        tbl = tk.Frame(right, bg=CGE_CARD, highlightbackground=CGE_BORDER, highlightthickness=1)
+        tbl.pack(fill="both", expand=True)
+        cols = [c for c, _ in self._MON_COLS]
+        self._mon_tree = ttk.Treeview(tbl, columns=cols, show="headings", selectmode="none")
+        for c, w in self._MON_COLS:
+            self._mon_tree.heading(c, text=c, command=lambda cc=c: self._mon_ordenar(cc))
+            self._mon_tree.column(c, width=w, anchor="w", stretch=(c == "Detalle"))
+        vs = ttk.Scrollbar(tbl, orient="vertical", command=self._mon_tree.yview)
+        self._mon_tree.configure(yscrollcommand=vs.set)
+        vs.pack(side="right", fill="y"); self._mon_tree.pack(side="left", fill="both", expand=True)
+        self._mon_tree.tag_configure("err", foreground=CGE_RED)
+        self._mon_tree.tag_configure("alt", background=CGE_LIGHT)
+        self._mon_filas = []
+        self._mon_orden = ("Fecha", True)
+
+    def _mon_elegir(self):
+        from tkinter import filedialog
+        d = filedialog.askopenfilename(initialdir=os.path.dirname(self._mon_ruta.get() or str(Path.home())),
+                                       filetypes=[("Excel", "*.xlsx"), ("Todos", "*.*")])
+        if d:
+            self._mon_ruta.set(d); self._mon_cargar()
+
+    def _mon_cargar(self):
+        ruta = self._mon_ruta.get().strip()
+        if not ruta or not os.path.isfile(ruta):
+            messagebox.showwarning("Monitoreo", "No encuentro el archivo de registro.\n\n"
+                                   "Revisa la ruta o elígelo con «Examinar…».\n\n"
+                                   "Si está en OneDrive, ábrelo una vez para que se sincronice.")
+            return
+        try:
+            from openpyxl import load_workbook
+            # data_only + read_only: no bloquea el archivo si OneDrive lo tiene abierto
+            import shutil, tempfile
+            tmp = os.path.join(tempfile.gettempdir(), "registro_auditor_tmp.xlsx")
+            try:
+                shutil.copyfile(ruta, tmp); fuente = tmp
+            except Exception:
+                fuente = ruta
+            wb = load_workbook(fuente, read_only=True, data_only=True)
+            ws = wb.active
+            filas = list(ws.iter_rows(values_only=True))
+            wb.close()
+        except Exception as e:
+            messagebox.showerror("Monitoreo", f"No se pudo leer el registro:\n{e}")
+            return
+        if not filas:
+            self._mon_filas = []; self._mon_pintar(); return
+        encab = [str(c).strip() if c is not None else "" for c in filas[0]]
+        idx = {c: encab.index(c) for _, c in [] }
+        cols = [c for c, _ in self._MON_COLS]
+        pos = {c: (encab.index(c) if c in encab else None) for c in cols}
+        out = []
+        for fila in filas[1:]:
+            if not any(fila):
+                continue
+            def val(c):
+                i = pos[c]
+                v = fila[i] if (i is not None and i < len(fila)) else ""
+                return "" if v is None else str(v)
+            out.append({c: val(c) for c in cols})
+        self._mon_filas = out
+        # poblar filtros
+        auds = sorted({f["Auditor"] for f in out if f["Auditor"]})
+        mods = sorted({f["Modulo"] for f in out if f["Modulo"]})
+        self._mon_cb_auditor["values"] = ["(todos)"] + auds
+        self._mon_cb_modulo["values"] = ["(todos)"] + mods
+        if self._mon_f_auditor.get() not in self._mon_cb_auditor["values"]:
+            self._mon_f_auditor.set("(todos)")
+        if self._mon_f_modulo.get() not in self._mon_cb_modulo["values"]:
+            self._mon_f_modulo.set("(todos)")
+        self._mon_pintar()
+
+    @staticmethod
+    def _mon_clave_fecha(f):
+        # "dd-mm-aaaa HH:MM" -> ordenable
+        s = f.get("Fecha", "")
+        m = re.match(r"(\d{2})-(\d{2})-(\d{4})\s+(\d{2}):(\d{2})", s)
+        return (m.group(3), m.group(2), m.group(1), m.group(4), m.group(5)) if m else (s,)
+
+    def _mon_ordenar(self, col):
+        actual, desc = self._mon_orden
+        self._mon_orden = (col, not desc if actual == col else True)
+        self._mon_pintar()
+
+    def _mon_pintar(self):
+        fa = self._mon_f_auditor.get(); fm = self._mon_f_modulo.get()
+        txt = self._mon_f_texto.get().strip().lower()
+        filas = [f for f in self._mon_filas
+                 if (fa == "(todos)" or f["Auditor"] == fa)
+                 and (fm == "(todos)" or f["Modulo"] == fm)
+                 and (not txt or any(txt in str(v).lower() for v in f.values()))]
+        col, desc = self._mon_orden
+        key = self._mon_clave_fecha if col == "Fecha" else (lambda f: str(f.get(col, "")).lower())
+        filas = sorted(filas, key=key, reverse=desc)
+        for i in self._mon_tree.get_children():
+            self._mon_tree.delete(i)
+        cols = [c for c, _ in self._MON_COLS]
+        for n, f in enumerate(filas):
+            tags = []
+            if "error" in f["Resultado"].lower():
+                tags.append("err")
+            elif n % 2:
+                tags.append("alt")
+            self._mon_tree.insert("", "end", values=[f[c] for c in cols], tags=tags)
+        # resumen
+        por_aud = {}
+        for f in self._mon_filas:
+            por_aud[f["Auditor"]] = por_aud.get(f["Auditor"], 0) + 1
+        tot = len(self._mon_filas)
+        resumen = f"{len(filas)} de {tot} usos"
+        if por_aud:
+            top = sorted(por_aud.items(), key=lambda x: -x[1])
+            resumen += ":\n" + "\n".join(f"  {a or '(sin nombre)'}: {n}" for a, n in top[:8])
+        self._mon_resumen.config(text=resumen)
+
+    def _registrar(self, modulo, detalle, func, *args):
+        """Corre el hilo de un modulo y, al terminar, deja una fila en el
+        registro de uso. El resultado por omision es OK; si el modulo cae en
+        su except, ya se marco "Con error"."""
+        import time as _t_reg
+        self._reg_estado = "OK"
+        _t0_reg = _t_reg.time()
+        try:
+            func(*args)
+        finally:
+            try:
+                _registrar_uso(modulo, detalle, getattr(self, "_reg_estado", "OK"),
+                               _fmt_duracion(_t_reg.time() - _t0_reg))
+            except Exception:
+                pass
 
     def _load_mcp_v2_mod(self, tmpdir):
         """Carga workiva_mcp_v2 desde tmpdir (cacheado en self._mcp_v2_mod)."""
@@ -2413,8 +2672,9 @@ class App(tk.Tk):
         self._flujo_btn_generar.configure(state="disabled")
         self._progress.configure(mode="indeterminate")
         self._progress.start(10)
-        threading.Thread(target=self._flujo_thread_generar,
-                         args=(seleccionados,), daemon=True).start()
+        threading.Thread(target=self._registrar, daemon=True, args=(
+            "Flujo de Efectivo", getattr(self, "_flujo_fecha_fin", ""),
+            self._flujo_thread_generar, seleccionados)).start()
 
     def _flujo_thread_generar(self, seleccionados):
         try:
@@ -2480,6 +2740,7 @@ class App(tk.Tk):
             self.after(0, lambda s=salida: self._abrir_si_confirma(
                 "Flujo generado", f"Archivo generado correctamente:\n\n{s}", s))
         except Exception as e:
+            self._reg_estado = "Con error"
             self._flujo_log_write(f"ERROR: {e}", "err")
             self.after(0, lambda err=str(e): messagebox.showerror("Error", err))
         finally:
@@ -3233,8 +3494,11 @@ class App(tk.Tk):
         if not self._running:
             self._clear_log()
         self._lock()
-        threading.Thread(target=self._thread_verificar,
-                         args=(seleccionados,), daemon=True).start()
+        threading.Thread(target=self._registrar, daemon=True, args=(
+            "Verificador de Sumas",
+            f"{self._v_mes.get().strip()}-{self._v_anio.get().strip()} "
+            f"({len(seleccionados)} doc(s))",
+            self._thread_verificar, seleccionados)).start()
 
     def _thread_verificar(self, seleccionados):
         try:
@@ -3294,6 +3558,7 @@ class App(tk.Tk):
             self.log(f"{'─'*52}", "blue")
 
         except Exception as e:
+            self._reg_estado = "Con error"
             self.log(f"ERROR inesperado: {e}", "err")
         finally:
             if self._docx_dir.exists():
@@ -3449,10 +3714,9 @@ class App(tk.Tk):
         self._progress.configure(mode="indeterminate")
         self._progress.start(10)
         self._val_log_write(f"Validando {soc} {tipo} {trim}-{anio}...", "blue")
-        threading.Thread(
-            target=self._val_thread_run,
-            args=(soc, anio, trim, tipo),
-            daemon=True).start()
+        threading.Thread(target=self._registrar, daemon=True, args=(
+            "Validar Comparativos", f"{soc} {tipo} {trim}-{anio}",
+            self._val_thread_run, soc, anio, trim, tipo)).start()
 
     def _val_thread_run(self, soc, anio, trim, tipo):
         try:
@@ -3528,6 +3792,7 @@ class App(tk.Tk):
             else:
                 self._val_log_write("Validación terminó con advertencias.", "warn")
         except Exception as e:
+            self._reg_estado = "Con error"
             self._val_log_write(f"ERROR: {e}", "err")
         finally:
             self.after(0, self._avisar_fin)
@@ -3832,8 +4097,9 @@ class App(tk.Tk):
         self._cp_clear_log()
         self._cp_bloquear(True)
         self._cp_log_write(f"Iniciando creación del período {mes:02d}-{anio}...", "blue")
-        threading.Thread(target=self._cp_thread_run, args=(mes, anio, carpeta),
-                         daemon=True).start()
+        threading.Thread(target=self._registrar, daemon=True, args=(
+            "Crear Periodo", f"{mes:02d}-{anio}",
+            self._cp_thread_run, mes, anio, carpeta)).start()
 
     def _cp_on_comparar(self):
         periodo = self._cp_parse_periodo()
@@ -3854,8 +4120,9 @@ class App(tk.Tk):
         self._cp_clear_log()
         self._cp_bloquear(True)
         self._cp_log_write("Solo comparar: no se copia ni se modifica nada en Workiva.", "blue")
-        threading.Thread(target=self._cp_thread_comparar, args=(mes, anio, carpeta),
-                         daemon=True).start()
+        threading.Thread(target=self._registrar, daemon=True, args=(
+            "Crear Periodo (solo comparar)", f"{mes:02d}-{anio}",
+            self._cp_thread_comparar, mes, anio, carpeta)).start()
 
     def _cp_preparar_motor(self):
         import os as _os_cp
@@ -3937,6 +4204,7 @@ class App(tk.Tk):
                             "\n\nSe puede repetir con 'Solo comparar (sin copiar)'.")
                 self.after(0, lambda m=msg: messagebox.showinfo("Período creado", m))
         except Exception as e:
+            self._reg_estado = "Con error"
             es_negocio = type(e).__name__ == "CopiaPeriodoError"
             self._cp_log_write(f"{'ERROR' if not es_negocio else 'No se copió'}: {e}", "err")
             if not es_negocio:
@@ -3963,6 +4231,7 @@ class App(tk.Tk):
                            self._abrir_si_confirma(
                                "Comparación lista", m + "\n\n¿Abrir el Excel con los cambios?", p))
         except Exception as e:
+            self._reg_estado = "Con error"
             es_negocio = type(e).__name__ == "CopiaPeriodoError"
             self._cp_log_write(f"{'ERROR' if not es_negocio else 'No se pudo comparar'}: {e}", "err")
             if not es_negocio:
@@ -4094,7 +4363,9 @@ class App(tk.Tk):
         self._progress.configure(mode="indeterminate")
         self._progress.start(10)
         self._pl_log_write(f"Publicando linking para {mes:02d}-{anio}...", "blue")
-        threading.Thread(target=self._pl_thread_run, args=(mes, anio), daemon=True).start()
+        threading.Thread(target=self._registrar, daemon=True, args=(
+            "Publicar Linking", f"{mes:02d}-{anio}",
+            self._pl_thread_run, mes, anio)).start()
 
     def _pl_thread_run(self, mes, anio):
         try:
@@ -4123,6 +4394,7 @@ class App(tk.Tk):
                 + (f"Con error: {n_err} (revisar en el log)\n" if n_err else "")
                 + f"Omitidos (sin links que publicar): {n_om}"))
         except Exception as e:
+            self._reg_estado = "Con error"
             es_negocio = type(e).__name__ == "CopiaPeriodoError"
             self._pl_log_write(f"{'ERROR' if not es_negocio else 'No se publicó'}: {e}", "err")
             if not es_negocio:
@@ -4154,7 +4426,9 @@ class App(tk.Tk):
             # cada compilacion usa solo las de su auditor.
             xbrl_workiva.CLIENT_ID     = CLIENT_ID
             xbrl_workiva.CLIENT_SECRET = CLIENT_SECRET
-            xbrl_app.VistaXBRL(frame).pack(fill="both", expand=True)
+            xbrl_app.VistaXBRL(frame, registrar=lambda detalle, resultado:
+                               _registrar_uso("Integración XBRL", detalle, resultado, "")
+                               ).pack(fill="both", expand=True)
         except Exception as e:
             import traceback
             tk.Label(frame, text="No se pudo abrir Integración XBRL",

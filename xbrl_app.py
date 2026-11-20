@@ -404,8 +404,11 @@ class VistaXBRL(tk.Frame):
 
     ANCHO_IZQ = 250
 
-    def __init__(self, padre):
+    def __init__(self, padre, registrar=None):
         super().__init__(padre, bg=FONDO)
+        # Callback opcional para el registro de uso del Auditor. registrar(
+        # detalle, resultado). Si no se pasa (app XBRL suelta), no hace nada.
+        self._registrar = registrar or (lambda detalle, resultado: None)
         # Los notebooks de CGE van con la pantalla al 125-150%.
         self.escala = max(1.0, self.winfo_fpixels("1i") / 96)
 
@@ -1320,6 +1323,12 @@ class VistaXBRL(tk.Frame):
 
     def _en_fin(self, dato):
         tipo, paso, info = dato
+        try:
+            self._registrar(
+                f"{self.empresa.get()} {self.periodo.get()}".strip(),
+                {"ok": "OK", "cancelado": "Cancelado"}.get(tipo, "Con error"))
+        except Exception:
+            pass
         self.corriendo = False
         self.barra.stop()
         self.barra.config(mode="determinate")
