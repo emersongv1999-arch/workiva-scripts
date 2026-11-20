@@ -2240,7 +2240,7 @@ class App(tk.Tk):
         tk.Label(fi, text="Buscar", font=FONT_SMALL, bg=CGE_CARD, fg=CGE_MUTED).pack(anchor="w", pady=(2, 0))
         e = tk.Entry(fi, textvariable=self._mon_f_texto, font=FONT_SMALL, bg=CGE_LIGHT, fg=CGE_TEXT,
                      relief="flat", bd=2, highlightbackground=CGE_BORDER, highlightthickness=1)
-        e.pack(fill="x"); e.bind("<KeyRelease>", lambda ev: self._mon_pintar())
+        e.pack(fill="x"); e.bind("<KeyRelease>", lambda ev: self._mon_pintar_pausado())
 
         tk.Button(left, text="↻  Actualizar", font=("Segoe UI", 10, "bold"), bg=CGE_BLUE, fg=CGE_WHITE,
                   relief="flat", bd=0, padx=12, pady=8, cursor="hand2",
@@ -2260,12 +2260,27 @@ class App(tk.Tk):
             self._mon_tree.heading(c, text=c, command=lambda cc=c: self._mon_ordenar(cc))
             self._mon_tree.column(c, width=w, anchor="w", stretch=(c == "Detalle"))
         vs = ttk.Scrollbar(tbl, orient="vertical", command=self._mon_tree.yview)
-        self._mon_tree.configure(yscrollcommand=vs.set)
-        vs.pack(side="right", fill="y"); self._mon_tree.pack(side="left", fill="both", expand=True)
+        hs = ttk.Scrollbar(tbl, orient="horizontal", command=self._mon_tree.xview)
+        self._mon_tree.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
+        vs.pack(side="right", fill="y"); hs.pack(side="bottom", fill="x")
+        self._mon_tree.pack(side="left", fill="both", expand=True)
         self._mon_tree.tag_configure("err", foreground=CGE_RED)
         self._mon_tree.tag_configure("alt", background=CGE_LIGHT)
         self._mon_filas = []
         self._mon_orden = ("Fecha", True)
+        self._mon_pausa = None
+
+    _MON_MAX = 1500          # cuantas filas se dibujan; el resumen cuenta el total
+
+    def _mon_pintar_pausado(self):
+        # Al escribir en "Buscar" no se repinta en cada tecla: se espera un
+        # momento, para que no se trabe con muchos registros.
+        if self._mon_pausa is not None:
+            try:
+                self.after_cancel(self._mon_pausa)
+            except Exception:
+                pass
+        self._mon_pausa = self.after(300, self._mon_pintar)
 
     def _mon_elegir(self):
         from tkinter import filedialog
@@ -2345,10 +2360,10 @@ class App(tk.Tk):
         col, desc = self._mon_orden
         key = self._mon_clave_fecha if col == "Fecha" else (lambda f: str(f.get(col, "")).lower())
         filas = sorted(filas, key=key, reverse=desc)
-        for i in self._mon_tree.get_children():
-            self._mon_tree.delete(i)
+        self._mon_tree.delete(*self._mon_tree.get_children())
         cols = [c for c, _ in self._MON_COLS]
-        for n, f in enumerate(filas):
+        visibles = filas[:self._MON_MAX]
+        for n, f in enumerate(visibles):
             tags = []
             if "error" in f["Resultado"].lower():
                 tags.append("err")
@@ -2361,6 +2376,8 @@ class App(tk.Tk):
             por_aud[f["Auditor"]] = por_aud.get(f["Auditor"], 0) + 1
         tot = len(self._mon_filas)
         resumen = f"{len(filas)} de {tot} usos"
+        if len(filas) > self._MON_MAX:
+            resumen += f"\n(se muestran los {self._MON_MAX} más recientes)"
         if por_aud:
             top = sorted(por_aud.items(), key=lambda x: -x[1])
             resumen += ":\n" + "\n".join(f"  {a or '(sin nombre)'}: {n}" for a, n in top[:8])
@@ -2729,7 +2746,7 @@ class App(tk.Tk):
         self._progress.configure(mode="indeterminate")
         self._progress.start(10)
         threading.Thread(target=self._registrar, daemon=True, args=(
-            "Flujo de Efectivo", getattr(self, "_flujo_fecha_fin", ""),
+            "Flujo de Efectivo", f"Periodo {getattr(self, '_flujo_fecha_fin', '')}",
             self._flujo_thread_generar, seleccionados)).start()
 
     def _flujo_thread_generar(self, seleccionados):
@@ -4154,7 +4171,7 @@ class App(tk.Tk):
         self._cp_bloquear(True)
         self._cp_log_write(f"Iniciando creación del período {mes:02d}-{anio}...", "blue")
         threading.Thread(target=self._registrar, daemon=True, args=(
-            "Crear Periodo", f"{mes:02d}-{anio}",
+            "Crear Periodo", f"Periodo {mes:02d}-{anio}",
             self._cp_thread_run, mes, anio, carpeta)).start()
 
     def _cp_on_comparar(self):
@@ -4177,7 +4194,7 @@ class App(tk.Tk):
         self._cp_bloquear(True)
         self._cp_log_write("Solo comparar: no se copia ni se modifica nada en Workiva.", "blue")
         threading.Thread(target=self._registrar, daemon=True, args=(
-            "Crear Periodo (solo comparar)", f"{mes:02d}-{anio}",
+            "Crear Periodo (solo comparar)", f"Periodo {mes:02d}-{anio}",
             self._cp_thread_comparar, mes, anio, carpeta)).start()
 
     def _cp_preparar_motor(self):
@@ -4420,7 +4437,7 @@ class App(tk.Tk):
         self._progress.start(10)
         self._pl_log_write(f"Publicando linking para {mes:02d}-{anio}...", "blue")
         threading.Thread(target=self._registrar, daemon=True, args=(
-            "Publicar Linking", f"{mes:02d}-{anio}",
+            "Publicar Linking", f"Periodo {mes:02d}-{anio}",
             self._pl_thread_run, mes, anio)).start()
 
     def _pl_thread_run(self, mes, anio):
