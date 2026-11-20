@@ -1085,7 +1085,12 @@ def procesar_hoja(dest, hoja_d, wv, hoja_w, xml, reporte, archivo):
                 fila_etq_d = fila_de_etiqueta(cd, fc_d, col_d)
                 etq_w = (cw.get((fila_etq_w, col_w)) or ("", False, None))
                 etq_d = (cd.get((fila_etq_d, col_d)) or ("", False, None))
-                if etq_w[0] and etq_w[0] != etq_d[0] and not etq_d[1]:
+                # Nunca un codigo (".xsd#") como nombre: en IFRS7-NumeMontOper
+                # se copiaba asi el URI de 2014 de Workiva sobre el de la
+                # plantilla y DBNeT rechazaba el codigo del eje.
+                if (etq_w[0] and etq_w[0] != etq_d[0] and not etq_d[1]
+                        and ".xsd#" not in str(etq_w[0])
+                        and ".xsd#" not in str(etq_d[0] or "")):
                     xml, _ = escribe(xml, f"{col_d}{fila_etq_d}", etq_w[0], etq_w[2])
 
     for c, k in cols_d.items():
