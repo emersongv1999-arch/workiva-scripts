@@ -1257,6 +1257,46 @@ def exportar_cambios_estructura(res, carpeta, log=None):
         wb, os.path.join(carpeta, f"cambios_estructura_{mm}-{aa}.xlsx"), log=log)
 
 
+def _leer_archivo_aunque_este_abierto(ruta):
+    """Devuelve los bytes de un archivo aunque Excel lo tenga abierto.
+
+    En Windows, Excel abre el .xlsx con un candado que no deja ni copiarlo
+    ([Errno 13] Permission denied). Aqui se abre con CreateFileW pidiendo
+    TODOS los modos de comparticion (lectura, escritura y borrado), que es la
+    unica forma de leerlo mientras otro programa lo tiene abierto. Fuera de
+    Windows, open() normal."""
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        GENERIC_READ   = 0x80000000
+        FILE_SHARE_ALL = 0x1 | 0x2 | 0x4          # read | write | delete
+        OPEN_EXISTING  = 3
+        FILE_ATTRIBUTE_NORMAL = 0x80
+        k32 = ctypes.windll.kernel32
+        k32.CreateFileW.restype  = wintypes.HANDLE
+        k32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                    wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+        h = k32.CreateFileW(str(ruta), GENERIC_READ, FILE_SHARE_ALL, None,
+                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, None)
+        if not h or h == wintypes.HANDLE(-1).value:
+            raise OSError("no se pudo abrir el archivo (CreateFileW)")
+        try:
+            datos = bytearray()
+            chunk = ctypes.create_string_buffer(262144)
+            leidos = wintypes.DWORD(0)
+            while True:
+                if not k32.ReadFile(h, chunk, len(chunk), ctypes.byref(leidos), None):
+                    raise OSError("no se pudo leer el archivo (ReadFile)")
+                if leidos.value == 0:
+                    break
+                datos += chunk.raw[:leidos.value]
+            return bytes(datos)
+        finally:
+            k32.CloseHandle(h)
+    with open(ruta, "rb") as fh:
+        return fh.read()
+
+
 def _fmt_duracion(seg):
     seg = int(round(seg))
     if seg < 60:
@@ -2226,19 +2266,18 @@ class App(tk.Tk):
             return
         try:
             from openpyxl import load_workbook
-            # data_only + read_only: no bloquea el archivo si OneDrive lo tiene abierto
-            import shutil, tempfile
-            tmp = os.path.join(tempfile.gettempdir(), "registro_auditor_tmp.xlsx")
-            try:
-                shutil.copyfile(ruta, tmp); fuente = tmp
-            except Exception:
-                fuente = ruta
-            wb = load_workbook(fuente, read_only=True, data_only=True)
+            # Se lee aunque Excel lo tenga abierto (candado de Windows).
+            datos = _leer_archivo_aunque_este_abierto(ruta)
+            wb = load_workbook(io.BytesIO(datos), read_only=True, data_only=True)
             ws = wb.active
             filas = list(ws.iter_rows(values_only=True))
             wb.close()
         except Exception as e:
-            messagebox.showerror("Monitoreo", f"No se pudo leer el registro:\n{e}")
+            messagebox.showerror(
+                "Monitoreo",
+                f"No se pudo leer el registro:\n{e}\n\n"
+                "Si está en OneDrive y lo ves gris (solo en la nube), ábrelo una "
+                "vez para que se descargue, y vuelve a intentar.")
             return
         if not filas:
             self._mon_filas = []; self._mon_pintar(); return
