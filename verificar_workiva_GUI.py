@@ -2181,22 +2181,23 @@ class App(tk.Tk):
     _MON_COLS = [("Fecha", 110), ("Auditor", 115), ("UsuarioWindows", 90),
                  ("Computador", 95), ("Modulo", 135), ("Detalle", 150),
                  ("Resultado", 80), ("Duracion", 60)]
+    _MON_MAX = 1500          # cuantas filas de DETALLE se dibujan como mucho
+    _MON_RANGOS = [("Hoy", "hoy"), ("Últimos 7 días", "7d"), ("Últimos 30 días", "30d"),
+                   ("Este mes", "mes_actual"), ("Todo", "todo")]
 
     def _build_view_monitoreo(self):
         frame = tk.Frame(self._content, bg=CGE_LIGHT)
         self._views["mon"] = frame
         body = tk.Frame(frame, bg=CGE_LIGHT); body.pack(fill="both", expand=True)
 
+        # ── Panel izquierdo: archivo, actualizar, filtros del detalle ──
         left = tk.Frame(body, bg=CGE_LIGHT, width=230); left.pack(side="left", fill="y", padx=(0, 14))
         left.pack_propagate(False)
-
         tk.Label(left, text="ARCHIVO DE REGISTRO", font=("Segoe UI", 8, "bold"),
                  bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(6, 2))
         cf = tk.Frame(left, bg=CGE_CARD, highlightbackground=CGE_BORDER, highlightthickness=1)
         cf.pack(fill="x", pady=(0, 10))
         ci = tk.Frame(cf, bg=CGE_CARD, padx=8, pady=8); ci.pack(fill="x")
-        # Por omision el Registro_Auditor.xlsx del OneDrive de Emerson; si la
-        # ruta no existe (otro equipo), el boton Examinar la cambia.
         _def = os.path.join(os.environ.get("USERPROFILE", str(Path.home())),
                             "OneDrive - Grupo CGE", "Escritorio", "Documentos",
                             "Registro_Auditor.xlsx")
@@ -2205,8 +2206,11 @@ class App(tk.Tk):
                  relief="flat", bd=2, highlightbackground=CGE_BORDER, highlightthickness=1).pack(fill="x")
         tk.Button(ci, text="Examinar…", font=FONT_SMALL, bg=CGE_BORDER, fg=CGE_TEXT, relief="flat",
                   bd=0, padx=8, pady=3, cursor="hand2", command=self._mon_elegir).pack(fill="x", pady=(4, 0))
+        tk.Button(left, text="↻  Actualizar", font=("Segoe UI", 10, "bold"), bg=CGE_BLUE, fg=CGE_WHITE,
+                  relief="flat", bd=0, padx=12, pady=8, cursor="hand2",
+                  command=self._mon_cargar).pack(fill="x", pady=(0, 10))
 
-        tk.Label(left, text="FILTROS", font=("Segoe UI", 8, "bold"),
+        tk.Label(left, text="FILTRAR EL DETALLE", font=("Segoe UI", 8, "bold"),
                  bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(6, 2))
         ff = tk.Frame(left, bg=CGE_CARD, highlightbackground=CGE_BORDER, highlightthickness=1)
         ff.pack(fill="x", pady=(0, 10))
@@ -2217,24 +2221,64 @@ class App(tk.Tk):
                                ("Módulo", self._mon_f_modulo, "_mon_cb_modulo")):
             tk.Label(fi, text=txt, font=FONT_SMALL, bg=CGE_CARD, fg=CGE_MUTED).pack(anchor="w", pady=(2, 0))
             cb = ttk.Combobox(fi, textvariable=var, state="readonly", font=FONT_SMALL, values=["(todos)"])
-            cb.pack(fill="x", pady=(0, 4)); cb.bind("<<ComboboxSelected>>", lambda e: self._mon_pintar())
+            cb.pack(fill="x", pady=(0, 4)); cb.bind("<<ComboboxSelected>>", lambda e: self._mon_pintar_detalle())
             setattr(self, attr, cb)
         self._mon_f_texto = tk.StringVar()
         tk.Label(fi, text="Buscar", font=FONT_SMALL, bg=CGE_CARD, fg=CGE_MUTED).pack(anchor="w", pady=(2, 0))
         e = tk.Entry(fi, textvariable=self._mon_f_texto, font=FONT_SMALL, bg=CGE_LIGHT, fg=CGE_TEXT,
                      relief="flat", bd=2, highlightbackground=CGE_BORDER, highlightthickness=1)
         e.pack(fill="x"); e.bind("<KeyRelease>", lambda ev: self._mon_pintar_pausado())
-
-        tk.Button(left, text="↻  Actualizar", font=("Segoe UI", 10, "bold"), bg=CGE_BLUE, fg=CGE_WHITE,
-                  relief="flat", bd=0, padx=12, pady=8, cursor="hand2",
-                  command=self._mon_cargar).pack(fill="x", pady=(4, 0))
         self._mon_resumen = tk.Label(left, text="", font=FONT_SMALL, bg=CGE_LIGHT, fg=CGE_TEXT,
                                      justify="left", wraplength=210)
         self._mon_resumen.pack(anchor="w", pady=(10, 0))
 
+        # ── Panel derecho: período, resúmenes y detalle ──
         right = tk.Frame(body, bg=CGE_LIGHT); right.pack(side="left", fill="both", expand=True)
-        tk.Label(right, text="USO DEL AUDITOR", font=("Segoe UI", 8, "bold"),
-                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(0, 4))
+
+        # Período (botones rápidos + mes específico)
+        tk.Label(right, text="PERÍODO", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(0, 2))
+        rb = tk.Frame(right, bg=CGE_LIGHT); rb.pack(fill="x", pady=(0, 8))
+        self._mon_rango = "30d"
+        self._mon_btns_rango = {}
+        for txt, clave in self._MON_RANGOS:
+            b = tk.Button(rb, text=txt, font=FONT_SMALL, relief="flat", bd=0, padx=10, pady=4,
+                          cursor="hand2", command=lambda c=clave: self._mon_rango_set(c))
+            b.pack(side="left", padx=(0, 6)); self._mon_btns_rango[clave] = b
+        tk.Label(rb, text="  o mes:", font=FONT_SMALL, bg=CGE_LIGHT, fg=CGE_MUTED).pack(side="left")
+        self._mon_mes = tk.StringVar(value="")
+        self._mon_cb_mes = ttk.Combobox(rb, textvariable=self._mon_mes, state="readonly",
+                                        font=FONT_SMALL, width=10, values=[])
+        self._mon_cb_mes.pack(side="left", padx=(4, 0))
+        self._mon_cb_mes.bind("<<ComboboxSelected>>", lambda e: self._mon_rango_set("mes_elegido"))
+
+        # Resúmenes por persona y por módulo, lado a lado
+        res = tk.Frame(right, bg=CGE_LIGHT); res.pack(fill="x", pady=(0, 8))
+        pcol = tk.Frame(res, bg=CGE_LIGHT); pcol.pack(side="left", fill="both", expand=True, padx=(0, 7))
+        tk.Label(pcol, text="POR PERSONA", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w")
+        pbox = tk.Frame(pcol, bg=CGE_CARD, highlightbackground=CGE_BORDER, highlightthickness=1)
+        pbox.pack(fill="both", expand=True)
+        self._mon_tree_pers = ttk.Treeview(pbox, columns=["a", "u", "ul", "er"], show="headings", height=6)
+        for c, t, w in (("a", "Auditor", 150), ("u", "Usos", 55), ("ul", "Último uso", 120), ("er", "Errores", 65)):
+            self._mon_tree_pers.heading(c, text=t); self._mon_tree_pers.column(c, width=w, anchor="w")
+        self._mon_tree_pers.pack(side="left", fill="both", expand=True)
+        self._mon_tree_pers.tag_configure("sin", foreground=CGE_RED)
+
+        mcol = tk.Frame(res, bg=CGE_LIGHT, width=240); mcol.pack(side="left", fill="y")
+        mcol.pack_propagate(False)
+        tk.Label(mcol, text="POR MÓDULO", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w")
+        mbox = tk.Frame(mcol, bg=CGE_CARD, highlightbackground=CGE_BORDER, highlightthickness=1)
+        mbox.pack(fill="both", expand=True)
+        self._mon_tree_mod = ttk.Treeview(mbox, columns=["m", "u"], show="headings", height=6)
+        self._mon_tree_mod.heading("m", text="Módulo"); self._mon_tree_mod.column("m", width=160, anchor="w")
+        self._mon_tree_mod.heading("u", text="Usos"); self._mon_tree_mod.column("u", width=55, anchor="w")
+        self._mon_tree_mod.pack(side="left", fill="both", expand=True)
+
+        # Detalle
+        tk.Label(right, text="DETALLE", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(2, 2))
         tbl = tk.Frame(right, bg=CGE_CARD, highlightbackground=CGE_BORDER, highlightthickness=1)
         tbl.pack(fill="both", expand=True)
         cols = [c for c, _ in self._MON_COLS]
@@ -2247,33 +2291,20 @@ class App(tk.Tk):
         self._mon_tree.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
         vs.pack(side="right", fill="y"); hs.pack(side="bottom", fill="x")
         self._mon_tree.pack(side="left", fill="both", expand=True)
-        # Shift + rueda mueve la tabla al lado en pasos grandes (con el touchpad
-        # la barra sola va muy lenta).
         def _mon_rueda_h(ev):
-            paso = -3 if getattr(ev, "delta", 0) > 0 else 3
-            self._mon_tree.xview_scroll(paso, "units")
-            return "break"
+            self._mon_tree.xview_scroll(-3 if getattr(ev, "delta", 0) > 0 else 3, "units"); return "break"
         self._mon_tree.bind("<Shift-MouseWheel>", _mon_rueda_h)
         self._mon_tree.bind("<Shift-Button-4>", lambda e: (self._mon_tree.xview_scroll(-3, "units"), "break")[1])
         self._mon_tree.bind("<Shift-Button-5>", lambda e: (self._mon_tree.xview_scroll(3, "units"), "break")[1])
         self._mon_tree.tag_configure("err", foreground=CGE_RED)
         self._mon_tree.tag_configure("alt", background=CGE_LIGHT)
+
         self._mon_filas = []
         self._mon_orden = ("Fecha", True)
         self._mon_pausa = None
+        self._mon_pintar_rango_btns()
 
-    _MON_MAX = 1500          # cuantas filas se dibujan; el resumen cuenta el total
-
-    def _mon_pintar_pausado(self):
-        # Al escribir en "Buscar" no se repinta en cada tecla: se espera un
-        # momento, para que no se trabe con muchos registros.
-        if self._mon_pausa is not None:
-            try:
-                self.after_cancel(self._mon_pausa)
-            except Exception:
-                pass
-        self._mon_pausa = self.after(300, self._mon_pintar)
-
+    # ── datos ──────────────────────────────────────────────────────────────
     def _mon_elegir(self):
         from tkinter import filedialog
         d = filedialog.askopenfilename(initialdir=os.path.dirname(self._mon_ruta.get() or str(Path.home())),
@@ -2282,6 +2313,7 @@ class App(tk.Tk):
             self._mon_ruta.set(d); self._mon_cargar()
 
     def _mon_cargar(self):
+        import datetime as _dt
         ruta = self._mon_ruta.get().strip()
         if not ruta or not os.path.isfile(ruta):
             messagebox.showwarning("Monitoreo", "No encuentro el archivo de registro.\n\n"
@@ -2290,7 +2322,6 @@ class App(tk.Tk):
             return
         try:
             from openpyxl import load_workbook
-            # Se lee aunque Excel lo tenga abierto (candado de Windows).
             datos = _leer_archivo_aunque_este_abierto(ruta)
             wb = load_workbook(io.BytesIO(datos), read_only=True, data_only=True)
             ws = wb.active
@@ -2303,27 +2334,29 @@ class App(tk.Tk):
                 "Si está en OneDrive y lo ves gris (solo en la nube), ábrelo una "
                 "vez para que se descargue, y vuelve a intentar.")
             return
-        if not filas:
-            self._mon_filas = []; self._mon_pintar(); return
-        encab = [str(c).strip() if c is not None else "" for c in filas[0]]
-        idx = {c: encab.index(c) for _, c in [] }
         cols = [c for c, _ in self._MON_COLS]
-        pos = {c: (encab.index(c) if c in encab else None) for c in cols}
         out = []
-        for fila in filas[1:]:
-            if not any(fila):
-                continue
-            def val(c):
-                i = pos[c]
-                v = fila[i] if (i is not None and i < len(fila)) else ""
-                return "" if v is None else str(v)
-            out.append({c: val(c) for c in cols})
+        if filas:
+            encab = [str(c).strip() if c is not None else "" for c in filas[0]]
+            pos = {c: (encab.index(c) if c in encab else None) for c in cols}
+            for fila in filas[1:]:
+                if not any(fila):
+                    continue
+                reg = {}
+                for c in cols:
+                    i = pos[c]
+                    v = fila[i] if (i is not None and i < len(fila)) else ""
+                    reg[c] = "" if v is None else str(v)
+                reg["_dt"] = self._mon_dt(reg["Fecha"])
+                out.append(reg)
         self._mon_filas = out
-        # poblar filtros
         auds = sorted({f["Auditor"] for f in out if f["Auditor"]})
         mods = sorted({f["Modulo"] for f in out if f["Modulo"]})
         self._mon_cb_auditor["values"] = ["(todos)"] + auds
         self._mon_cb_modulo["values"] = ["(todos)"] + mods
+        meses = sorted({f"{f['_dt'].month:02d}-{f['_dt'].year}" for f in out if f["_dt"]},
+                       key=lambda s: (s[3:], s[:2]), reverse=True)
+        self._mon_cb_mes["values"] = meses
         if self._mon_f_auditor.get() not in self._mon_cb_auditor["values"]:
             self._mon_f_auditor.set("(todos)")
         if self._mon_f_modulo.get() not in self._mon_cb_modulo["values"]:
@@ -2331,49 +2364,150 @@ class App(tk.Tk):
         self._mon_pintar()
 
     @staticmethod
-    def _mon_clave_fecha(f):
-        # "dd-mm-aaaa HH:MM" -> ordenable
-        s = f.get("Fecha", "")
-        m = re.match(r"(\d{2})-(\d{2})-(\d{4})\s+(\d{2}):(\d{2})", s)
-        return (m.group(3), m.group(2), m.group(1), m.group(4), m.group(5)) if m else (s,)
+    def _mon_dt(fecha):
+        import datetime as _dt
+        m = re.match(r"(\d{2})-(\d{2})-(\d{4})\s+(\d{2}):(\d{2})", fecha or "")
+        if not m:
+            return None
+        d, mo, y, h, mi = map(int, m.groups())
+        try:
+            return _dt.datetime(y, mo, d, h, mi)
+        except ValueError:
+            return None
+
+    # ── período ────────────────────────────────────────────────────────────
+    def _mon_rango_set(self, clave):
+        self._mon_rango = clave
+        if clave != "mes_elegido":
+            self._mon_mes.set("")
+        self._mon_pintar()
+
+    def _mon_pintar_rango_btns(self):
+        activo = self._mon_rango
+        for clave, b in self._mon_btns_rango.items():
+            on = (clave == activo)
+            b.configure(bg=CGE_BLUE if on else CGE_BORDER, fg=CGE_WHITE if on else CGE_TEXT,
+                        activebackground=CGE_BLUE if on else CGE_BORDER)
+
+    def _mon_en_rango(self, f):
+        import datetime as _dt
+        if self._mon_rango == "todo":
+            return True
+        dt = f["_dt"]
+        if dt is None:
+            return False
+        hoy = _dt.date.today()
+        if self._mon_rango == "hoy":
+            return dt.date() == hoy
+        if self._mon_rango == "7d":
+            return dt.date() >= hoy - _dt.timedelta(days=7)
+        if self._mon_rango == "30d":
+            return dt.date() >= hoy - _dt.timedelta(days=30)
+        if self._mon_rango == "mes_actual":
+            return dt.year == hoy.year and dt.month == hoy.month
+        if self._mon_rango == "mes_elegido" and self._mon_mes.get():
+            mm, aa = self._mon_mes.get().split("-")
+            return dt.month == int(mm) and dt.year == int(aa)
+        return True
+
+    @staticmethod
+    def _mon_fmt_ultimo(dt):
+        import datetime as _dt
+        if dt is None:
+            return "—"
+        hoy = _dt.date.today()
+        d = (hoy - dt.date()).days
+        if d <= 0:
+            return f"hoy {dt:%H:%M}"
+        if d == 1:
+            return f"ayer {dt:%H:%M}"
+        if d < 7:
+            return f"hace {d} días"
+        return f"{dt:%d-%m-%Y}"
+
+    # ── pintar ───────────────────────────────────────────────────────────────
+    def _mon_pintar(self):
+        self._mon_pintar_rango_btns()
+        enrango = [f for f in self._mon_filas if self._mon_en_rango(f)]
+
+        # Resumen por persona: usos/errores en el rango; último uso sobre TODO
+        todas_personas = sorted({f["Auditor"] for f in self._mon_filas if f["Auditor"]})
+        ultimo_abs = {}
+        for f in self._mon_filas:
+            a, dt = f["Auditor"], f["_dt"]
+            if a and dt and (a not in ultimo_abs or dt > ultimo_abs[a]):
+                ultimo_abs[a] = dt
+        pers = {}
+        for a in todas_personas:
+            pers[a] = {"u": 0, "er": 0}
+        for f in enrango:
+            a = f["Auditor"]
+            if a not in pers:
+                pers[a] = {"u": 0, "er": 0}
+            pers[a]["u"] += 1
+            if "error" in f["Resultado"].lower():
+                pers[a]["er"] += 1
+        self._mon_tree_pers.delete(*self._mon_tree_pers.get_children())
+        for a in sorted(pers, key=lambda x: (-pers[x]["u"], x)):
+            tags = ["sin"] if pers[a]["u"] == 0 else []
+            self._mon_tree_pers.insert("", "end", tags=tags, values=(
+                a, pers[a]["u"], self._mon_fmt_ultimo(ultimo_abs.get(a)), pers[a]["er"] or ""))
+
+        # Resumen por módulo (en el rango)
+        modu = {}
+        for f in enrango:
+            modu[f["Modulo"]] = modu.get(f["Modulo"], 0) + 1
+        self._mon_tree_mod.delete(*self._mon_tree_mod.get_children())
+        for m in sorted(modu, key=lambda x: (-modu[x], x)):
+            self._mon_tree_mod.insert("", "end", values=(m, modu[m]))
+
+        # Resumen de texto a la izquierda
+        n_err = sum(1 for f in enrango if "error" in f["Resultado"].lower())
+        etiqueta = dict((c, t) for t, c in self._MON_RANGOS).get(
+            self._mon_rango, f"mes {self._mon_mes.get()}" if self._mon_mes.get() else "rango")
+        resumen = f"{etiqueta}: {len(enrango)} usos"
+        if n_err:
+            resumen += f", {n_err} con error"
+        sin_uso = [a for a in todas_personas if pers[a]["u"] == 0]
+        if sin_uso:
+            resumen += "\n\nSin usos en el período:\n" + "\n".join("  " + a for a in sin_uso[:8])
+        self._mon_resumen.config(text=resumen)
+
+        self._mon_enrango = enrango
+        self._mon_pintar_detalle()
+
+    def _mon_pintar_pausado(self):
+        if self._mon_pausa is not None:
+            try:
+                self.after_cancel(self._mon_pausa)
+            except Exception:
+                pass
+        self._mon_pausa = self.after(300, self._mon_pintar_detalle)
 
     def _mon_ordenar(self, col):
         actual, desc = self._mon_orden
         self._mon_orden = (col, not desc if actual == col else True)
-        self._mon_pintar()
+        self._mon_pintar_detalle()
 
-    def _mon_pintar(self):
+    def _mon_pintar_detalle(self):
         fa = self._mon_f_auditor.get(); fm = self._mon_f_modulo.get()
         txt = self._mon_f_texto.get().strip().lower()
-        filas = [f for f in self._mon_filas
+        base = getattr(self, "_mon_enrango", self._mon_filas)
+        filas = [f for f in base
                  if (fa == "(todos)" or f["Auditor"] == fa)
                  and (fm == "(todos)" or f["Modulo"] == fm)
-                 and (not txt or any(txt in str(v).lower() for v in f.values()))]
+                 and (not txt or any(txt in str(f[c]).lower() for c, _ in self._MON_COLS))]
         col, desc = self._mon_orden
-        key = self._mon_clave_fecha if col == "Fecha" else (lambda f: str(f.get(col, "")).lower())
+        key = (lambda f: (f["_dt"] or __import__("datetime").datetime.min)) if col == "Fecha" \
+            else (lambda f: str(f.get(col, "")).lower())
         filas = sorted(filas, key=key, reverse=desc)
         self._mon_tree.delete(*self._mon_tree.get_children())
         cols = [c for c, _ in self._MON_COLS]
-        visibles = filas[:self._MON_MAX]
-        for n, f in enumerate(visibles):
-            tags = []
-            if "error" in f["Resultado"].lower():
-                tags.append("err")
-            elif n % 2:
-                tags.append("alt")
+        for n, f in enumerate(filas[:self._MON_MAX]):
+            tags = ["err"] if "error" in f["Resultado"].lower() else (["alt"] if n % 2 else [])
             self._mon_tree.insert("", "end", values=[f[c] for c in cols], tags=tags)
-        # resumen
-        por_aud = {}
-        for f in self._mon_filas:
-            por_aud[f["Auditor"]] = por_aud.get(f["Auditor"], 0) + 1
-        tot = len(self._mon_filas)
-        resumen = f"{len(filas)} de {tot} usos"
         if len(filas) > self._MON_MAX:
-            resumen += f"\n(se muestran los {self._MON_MAX} más recientes)"
-        if por_aud:
-            top = sorted(por_aud.items(), key=lambda x: -x[1])
-            resumen += ":\n" + "\n".join(f"  {a or '(sin nombre)'}: {n}" for a, n in top[:8])
-        self._mon_resumen.config(text=resumen)
+            self._mon_tree.insert("", "end", values=["…"] + [""] * (len(cols) - 1))
 
     def _registrar(self, modulo, detalle, func, *args):
         """Corre el hilo de un modulo y, al terminar, deja una fila en el
