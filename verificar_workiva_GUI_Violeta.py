@@ -2254,7 +2254,8 @@ class App(tk.Tk):
 
         # Resúmenes por persona y por módulo, lado a lado
         res = tk.Frame(right, bg=CGE_LIGHT); res.pack(fill="x", pady=(0, 8))
-        pcol = tk.Frame(res, bg=CGE_LIGHT); pcol.pack(side="left", fill="both", expand=True, padx=(0, 7))
+        res.columnconfigure(0, weight=3); res.columnconfigure(1, weight=2)
+        pcol = tk.Frame(res, bg=CGE_LIGHT); pcol.pack(side="left", fill="both", expand=True)
         tk.Label(pcol, text="POR PERSONA", font=("Segoe UI", 8, "bold"),
                  bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w")
         pbox = tk.Frame(pcol, bg=CGE_CARD, highlightbackground=CGE_BORDER, highlightthickness=1)
@@ -2262,11 +2263,12 @@ class App(tk.Tk):
         self._mon_tree_pers = ttk.Treeview(pbox, columns=["a", "u", "ul", "er"], show="headings", height=6)
         for c, t, w in (("a", "Auditor", 150), ("u", "Usos", 55), ("ul", "Último uso", 120), ("er", "Errores", 65)):
             self._mon_tree_pers.heading(c, text=t); self._mon_tree_pers.column(c, width=w, anchor="w")
-        self._mon_tree_pers.pack(side="left", fill="both", expand=True)
-        self._mon_tree_pers.tag_configure("sin", foreground=CGE_RED)
+        pvs = ttk.Scrollbar(pbox, orient="vertical", command=self._mon_tree_pers.yview)
+        self._mon_tree_pers.configure(yscrollcommand=pvs.set)
+        pvs.pack(side="right", fill="y"); self._mon_tree_pers.pack(side="left", fill="both", expand=True)
+        self._mon_tree_pers.tag_configure("alt", background=CGE_LIGHT)
 
-        mcol = tk.Frame(res, bg=CGE_LIGHT, width=240); mcol.pack(side="left", fill="y")
-        mcol.pack_propagate(False)
+        mcol = tk.Frame(res, bg=CGE_LIGHT); mcol.pack(side="left", fill="both", expand=True, padx=(7, 0))
         tk.Label(mcol, text="POR MÓDULO", font=("Segoe UI", 8, "bold"),
                  bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w")
         mbox = tk.Frame(mcol, bg=CGE_CARD, highlightbackground=CGE_BORDER, highlightthickness=1)
@@ -2274,11 +2276,14 @@ class App(tk.Tk):
         self._mon_tree_mod = ttk.Treeview(mbox, columns=["m", "u"], show="headings", height=6)
         self._mon_tree_mod.heading("m", text="Módulo"); self._mon_tree_mod.column("m", width=160, anchor="w")
         self._mon_tree_mod.heading("u", text="Usos"); self._mon_tree_mod.column("u", width=55, anchor="w")
-        self._mon_tree_mod.pack(side="left", fill="both", expand=True)
+        mvs = ttk.Scrollbar(mbox, orient="vertical", command=self._mon_tree_mod.yview)
+        self._mon_tree_mod.configure(yscrollcommand=mvs.set)
+        mvs.pack(side="right", fill="y"); self._mon_tree_mod.pack(side="left", fill="both", expand=True)
 
         # Detalle
-        tk.Label(right, text="DETALLE", font=("Segoe UI", 8, "bold"),
-                 bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(2, 2))
+        self._mon_det_titulo = tk.Label(right, text="DETALLE", font=("Segoe UI", 8, "bold"),
+                 bg=CGE_LIGHT, fg=CGE_MUTED)
+        self._mon_det_titulo.pack(anchor="w", pady=(8, 2))
         tbl = tk.Frame(right, bg=CGE_CARD, highlightbackground=CGE_BORDER, highlightthickness=1)
         tbl.pack(fill="both", expand=True)
         cols = [c for c, _ in self._MON_COLS]
@@ -2438,19 +2443,15 @@ class App(tk.Tk):
             if a and dt and (a not in ultimo_abs or dt > ultimo_abs[a]):
                 ultimo_abs[a] = dt
         pers = {}
-        for a in todas_personas:
-            pers[a] = {"u": 0, "er": 0}
         for f in enrango:
             a = f["Auditor"]
-            if a not in pers:
-                pers[a] = {"u": 0, "er": 0}
-            pers[a]["u"] += 1
+            d = pers.setdefault(a, {"u": 0, "er": 0})
+            d["u"] += 1
             if "error" in f["Resultado"].lower():
-                pers[a]["er"] += 1
+                d["er"] += 1
         self._mon_tree_pers.delete(*self._mon_tree_pers.get_children())
-        for a in sorted(pers, key=lambda x: (-pers[x]["u"], x)):
-            tags = ["sin"] if pers[a]["u"] == 0 else []
-            self._mon_tree_pers.insert("", "end", tags=tags, values=(
+        for n, a in enumerate(sorted(pers, key=lambda x: (-pers[x]["u"], x))):
+            self._mon_tree_pers.insert("", "end", tags=(["alt"] if n % 2 else []), values=(
                 a, pers[a]["u"], self._mon_fmt_ultimo(ultimo_abs.get(a)), pers[a]["er"] or ""))
 
         # Resumen por módulo (en el rango)
@@ -2468,9 +2469,10 @@ class App(tk.Tk):
         resumen = f"{etiqueta}: {len(enrango)} usos"
         if n_err:
             resumen += f", {n_err} con error"
-        sin_uso = [a for a in todas_personas if pers[a]["u"] == 0]
+        sin_uso = [a for a in todas_personas if a not in pers]
         if sin_uso:
-            resumen += "\n\nSin usos en el período:\n" + "\n".join("  " + a for a in sin_uso[:8])
+            resumen += "\n\nSin usos en el período:\n" + "\n".join(
+                f"  {a} (últ.: {self._mon_fmt_ultimo(ultimo_abs.get(a))})" for a in sin_uso[:8])
         self._mon_resumen.config(text=resumen)
 
         self._mon_enrango = enrango
@@ -2508,6 +2510,10 @@ class App(tk.Tk):
             self._mon_tree.insert("", "end", values=[f[c] for c in cols], tags=tags)
         if len(filas) > self._MON_MAX:
             self._mon_tree.insert("", "end", values=["…"] + [""] * (len(cols) - 1))
+        try:
+            self._mon_det_titulo.config(text=f"DETALLE  ({len(filas)})")
+        except Exception:
+            pass
 
     def _registrar(self, modulo, detalle, func, *args):
         """Corre el hilo de un modulo y, al terminar, deja una fila en el
