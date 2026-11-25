@@ -2195,9 +2195,8 @@ class App(tk.Tk):
             self._mcp_tmpdir = d
         return self._mcp_tmpdir
 
-    _MON_COLS = [("Fecha", 110), ("Auditor", 115), ("UsuarioWindows", 90),
-                 ("Computador", 95), ("Modulo", 135), ("Detalle", 150),
-                 ("Resultado", 80), ("Duracion", 60)]
+    _MON_COLS = [("Fecha", 120), ("Auditor", 130), ("UsuarioWindows", 110),
+                 ("Modulo", 150), ("Detalle", 190), ("Resultado", 90), ("Duracion", 70)]
     _MON_MAX = 1500          # cuantas filas de DETALLE se dibujan como mucho
     _MON_RANGOS = [("Hoy", "hoy"), ("Últimos 7 días", "7d"), ("Últimos 30 días", "30d"),
                    ("Este mes", "mes_actual"), ("Todo", "todo")]
@@ -2225,7 +2224,10 @@ class App(tk.Tk):
                   bd=0, padx=8, pady=3, cursor="hand2", command=self._mon_elegir).pack(fill="x", pady=(4, 0))
         tk.Button(left, text="↻  Actualizar", font=("Segoe UI", 10, "bold"), bg=CGE_BLUE, fg=CGE_WHITE,
                   relief="flat", bd=0, padx=12, pady=8, cursor="hand2",
-                  command=self._mon_cargar).pack(fill="x", pady=(0, 10))
+                  command=self._mon_cargar).pack(fill="x", pady=(0, 6))
+        tk.Button(left, text="🗑  Limpiar registros…", font=FONT_SMALL, bg=CGE_BORDER, fg=CGE_TEXT,
+                  relief="flat", bd=0, padx=12, pady=5, cursor="hand2",
+                  command=self._mon_limpiar).pack(fill="x", pady=(0, 10))
 
         tk.Label(left, text="FILTRAR EL DETALLE", font=("Segoe UI", 8, "bold"),
                  bg=CGE_LIGHT, fg=CGE_MUTED).pack(anchor="w", pady=(6, 2))
@@ -2531,6 +2533,110 @@ class App(tk.Tk):
             self._mon_det_titulo.config(text=f"DETALLE  ({len(filas)})")
         except Exception:
             pass
+
+    def _mon_limpiar(self):
+        """Ventana para depurar el registro: borrar todo o dejar solo los
+        ultimos meses. Siempre deja antes una copia de respaldo."""
+        ruta = self._mon_ruta.get().strip()
+        if not ruta or not os.path.isfile(ruta):
+            messagebox.showwarning("Limpiar", "Primero carga el archivo de registro (Actualizar).")
+            return
+        dlg = tk.Toplevel(self); dlg.title("Limpiar registros"); dlg.transient(self)
+        dlg.configure(bg=CGE_CARD); dlg.resizable(False, False); dlg.grab_set()
+        cont = tk.Frame(dlg, bg=CGE_CARD, padx=18, pady=16); cont.pack(fill="both", expand=True)
+        tk.Label(cont, text="¿Qué quieres limpiar del registro?", font=FONT_BOLD,
+                 bg=CGE_CARD, fg=CGE_TEXT).pack(anchor="w", pady=(0, 10))
+        modo = tk.StringVar(value="meses")
+        meses = tk.StringVar(value="6")
+        fmeses = tk.Frame(cont, bg=CGE_CARD); fmeses.pack(anchor="w", fill="x")
+        tk.Radiobutton(fmeses, text="Dejar solo los últimos", variable=modo, value="meses",
+                       bg=CGE_CARD, fg=CGE_TEXT, selectcolor=CGE_LIGHT, activebackground=CGE_CARD,
+                       font=FONT_SMALL).pack(side="left")
+        ttk.Combobox(fmeses, textvariable=meses, state="readonly", width=4,
+                     values=["1", "3", "6", "12", "24"]).pack(side="left", padx=(4, 4))
+        tk.Label(fmeses, text="meses", bg=CGE_CARD, fg=CGE_TEXT, font=FONT_SMALL).pack(side="left")
+        tk.Radiobutton(cont, text="Borrar TODOS los registros", variable=modo, value="todo",
+                       bg=CGE_CARD, fg=CGE_TEXT, selectcolor=CGE_LIGHT, activebackground=CGE_CARD,
+                       font=FONT_SMALL).pack(anchor="w", pady=(4, 0))
+        tk.Label(cont, text="Antes se guarda una copia de respaldo al lado del archivo.\n"
+                            "Hazlo con el Excel CERRADO y cuando nadie esté usando su Auditor.",
+                 bg=CGE_CARD, fg=CGE_MUTED, font=FONT_SMALL, justify="left").pack(anchor="w", pady=(10, 12))
+        bar = tk.Frame(cont, bg=CGE_CARD); bar.pack(fill="x")
+
+        def aceptar():
+            dlg.destroy()
+            self._mon_limpiar_ejecutar(modo.get(), int(meses.get()))
+        tk.Button(bar, text="Limpiar", font=("Segoe UI", 10, "bold"), bg=CGE_BLUE, fg=CGE_WHITE,
+                  relief="flat", bd=0, padx=14, pady=6, cursor="hand2", command=aceptar).pack(side="right")
+        tk.Button(bar, text="Cancelar", font=FONT_SMALL, bg=CGE_BORDER, fg=CGE_TEXT, relief="flat",
+                  bd=0, padx=12, pady=6, cursor="hand2", command=dlg.destroy).pack(side="right", padx=(0, 8))
+        dlg.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - dlg.winfo_width()) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - dlg.winfo_height()) // 2
+        dlg.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+
+    def _mon_limpiar_ejecutar(self, modo, meses):
+        import io as _io, datetime as _dt
+        ruta = self._mon_ruta.get().strip()
+        try:
+            from openpyxl import load_workbook
+            from openpyxl.utils import get_column_letter
+            datos = _leer_archivo_aunque_este_abierto(ruta)
+        except Exception as e:
+            messagebox.showerror("Limpiar", f"No se pudo leer el archivo:\n{e}")
+            return
+        # Respaldo con los bytes originales (copia exacta, nunca se pierde nada)
+        base, ext = os.path.splitext(ruta)
+        respaldo = f"{base}_respaldo_{_dt.datetime.now():%Y%m%d_%H%M}{ext or '.xlsx'}"
+        try:
+            with open(respaldo, "wb") as fh:
+                fh.write(datos)
+        except Exception as e:
+            messagebox.showerror("Limpiar", f"No se pudo crear el respaldo, no se limpió nada:\n{e}")
+            return
+        try:
+            wb = load_workbook(_io.BytesIO(datos))
+            ws = wb.active
+            todas = list(ws.iter_rows(values_only=True))
+            if not todas:
+                messagebox.showinfo("Limpiar", "El registro ya está vacío."); return
+            header = list(todas[0])
+            try:
+                fi = [str(c).strip() for c in header].index("Fecha")
+            except ValueError:
+                fi = 0
+            corte = _dt.date.today() - _dt.timedelta(days=meses * 31)
+
+            def conservar(r):
+                if modo == "todo":
+                    return False
+                dt = self._mon_dt(str(r[fi]) if fi < len(r) and r[fi] is not None else "")
+                return dt is None or dt.date() >= corte   # lo que no se entiende la fecha, se conserva
+
+            kept = [list(r) for r in todas[1:] if any(c not in (None, "") for c in r) and conservar(r)]
+            borradas = max(0, len(todas) - 1 - len(kept))
+            if ws.max_row > 1:
+                ws.delete_rows(2, ws.max_row - 1)
+            for r in kept:
+                ws.append(r)
+            if ws.tables:
+                tname = next(iter(ws.tables))
+                ncol = len(header)
+                nfil = max(len(kept), 1)
+                ws.tables[tname].ref = f"A1:{get_column_letter(ncol)}{1 + nfil}"
+            wb.save(ruta)
+        except PermissionError:
+            messagebox.showwarning(
+                "Limpiar", "No se pudo escribir el archivo: seguramente lo tienes abierto en "
+                           "Excel. Ciérralo y vuelve a intentar.\n\n"
+                           f"El respaldo quedó en:\n{os.path.basename(respaldo)}")
+            return
+        except Exception as e:
+            messagebox.showerror("Limpiar", f"No se pudo limpiar (el respaldo quedó a salvo):\n{e}")
+            return
+        self._mon_cargar()
+        messagebox.showinfo("Limpiar", f"Listo: se quitaron {borradas} registro(s).\n\n"
+                            f"Copia de respaldo:\n{os.path.basename(respaldo)}")
 
     def _registrar(self, modulo, detalle, func, *args):
         """Corre el hilo de un modulo y, al terminar, deja una fila en el
